@@ -30,8 +30,8 @@ export const FLOWSTOKEN_GROUPS = [
 		providerId: "flowstoken-smart",
 		labelZh: "智能组",
 		tokenName: "FlowsToken-Desktop-智能",
-		descriptionZh: "智能选模（bestoo-auto）",
-		defaultModels: ["bestoo-auto"],
+		descriptionZh: "智能选模（Bestoo-Auto）",
+		defaultModels: ["Bestoo-Auto"],
 	},
 	{
 		id: "vip" as const,

@@ -4,7 +4,7 @@ Branded desktop client based on Open Vetta **lite** (serv-less). Download page: 
 
 ## Product
 
-- **FlowsToken 账户**（设置页）：登录官网账号后一键启用 **普通组 / 智能组（`bestoo-auto`） / 官方组**
+- **FlowsToken 账户**（设置页）：登录官网账号后一键启用 **普通组 / 智能组（`Bestoo-Auto`） / 官方组**
   - 自动创建或复用桌面专用 NewAPI 令牌，密钥写入 OS 凭据库 / Electron `safeStorage`（不进安装包）
   - 余额与最近用量可在同一面板刷新查看；可跳转充值与控制台
 - 继续保留：文件、终端、浏览器（支付确认）、会话、技能、MCP 自配

@@ -8,7 +8,7 @@
    - 为 **普通组 (`default`) / 智能组 (`smart`) / 官方组 (`vip`)** 创建或复用桌面专用令牌
    - 将密钥写入系统凭据库，并启用对应预设服务商
    - 展示余额与最近用量（可刷新）
-4. 智能组默认模型：`bestoo-auto`
+4. 智能组默认模型：`Bestoo-Auto`
 5. Base URL：`https://www.flowstoken.com/v1`（HTTPS）
 
 ## 手动粘贴（兜底）
@@ -22,7 +22,7 @@
 | UI | group | 说明 |
 |----|-------|------|
 | 普通组 | `default` | 双通道高可用 |
-| 智能组 | `smart` | `bestoo-auto` |
+| 智能组 | `smart` | `Bestoo-Auto` |
 | 官方组 | `vip` | 厂商官方模型（GPT/Claude），文案禁止 Vercel/Fireworks |
 
 会话 Cookie 保存在 Electron partition `persist:flowstoken-account`；API 密钥只进 safeStorage。

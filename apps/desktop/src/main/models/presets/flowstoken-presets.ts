@@ -17,7 +17,7 @@ function isFlowsTokenChatModel(id: string): boolean {
 /**
  * Three billing groups share one OpenAI-compatible base URL.
  * Users adopt a preset, paste their FlowsToken API key (created in the web console),
- * then pick models — 智能组 should use `bestoo-auto`.
+ * then pick models — 智能组 should use `Bestoo-Auto`.
  */
 export const FLOWSTOKEN_PRESET_PROVIDERS: readonly PresetProviderDef[] = [
 	{

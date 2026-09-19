@@ -14,8 +14,8 @@
       "id": "smart",
       "labelZh": "智能组",
       "labelEn": "Smart",
-      "descriptionZh": "智能选模，一个入口（bestoo-auto）",
-      "defaultModel": "bestoo-auto",
+      "descriptionZh": "智能选模，一个入口（Bestoo-Auto）",
+      "defaultModel": "Bestoo-Auto",
       "openaiCompatible": true
     },
     {
