@@ -12,6 +12,7 @@ const SETTINGS_CONTENT: Record<Exclude<SettingsTab, "mcp">, LazyExoticComponent<
 	general: lazy(SETTINGS_TAB_LOADERS.general),
 	appearance: lazy(SETTINGS_TAB_LOADERS.appearance),
 	account: lazy(SETTINGS_TAB_LOADERS.account),
+	flowstoken: lazy(SETTINGS_TAB_LOADERS.flowstoken),
 	models: lazy(SETTINGS_TAB_LOADERS.models),
 	environment: lazy(SETTINGS_TAB_LOADERS.environment),
 	extensions: lazy(SETTINGS_TAB_LOADERS.extensions),

@@ -313,7 +313,11 @@
   },
   "runtimeConfiguration": {
     "applyLabel": "生效时间",
-	"provider": { "local": "本地", "remote": "远程", "unavailable": "不可用" },
+    "provider": {
+      "local": "本地",
+      "remote": "远程",
+      "unavailable": "不可用"
+    },
     "secretConfigured": "已安全保存；输入新值可替换",
     "secretPlaceholder": "输入后按回车或移开焦点保存",
     "apply": {
@@ -337,24 +341,77 @@
       }
     },
     "fields": {
-      "autoResize": { "title": "自动缩放", "description": "在图片超出限制时自动缩放和压缩。" },
-      "blockImages": { "title": "阻止图片", "description": "阻止图片进入模型上下文。" },
+      "autoResize": {
+        "title": "自动缩放",
+        "description": "在图片超出限制时自动缩放和压缩。"
+      },
+      "blockImages": {
+        "title": "阻止图片",
+        "description": "阻止图片进入模型上下文。"
+      },
       "resize": {
-        "maxWidth": { "title": "最大宽度", "description": "缩放后图片允许的最大宽度（像素）。" },
-        "maxHeight": { "title": "最大高度", "description": "缩放后图片允许的最大高度（像素）。" },
-        "maxInputPixels": { "title": "最大输入像素数", "description": "解码前允许处理的最大像素总数。" },
-        "maxInputEdge": { "title": "最大输入边长", "description": "解码前允许处理的最大单边长度（像素）。" },
-        "maxBytes": { "title": "最大图片字节数", "description": "规范化后单张图片允许的最大体积。" },
-        "jpegQuality": { "title": "JPEG 质量", "description": "转码为 JPEG 时使用的压缩质量（1–100）。" }
+        "maxWidth": {
+          "title": "最大宽度",
+          "description": "缩放后图片允许的最大宽度（像素）。"
+        },
+        "maxHeight": {
+          "title": "最大高度",
+          "description": "缩放后图片允许的最大高度（像素）。"
+        },
+        "maxInputPixels": {
+          "title": "最大输入像素数",
+          "description": "解码前允许处理的最大像素总数。"
+        },
+        "maxInputEdge": {
+          "title": "最大输入边长",
+          "description": "解码前允许处理的最大单边长度（像素）。"
+        },
+        "maxBytes": {
+          "title": "最大图片字节数",
+          "description": "规范化后单张图片允许的最大体积。"
+        },
+        "jpegQuality": {
+          "title": "JPEG 质量",
+          "description": "转码为 JPEG 时使用的压缩质量（1–100）。"
+        }
       },
       "requestBudget": {
-        "highWatermarkBytes": { "title": "请求高水位", "description": "图片总量超过此值时启动预算压缩。" },
-        "lowWatermarkBytes": { "title": "请求低水位", "description": "预算压缩尝试达到的图片总量。" }
+        "highWatermarkBytes": {
+          "title": "请求高水位",
+          "description": "图片总量超过此值时启动预算压缩。"
+        },
+        "lowWatermarkBytes": {
+          "title": "请求低水位",
+          "description": "预算压缩尝试达到的图片总量。"
+        }
       },
-      "defaultProviderId": { "title": "默认 Provider", "description": "下一次识别使用的 OCR Provider；远程 Provider 会按远程策略处理。" },
-      "remoteProviderPolicy": { "title": "远程识别策略", "description": "控制远程 Provider 是否可以处理图片。", "options": { "never": "禁止远程", "ask": "首次使用时询问", "allowed": "允许已选择的远程 Provider" } },
-      "cacheResults": { "title": "缓存识别结果", "description": "缓存新产生的 OCR 结果；关闭不会删除已有记录。" },
-      "defaultOutput": { "title": "默认输出粒度", "description": "选择纯文本、行、词或文档树；Provider 不支持时会降级。", "options": { "text": "纯文本", "line": "按行", "word": "按词", "document-tree": "文档树" } }
+      "defaultProviderId": {
+        "title": "默认 Provider",
+        "description": "下一次识别使用的 OCR Provider；远程 Provider 会按远程策略处理。"
+      },
+      "remoteProviderPolicy": {
+        "title": "远程识别策略",
+        "description": "控制远程 Provider 是否可以处理图片。",
+        "options": {
+          "never": "禁止远程",
+          "ask": "首次使用时询问",
+          "allowed": "允许已选择的远程 Provider"
+        }
+      },
+      "cacheResults": {
+        "title": "缓存识别结果",
+        "description": "缓存新产生的 OCR 结果；关闭不会删除已有记录。"
+      },
+      "defaultOutput": {
+        "title": "默认输出粒度",
+        "description": "选择纯文本、行、词或文档树；Provider 不支持时会降级。",
+        "options": {
+          "text": "纯文本",
+          "line": "按行",
+          "word": "按词",
+          "document-tree": "文档树"
+        }
+      }
     }
   },
   "environmentSettings": {
@@ -812,7 +869,17 @@
   "accountType": "账号类型",
   "premium": "高级版",
   "free": "免费版",
-  "usageStats": "使用统计",
+  "usageStats": {
+    "streak": "连续使用",
+    "days": "{{count}} 天",
+    "unitTokens": "Token",
+    "unitRequests": "请求",
+    "range": {
+      "7d": "7 天",
+      "30d": "30 天",
+      "all": "累计"
+    }
+  },
   "messagesThisMonth": "本月消息数",
   "storageUsed": "已用存储",
   "addKnowledgeBase": "添加知识库",
@@ -995,17 +1062,6 @@
   },
   "saveFailed": "保存失败",
   "pleaseLogin": "请先登录",
-  "usageStats": {
-    "streak": "连续使用",
-    "days": "{{count}} 天",
-    "unitTokens": "Token",
-    "unitRequests": "请求",
-    "range": {
-      "7d": "7 天",
-      "30d": "30 天",
-      "all": "累计"
-    }
-  },
   "tokenActivity": {
     "title": "Token 活动",
     "daily": "每日",
@@ -1790,7 +1846,7 @@
   "unbindError": "解绑失败",
   "bindDone": "完成",
   "bindGenerating": "正在生成二维码…",
-  "bindFailed": "绑定失败",
+  "bindFailed": "启动配对失败",
   "retry": "重试",
   "bindSuccessTitle": "绑定成功",
   "bindSuccessDesc": "即将自动关闭…",
@@ -1873,7 +1929,6 @@
   "imWhatsappBind": "开始绑定",
   "imWhatsappLogout": "解除绑定",
   "bindStarted": "二维码配对已启动",
-  "bindFailed": "启动配对失败",
   "saveModelFailed": "保存模型失败",
   "setModelOk": "已设为 {{provider}} / {{model}}",
   "clearedModel": "已清除模型设定",
@@ -2066,5 +2121,7 @@
   "feishuManual": "手动填写 App ID / App Secret",
   "feishuUnbindApp": "解绑应用",
   "feishuQrExpired": "二维码已过期，请重新扫码",
-  "pleaseBindFeishu": "请先扫码接入飞书机器人"
+  "pleaseBindFeishu": "请先扫码接入飞书机器人",
+  "tabFlowstoken": "FlowsToken 账户",
+  "section_flowstoken-account": "FlowsToken 账户"
 }

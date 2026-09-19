@@ -313,7 +313,11 @@
   },
   "runtimeConfiguration": {
     "applyLabel": "Applies",
-	"provider": { "local": "Local", "remote": "Remote", "unavailable": "Unavailable" },
+    "provider": {
+      "local": "Local",
+      "remote": "Remote",
+      "unavailable": "Unavailable"
+    },
     "secretConfigured": "Saved securely; enter a new value to replace it",
     "secretPlaceholder": "Press Enter or leave the field to save",
     "apply": {
@@ -337,24 +341,77 @@
       }
     },
     "fields": {
-      "autoResize": { "title": "Automatic resize", "description": "Resize and compress images when they exceed configured limits." },
-      "blockImages": { "title": "Block images", "description": "Prevent images from entering model context." },
+      "autoResize": {
+        "title": "Automatic resize",
+        "description": "Resize and compress images when they exceed configured limits."
+      },
+      "blockImages": {
+        "title": "Block images",
+        "description": "Prevent images from entering model context."
+      },
       "resize": {
-        "maxWidth": { "title": "Maximum width", "description": "Maximum image width after resizing, in pixels." },
-        "maxHeight": { "title": "Maximum height", "description": "Maximum image height after resizing, in pixels." },
-        "maxInputPixels": { "title": "Maximum input pixels", "description": "Maximum total pixel count accepted before decoding." },
-        "maxInputEdge": { "title": "Maximum input edge", "description": "Maximum single-edge length accepted before decoding, in pixels." },
-        "maxBytes": { "title": "Maximum image bytes", "description": "Maximum size of one normalized image." },
-        "jpegQuality": { "title": "JPEG quality", "description": "Compression quality used when transcoding to JPEG (1–100)." }
+        "maxWidth": {
+          "title": "Maximum width",
+          "description": "Maximum image width after resizing, in pixels."
+        },
+        "maxHeight": {
+          "title": "Maximum height",
+          "description": "Maximum image height after resizing, in pixels."
+        },
+        "maxInputPixels": {
+          "title": "Maximum input pixels",
+          "description": "Maximum total pixel count accepted before decoding."
+        },
+        "maxInputEdge": {
+          "title": "Maximum input edge",
+          "description": "Maximum single-edge length accepted before decoding, in pixels."
+        },
+        "maxBytes": {
+          "title": "Maximum image bytes",
+          "description": "Maximum size of one normalized image."
+        },
+        "jpegQuality": {
+          "title": "JPEG quality",
+          "description": "Compression quality used when transcoding to JPEG (1–100)."
+        }
       },
       "requestBudget": {
-        "highWatermarkBytes": { "title": "Request high watermark", "description": "Start budget compression when total image data exceeds this value." },
-        "lowWatermarkBytes": { "title": "Request low watermark", "description": "Target total image data after budget compression." }
+        "highWatermarkBytes": {
+          "title": "Request high watermark",
+          "description": "Start budget compression when total image data exceeds this value."
+        },
+        "lowWatermarkBytes": {
+          "title": "Request low watermark",
+          "description": "Target total image data after budget compression."
+        }
       },
-      "defaultProviderId": { "title": "Default provider", "description": "The OCR provider used by the next recognition request; remote providers follow the remote-use policy." },
-      "remoteProviderPolicy": { "title": "Remote recognition policy", "description": "Control whether a remote provider may process images.", "options": { "never": "Block remote", "ask": "Ask on first use", "allowed": "Allow selected remote provider" } },
-      "cacheResults": { "title": "Cache recognition results", "description": "Cache newly created OCR results; disabling this does not delete existing records." },
-      "defaultOutput": { "title": "Default output detail", "description": "Choose text, lines, words, or a document tree; unsupported detail falls back safely.", "options": { "text": "Plain text", "line": "Lines", "word": "Words", "document-tree": "Document tree" } }
+      "defaultProviderId": {
+        "title": "Default provider",
+        "description": "The OCR provider used by the next recognition request; remote providers follow the remote-use policy."
+      },
+      "remoteProviderPolicy": {
+        "title": "Remote recognition policy",
+        "description": "Control whether a remote provider may process images.",
+        "options": {
+          "never": "Block remote",
+          "ask": "Ask on first use",
+          "allowed": "Allow selected remote provider"
+        }
+      },
+      "cacheResults": {
+        "title": "Cache recognition results",
+        "description": "Cache newly created OCR results; disabling this does not delete existing records."
+      },
+      "defaultOutput": {
+        "title": "Default output detail",
+        "description": "Choose text, lines, words, or a document tree; unsupported detail falls back safely.",
+        "options": {
+          "text": "Plain text",
+          "line": "Lines",
+          "word": "Words",
+          "document-tree": "Document tree"
+        }
+      }
     }
   },
   "environmentSettings": {
@@ -812,7 +869,17 @@
   "accountType": "Account type",
   "premium": "Premium",
   "free": "Free",
-  "usageStats": "Usage statistics",
+  "usageStats": {
+    "streak": "Streak",
+    "days": "{{count}} d",
+    "unitTokens": "tokens",
+    "unitRequests": "reqs",
+    "range": {
+      "7d": "7d",
+      "30d": "30d",
+      "all": "All"
+    }
+  },
   "messagesThisMonth": "Messages this month",
   "storageUsed": "Storage used",
   "addKnowledgeBase": "Add knowledge base",
@@ -995,17 +1062,6 @@
   },
   "saveFailed": "Save failed",
   "pleaseLogin": "Please log in first",
-  "usageStats": {
-    "streak": "Streak",
-    "days": "{{count}} d",
-    "unitTokens": "tokens",
-    "unitRequests": "reqs",
-    "range": {
-      "7d": "7d",
-      "30d": "30d",
-      "all": "All"
-    }
-  },
   "tokenActivity": {
     "title": "Token activity",
     "daily": "Daily",
@@ -1790,7 +1846,7 @@
   "unbindError": "Unbind failed",
   "bindDone": "Done",
   "bindGenerating": "Generating QR code…",
-  "bindFailed": "Bind failed",
+  "bindFailed": "Failed to start pairing",
   "retry": "Retry",
   "bindSuccessTitle": "Bind successful",
   "bindSuccessDesc": "Closing automatically…",
@@ -1873,7 +1929,6 @@
   "imWhatsappBind": "Start binding",
   "imWhatsappLogout": "Unbind",
   "bindStarted": "QR pairing started",
-  "bindFailed": "Failed to start pairing",
   "saveModelFailed": "Failed to save model",
   "setModelOk": "Set to {{provider}} / {{model}}",
   "clearedModel": "Model setting cleared",
@@ -2066,5 +2121,7 @@
   "feishuManual": "Enter App ID / App Secret manually",
   "feishuUnbindApp": "Unbind app",
   "feishuQrExpired": "The QR code expired — scan again",
-  "pleaseBindFeishu": "Set up the Feishu bot by QR first"
+  "pleaseBindFeishu": "Set up the Feishu bot by QR first",
+  "tabFlowstoken": "FlowsToken Account",
+  "section_flowstoken-account": "FlowsToken Account"
 }

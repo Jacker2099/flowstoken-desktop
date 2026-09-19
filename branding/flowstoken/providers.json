@@ -31,6 +31,11 @@
   "auth": {
     "preferred": "account_login_then_create_key",
     "mvpFallback": "paste_api_key_into_provider_form",
-    "notes": "Account→key one-click is staged; BYOK against apiBaseUrl ships first."
+    "notes": "Desktop settings → FlowsToken 账户 supports one-click login + auto key wiring. Groups: default/smart/vip.",
+    "groups": {
+      "normal": "default",
+      "smart": "smart",
+      "official": "vip"
+    }
   }
 }

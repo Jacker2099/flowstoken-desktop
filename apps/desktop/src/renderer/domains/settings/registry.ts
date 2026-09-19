@@ -16,7 +16,8 @@ export type SettingsTabLabelKey =
 	| "tabKnowledge"
 	| "tabPet"
 	| "tabPermissions"
-	| "tabRemote";
+	| "tabRemote"
+	| "tabFlowstoken";
 
 export interface SettingsTabRegistration {
 	key: SettingsTab;
@@ -40,6 +41,7 @@ export interface SettingsSectionRegistration {
 
 export const SETTINGS_TABS: readonly SettingsTabRegistration[] = [
 	{ key: "account", label: "账户", labelKey: "tabAccount", icon: "icon-[mdi--account-outline]", requireAuth: true },
+	{ key: "flowstoken", label: "FlowsToken 账户", labelKey: "tabFlowstoken", icon: "icon-[mdi--key-chain-variant]" },
 	{ key: "general", label: "通用设置", labelKey: "tabGeneral", icon: "icon-[mdi--cog-outline]" },
 	{
 		key: "remote",
@@ -97,6 +99,7 @@ export const SETTINGS_SECTIONS = [
 	{ tab: "appearance", id: "appearance-sidebar", title: "侧边栏样式", titleKey: "section_appearance-sidebar" },
 	{ tab: "appearance", id: "appearance-language", title: "语言", titleKey: "section_appearance-language" },
 	{ tab: "account", id: "account-profile", title: "个人信息", titleKey: "section_account-profile" },
+	{ tab: "flowstoken", id: "flowstoken-account", title: "FlowsToken 账户", titleKey: "section_flowstoken-account" },
 	{ tab: "team", id: "team-management", title: "团队管理", titleKey: "section_team-management" },
 	{ tab: "team", id: "team-my-teams", title: "我的团队", titleKey: "section_team-my-teams" },
 	{ tab: "team", id: "team-detail-info", title: "团队详情", titleKey: "section_team-detail-info" },

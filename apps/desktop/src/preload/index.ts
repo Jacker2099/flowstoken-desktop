@@ -10,6 +10,7 @@ import { createAppshotApi } from "./apis/appshot.js";
 import { createBatchTasksApi } from "./apis/batch-tasks.js";
 import { createConversationTagsApi } from "./apis/conversation-tags.js";
 import { createDownloadsApi } from "./apis/downloads.js";
+import { createFlowstokenApi } from "./apis/flowstoken.js";
 import { createI18nApi } from "./apis/i18n.js";
 import { createImApi } from "./apis/im.js";
 import { createNotificationApi } from "./apis/notification.js";
@@ -56,6 +57,7 @@ const rawApi: Omit<DesktopApi, "hostAccess"> = {
 	...createRuntimeConfigurationApi(ipcRenderer),
 	remotePairing: createRemotePairingApi(ipcRenderer),
 	...createAppshotApi(ipcRenderer),
+	...createFlowstokenApi(ipcRenderer),
 	...createI18nApi(ipcRenderer),
 	...createTelemetryApi(ipcRenderer),
 	...createSystemApi(ipcRenderer, webUtils),

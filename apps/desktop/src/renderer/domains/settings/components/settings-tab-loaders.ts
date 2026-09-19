@@ -6,6 +6,7 @@ type SettingsTabLoader = () => Promise<{ default: ComponentType }>;
 /** The same imports serve both React.lazy and intent prefetch. */
 export const SETTINGS_TAB_LOADERS = {
 	account: async () => ({ default: (await import("./AccountSettings")).AccountSettings }),
+	flowstoken: async () => ({ default: (await import("./FlowstokenAccountSettings")).FlowstokenAccountSettings }),
 	context: async () => ({ default: (await import("./AgentSettings")).AgentSettings }),
 	appearance: async () => ({ default: (await import("./AppearanceSettings")).AppearanceSettings }),
 	appshot: async () => ({ default: (await import("./AppshotSettings")).AppshotSettings }),

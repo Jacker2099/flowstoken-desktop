@@ -12,6 +12,7 @@ import type { DesktopDebugApi } from "./api-types/debug.js";
 import type { DesktopDiagnosticsApi } from "./api-types/diagnostics.js";
 import type { DesktopDialogApi } from "./api-types/dialog.js";
 import type { DesktopDownloadsApi } from "./api-types/downloads.js";
+import type { DesktopFlowstokenApi } from "./api-types/flowstoken.js";
 import type { DesktopI18nApi } from "./api-types/i18n.js";
 import type { DesktopImApi } from "./api-types/im.js";
 import type { DesktopKnowledgeApi } from "./api-types/knowledge.js";
@@ -58,6 +59,7 @@ export type * from "./api-types/config.js";
 export type * from "./api-types/debug.js";
 export type * from "./api-types/dialog.js";
 export type * from "./api-types/downloads.js";
+export type * from "./api-types/flowstoken.js";
 export type * from "./api-types/i18n.js";
 export type * from "./api-types/im.js";
 export type * from "./api-types/mcp.js";
@@ -133,6 +135,7 @@ export interface DesktopApi {
 	quickPanel: DesktopQuickPanelApi;
 	runtimeConfiguration: DesktopRuntimeConfigurationApi;
 	appshot: DesktopAppshotApi;
+	flowstoken: DesktopFlowstokenApi;
 }
 
 declare global {

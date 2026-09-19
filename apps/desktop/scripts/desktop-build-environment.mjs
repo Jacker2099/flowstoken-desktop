@@ -6,9 +6,13 @@ import { resolveUpdatePublishConfig } from "./resolve-update-publish-config.mjs"
 export const OPEN_SOURCE_BUILD_DEFAULTS = Object.freeze({
 	VETTA_BUILD_ENV: "opensource",
 	VETTA_CLOUD_ENABLED: "false",
+	VETTA_DISABLE_BUILTIN_MARKETPLACE: "1",
+	VETTA_PRODUCT_NAME: "FlowsToken",
+	VETTA_APP_ID: "com.flowstoken.desktop",
+	VETTA_EXECUTABLE_NAME: "FlowsToken",
 	VETTA_UPDATE_PROVIDER: "github",
-	VETTA_UPDATE_GITHUB_OWNER: "openvetta",
-	VETTA_UPDATE_GITHUB_REPO: "open-vetta",
+	VETTA_UPDATE_GITHUB_OWNER: "Jacker2099",
+	VETTA_UPDATE_GITHUB_REPO: "flowstoken-desktop",
 });
 
 const SUPPORTED_PLATFORM_TAGS = new Set([

@@ -1,5 +1,6 @@
 import type { WebContents } from "electron";
 import type { ActionApprovalBroker } from "../app-actions/approval-broker.js";
+import { registerFlowstokenAccountIpc } from "../flowstoken/index.js";
 import { registerNotificationIpc } from "../notifications/index.js";
 import type { PluginActionService } from "../plugins/plugin-action-service.js";
 import { registerAbilitiesIpc } from "./abilities.js";
@@ -72,6 +73,7 @@ interface IpcTeardown {
 	teardownAppshot: () => void;
 	teardownDiagnostics: () => void;
 	teardownOnboarding: () => void;
+	teardownFlowstokenAccount: () => void;
 	teardownRemotePairing: () => void;
 }
 
@@ -118,6 +120,7 @@ export function registerAllIpc(
 		teardownAppshot: registerAppshotIpc(),
 		teardownDiagnostics: registerDiagnosticsIpc(),
 		teardownOnboarding: registerOnboardingIpc(),
+		teardownFlowstokenAccount: registerFlowstokenAccountIpc(),
 		teardownRemotePairing: registerRemotePairingIpc(options.remotePairingService),
 	};
 }
@@ -157,6 +160,7 @@ export function teardownAllIpc(teardown: IpcTeardown): void {
 	teardown.teardownAppshot();
 	teardown.teardownDiagnostics();
 	teardown.teardownOnboarding();
+	teardown.teardownFlowstokenAccount();
 	teardown.teardownRemotePairing();
 }
 

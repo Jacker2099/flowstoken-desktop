@@ -59,3 +59,14 @@ Always prefer upstream patches for Electron, credential vault, permission prompt
 - builtin marketplace stays off for FlowsToken builds
 - `VETTA_DEV_AUTO_APPROVE_ACTIONS` is not set in production packaging
 - no secrets in the repo or binary
+
+## FlowsToken account overlay (preserve)
+
+Additive modules under `apps/desktop/src/main/flowstoken/` + settings tab `flowstoken`:
+
+- NewAPI session login (Turnstile / browser window)
+- Auto create/reuse tokens for groups `default` / `smart` / `vip`
+- Wire providers `flowstoken-default|smart|official` via model settings vault
+- Balance + usage panel (Chinese UI)
+
+Do not re-enable Vetta Serv (`VETTA_CLOUD_ENABLED=false`). Prefer ours on conflict for these paths and `branding/flowstoken/**`.
