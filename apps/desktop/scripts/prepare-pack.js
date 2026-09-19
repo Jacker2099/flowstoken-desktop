@@ -800,6 +800,20 @@ const builderConfig = {
 		maintainer: LINUX_PACKAGE_METADATA.maintainer,
 		synopsis: "AI agent desktop application",
 		vendor: LINUX_PACKAGE_METADATA.vendor,
+		// Keep AppImage / deb / rpm artifact names on FlowsToken branding.
+		artifactName: "${productName}-${version}.${ext}",
+		desktop: {
+			Name: process.env.VETTA_PRODUCT_NAME?.trim() || "FlowsToken",
+			StartupWMClass: process.env.VETTA_EXECUTABLE_NAME?.trim() || process.env.VETTA_PRODUCT_NAME?.trim() || "FlowsToken",
+		},
+	},
+	deb: {
+		afterInstall: "build/linux/after-install.sh",
+		afterRemove: "build/linux/after-remove.sh",
+	},
+	rpm: {
+		afterInstall: "build/linux/after-install.sh",
+		afterRemove: "build/linux/after-remove.sh",
 	},
 	// Sidecar binaries are picked up from the staged ./im-gateway dir
 	// (populated above by the cross-build step).

@@ -26,6 +26,7 @@ if (process.platform !== "darwin") {
 //
 // --two-icons：签名+公证构建，DMG 不带「修复已损坏.app」，退回两图标常规版式。
 const twoIcons = process.argv.includes("--two-icons");
+const productName = process.env.VETTA_PRODUCT_NAME?.trim() || "FlowsToken";
 const ICON_CENTERS_X_2X = twoIcons
 	? [360, 960] // @1x: 180, 480
 	: [200, 660, 1120]; // @1x: 100, 330, 560
@@ -66,7 +67,7 @@ const svg = `<?xml version="1.0" encoding="UTF-8"?>
 	<rect width="1320" height="880" fill="${COLORS.bg}"/>
 	${arrows}
 	<text x="660" y="700" font-family="-apple-system, Helvetica Neue, Helvetica" font-size="26" fill="${COLORS.text}" text-anchor="middle">
-		拖动 Vetta 到 Applications 完成安装
+		拖动 ${productName} 到 Applications 完成安装
 	</text>
 	${repairHint}
 </svg>

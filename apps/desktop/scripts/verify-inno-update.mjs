@@ -7,6 +7,11 @@ import { parse } from "yaml";
 const projectRoot = join(import.meta.dirname, "..");
 const releaseDir = join(projectRoot, "release");
 
+function resolveWindowsExecutableName(env = process.env) {
+	const value = env.VETTA_EXECUTABLE_NAME?.trim() || env.VETTA_PRODUCT_NAME?.trim();
+	return value && value.length > 0 ? value : "Vetta";
+}
+
 async function assertFile(path) {
 	const info = await stat(path);
 	if (!info.isFile()) throw new Error(`Expected file: ${path}`);
@@ -67,7 +72,7 @@ export async function verifyInnoUpdate({ installerPath, verificationManifestPath
 	try {
 		await runInstaller(installerPath, storeRoot, version);
 		await Promise.all([
-			assertFile(join(installedVersionDir, "Vetta.exe")),
+			assertFile(join(installedVersionDir, `${resolveWindowsExecutableName()}.exe`)),
 			assertFile(join(installedVersionDir, "resources", "app.asar")),
 			assertFile(join(installedVersionDir, ".install-complete")),
 		]);
