@@ -38,3 +38,7 @@ export VETTA_UPDATE_GITHUB_REPO=flowstoken-desktop
 # leave VETTA_OPEN_MARKETPLACE_REPOSITORY unset/empty with disable flag
 cd apps/desktop && bun run dist:opensource
 ```
+
+## Wire providers
+
+See `branding/flowstoken/SETUP.md`.

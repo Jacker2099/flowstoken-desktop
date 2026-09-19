@@ -1,3 +1,4 @@
+import { FLOWSTOKEN_PRESET_PROVIDERS } from "./flowstoken-presets.js";
 /** 拉取模型列表的适配器种类——各家 /models 接口形状不同,按此分派。 */
 export type PresetFetcher = "anthropic" | "openai-compatible" | "gemini";
 
@@ -20,7 +21,7 @@ export interface PresetProviderDef {
 const NON_CHAT =
 	/embedding|embed|whisper|tts|audio|realtime|-live-|moderation|dall-e|image|transcribe|rerank|vision-ocr|veo-|lyria|imagen|deep-research|computer-use|-character|livetranslate/i;
 
-export const PRESET_PROVIDERS: readonly PresetProviderDef[] = [
+const UPSTREAM_PRESET_PROVIDERS: readonly PresetProviderDef[] = [
 	{
 		id: "claude",
 		displayName: "Claude",
@@ -97,6 +98,12 @@ export const PRESET_PROVIDERS: readonly PresetProviderDef[] = [
 		fetcher: "gemini",
 		isChatModel: (id) => !NON_CHAT.test(id),
 	},
+];
+
+/** Upstream presets plus FlowsToken group presets (ordinary / smart / official). */
+export const PRESET_PROVIDERS: readonly PresetProviderDef[] = [
+	...UPSTREAM_PRESET_PROVIDERS,
+	...FLOWSTOKEN_PRESET_PROVIDERS,
 ];
 
 export function getPresetProvider(id: string): PresetProviderDef | undefined {
