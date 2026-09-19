@@ -31,17 +31,16 @@ fi
 # --- FlowsToken ↔ Vetta path compatibility for release CI ---
 PRODUCT_ROOT='/opt/${sanitizedProductName}'
 COMPAT_ROOT='/opt/Vetta'
-BIN='${executable}'
 
-if [ -x "${PRODUCT_ROOT}/${BIN}" ]; then
+if [ -x "$PRODUCT_ROOT/${executable}" ]; then
     # Binary alias so /opt/<product>/Vetta resolves (and /opt/Vetta/Vetta via dir symlink).
-    ln -sfn "${BIN}" "${PRODUCT_ROOT}/Vetta"
+    ln -sfn '${executable}' "$PRODUCT_ROOT/Vetta"
     # Directory symlink /opt/Vetta -> product root (skip if already installed at /opt/Vetta).
-    if [ "${PRODUCT_ROOT}" != "${COMPAT_ROOT}" ]; then
-        if [ -e "${COMPAT_ROOT}" ] && [ ! -L "${COMPAT_ROOT}" ]; then
-            echo "warning: ${COMPAT_ROOT} exists and is not a symlink; leaving in place" >&2
+    if [ "$PRODUCT_ROOT" != "$COMPAT_ROOT" ]; then
+        if [ -e "$COMPAT_ROOT" ] && [ ! -L "$COMPAT_ROOT" ]; then
+            echo "warning: $COMPAT_ROOT exists and is not a symlink; leaving in place" >&2
         else
-            ln -sfn "${PRODUCT_ROOT}" "${COMPAT_ROOT}"
+            ln -sfn "$PRODUCT_ROOT" "$COMPAT_ROOT"
         fi
     fi
 fi
@@ -49,7 +48,7 @@ fi
 # Ensure a regular *vetta*.desktop file exists (workflow: find ... -type f -iname '*vetta*.desktop')
 APP_DIR='/usr/share/applications'
 write_vetta_desktop() {
-    cat > "${APP_DIR}/vetta.desktop" <<'DESKTOP'
+    cat > "$APP_DIR/vetta.desktop" <<'DESKTOP'
 [Desktop Entry]
 Name=${sanitizedProductName}
 Exec=/opt/${sanitizedProductName}/${executable} %U
@@ -60,17 +59,17 @@ Categories=Utility;
 DESKTOP
 }
 
-if [ -f "${APP_DIR}/${BIN}.desktop" ]; then
+if [ -f "$APP_DIR/${executable}.desktop" ]; then
     # Copy (not symlink): CI requires -type f
-    cp -f "${APP_DIR}/${BIN}.desktop" "${APP_DIR}/vetta.desktop"
-elif [ -f "${APP_DIR}/${sanitizedProductName}.desktop" ]; then
-    cp -f "${APP_DIR}/${sanitizedProductName}.desktop" "${APP_DIR}/vetta.desktop"
-elif [ -L "${APP_DIR}/vetta.desktop" ] || [ ! -f "${APP_DIR}/vetta.desktop" ]; then
+    cp -f "$APP_DIR/${executable}.desktop" "$APP_DIR/vetta.desktop"
+elif [ -f "$APP_DIR/${sanitizedProductName}.desktop" ]; then
+    cp -f "$APP_DIR/${sanitizedProductName}.desktop" "$APP_DIR/vetta.desktop"
+elif [ -L "$APP_DIR/vetta.desktop" ] || [ ! -f "$APP_DIR/vetta.desktop" ]; then
     write_vetta_desktop
 fi
 # If an old symlink remains, replace with a real file
-if [ -L "${APP_DIR}/vetta.desktop" ]; then
-    rm -f "${APP_DIR}/vetta.desktop"
+if [ -L "$APP_DIR/vetta.desktop" ]; then
+    rm -f "$APP_DIR/vetta.desktop"
     write_vetta_desktop
 fi
 
