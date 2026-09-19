@@ -14,6 +14,16 @@ const buildStageDir = join(tmpdir(), "vetta-desktop-build");
 const releaseDir = join(projectRoot, "release");
 const installerScript = join(projectRoot, "build", "installer.iss");
 
+function resolveWindowsProductName(env = process.env) {
+	const value = env.VETTA_PRODUCT_NAME?.trim();
+	return value && value.length > 0 ? value : "Vetta";
+}
+
+function resolveWindowsExecutableName(env = process.env) {
+	const value = env.VETTA_EXECUTABLE_NAME?.trim() || env.VETTA_PRODUCT_NAME?.trim();
+	return value && value.length > 0 ? value : "Vetta";
+}
+
 function readOption(name) {
 	const index = process.argv.indexOf(name);
 	if (index < 0 || !process.argv[index + 1]) throw new Error(`[build-inno] missing ${name}`);
@@ -85,7 +95,9 @@ async function main() {
 	if (typeof version !== "string" || !/^\d+\.\d+\.\d+$/.test(version)) {
 		throw new Error(`[build-inno] invalid staged version: ${version}`);
 	}
-	if (!existsSync(join(sourceDir, "versions", version, "Vetta.exe"))) {
+	const executableName = resolveWindowsExecutableName();
+	const productName = resolveWindowsProductName();
+	if (!existsSync(join(sourceDir, "versions", version, `${executableName}.exe`))) {
 		throw new Error(`[build-inno] versioned Electron output not found: ${sourceDir}`);
 	}
 
@@ -94,7 +106,7 @@ async function main() {
 	if (publishConfig) {
 		console.log(`[build-inno] wrote app-update.yml for ${publishConfig.provider}`);
 	}
-	const fileName = `Vetta-${version}-win-${arch}.exe`;
+	const fileName = `${productName}-${version}-win-${arch}.exe`;
 	const verificationManifestPath = join(releaseDir, `${fileName}.files.json`);
 	await writeInnoVerificationManifest(join(sourceDir, "versions", version), verificationManifestPath, version);
 
@@ -111,6 +123,8 @@ async function main() {
 				`/DSourceDir=${shortSourceDir}`,
 				`/DOutputDir=${releaseDir}`,
 				`/DArch=${arch}`,
+				`/DAppProductName=${productName}`,
+				`/DAppExecutableName=${executableName}`,
 				installerScript,
 			],
 			{ stdio: "inherit" },

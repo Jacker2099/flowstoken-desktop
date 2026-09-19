@@ -21,10 +21,16 @@ async function createLayout(root, version) {
 }
 
 test("Windows supplemental package names are stable and versioned", () => {
-	assert.deepEqual(windowsSupplementalArtifactNames("1.2.3"), [
-		"Vetta-1.2.3-win-x64.msi",
-		"Vetta-1.2.3-win-x64.zip",
-	]);
+	const previous = process.env.VETTA_PRODUCT_NAME;
+	delete process.env.VETTA_PRODUCT_NAME;
+	try {
+		assert.deepEqual(windowsSupplementalArtifactNames("1.2.3"), ["Vetta-1.2.3-win-x64.zip"]);
+		process.env.VETTA_PRODUCT_NAME = "FlowsToken";
+		assert.deepEqual(windowsSupplementalArtifactNames("1.2.3"), ["FlowsToken-1.2.3-win-x64.zip"]);
+	} finally {
+		if (previous === undefined) delete process.env.VETTA_PRODUCT_NAME;
+		else process.env.VETTA_PRODUCT_NAME = previous;
+	}
 });
 
 test("Windows package inspection accepts the versioned launcher layout at any extraction depth", async () => {

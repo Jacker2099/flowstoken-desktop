@@ -77,3 +77,30 @@ test("native package verification uses the release manifest version", async () =
 		await rm(releaseDir, { recursive: true, force: true });
 	}
 });
+
+test("Linux package inspection accepts FlowsToken install paths from env", () => {
+	const previousProduct = process.env.VETTA_PRODUCT_NAME;
+	const previousExecutable = process.env.VETTA_EXECUTABLE_NAME;
+	process.env.VETTA_PRODUCT_NAME = "FlowsToken";
+	process.env.VETTA_EXECUTABLE_NAME = "FlowsToken";
+	const flowPaths = [
+		"/opt/FlowsToken/FlowsToken",
+		"/opt/FlowsToken/resources/package-type",
+		"/usr/share/applications/flowstoken.desktop",
+		"/usr/share/icons/hicolor/512x512/apps/flowstoken.png",
+	];
+	try {
+		assert.doesNotThrow(() =>
+			verifyLinuxPackageInspection({
+				expectedVersion: "1.2.3",
+				deb: { name: "vetta", version: "1.2.3", arch: "amd64", paths: flowPaths },
+				rpm: { name: "vetta", version: "1.2.3", arch: "x86_64", paths: flowPaths },
+			}),
+		);
+	} finally {
+		if (previousProduct === undefined) delete process.env.VETTA_PRODUCT_NAME;
+		else process.env.VETTA_PRODUCT_NAME = previousProduct;
+		if (previousExecutable === undefined) delete process.env.VETTA_EXECUTABLE_NAME;
+		else process.env.VETTA_EXECUTABLE_NAME = previousExecutable;
+	}
+});

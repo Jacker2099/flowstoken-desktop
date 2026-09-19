@@ -31,13 +31,20 @@ async function findFiles(root, fileName, relativeRoot = "") {
 	return matches;
 }
 
+function resolveWindowsExecutableName() {
+	const value = process.env.VETTA_EXECUTABLE_NAME?.trim() || process.env.VETTA_PRODUCT_NAME?.trim();
+	return value && value.length > 0 ? value : "Vetta";
+}
+
 async function isValidLayoutRoot(root, expectedVersion) {
 	try {
 		const manifest = JSON.parse(await readFile(join(root, "current.json"), "utf8"));
 		if (manifest?.version !== expectedVersion) return false;
+		const executableName = resolveWindowsExecutableName();
+		const exeName = `${executableName}.exe`;
 		await Promise.all([
-			assertNonEmptyFile(join(root, "Vetta.exe")),
-			assertNonEmptyFile(join(root, "versions", expectedVersion, "Vetta.exe")),
+			assertNonEmptyFile(join(root, exeName)),
+			assertNonEmptyFile(join(root, "versions", expectedVersion, exeName)),
 			assertNonEmptyFile(join(root, "versions", expectedVersion, "resources", "app.asar")),
 		]);
 		return true;
@@ -90,24 +97,18 @@ export async function verifyWindowsPackages({ releaseDir = defaultReleaseDir } =
 		throw new Error("[verify-windows-packages] native Windows package verification must run on Windows");
 	}
 	const expectedVersion = await readExpectedWindowsVersion(releaseDir);
-	const [msiFileName, zipFileName] = windowsSupplementalArtifactNames(expectedVersion);
-	const msiPath = join(releaseDir, msiFileName);
+	const [zipFileName] = windowsSupplementalArtifactNames(expectedVersion);
 	const zipPath = join(releaseDir, zipFileName);
-	await Promise.all([assertNonEmptyFile(msiPath), assertNonEmptyFile(zipPath)]);
+	await assertNonEmptyFile(zipPath);
 
 	const extractionRoot = await mkdtemp(join(tmpdir(), "vetta-windows-packages-"));
-	const msiRoot = join(extractionRoot, "msi");
 	const zipRoot = join(extractionRoot, "zip");
-	await Promise.all([mkdir(msiRoot, { recursive: true }), mkdir(zipRoot, { recursive: true })]);
+	await mkdir(zipRoot, { recursive: true });
 	try {
-		await extractMsi(msiPath, msiRoot);
 		await extractZip(zipPath, zipRoot);
-		await Promise.all([
-			verifyExtractedWindowsLayout(msiRoot, expectedVersion),
-			verifyExtractedWindowsLayout(zipRoot, expectedVersion),
-		]);
-		console.info(`[verify-windows-packages] MSI and ZIP packages verified: ${expectedVersion}`);
-		return { version: expectedVersion, msiPath, zipPath };
+		await verifyExtractedWindowsLayout(zipRoot, expectedVersion);
+		console.info(`[verify-windows-packages] ZIP package verified: ${expectedVersion}`);
+		return { version: expectedVersion, zipPath };
 	} finally {
 		await rm(extractionRoot, { recursive: true, force: true });
 	}

@@ -107,3 +107,23 @@ test("Linux packaged E2E drops the deb/rpm package-type marker so the AppImage u
 		await rm(packageRoot, { recursive: true, force: true });
 	}
 });
+
+test("macOS packaged E2E resolves FlowsToken.app from product/executable env", async () => {
+	const previousProduct = process.env.VETTA_PRODUCT_NAME;
+	const previousExecutable = process.env.VETTA_EXECUTABLE_NAME;
+	process.env.VETTA_PRODUCT_NAME = "FlowsToken";
+	process.env.VETTA_EXECUTABLE_NAME = "FlowsToken";
+	const packageRoot = await mkdtemp(join(tmpdir(), "vetta-packaged-e2e-"));
+	const binary = join(packageRoot, "release", "mac-arm64", "FlowsToken.app", "Contents", "MacOS", "FlowsToken");
+	await mkdir(join(packageRoot, "release", "mac-arm64", "FlowsToken.app", "Contents", "MacOS"), { recursive: true });
+	await writeFile(binary, "electron");
+	try {
+		assert.equal(resolvePackagedE2eBinaryPath(packageRoot, "darwin"), binary);
+	} finally {
+		await rm(packageRoot, { recursive: true, force: true });
+		if (previousProduct === undefined) delete process.env.VETTA_PRODUCT_NAME;
+		else process.env.VETTA_PRODUCT_NAME = previousProduct;
+		if (previousExecutable === undefined) delete process.env.VETTA_EXECUTABLE_NAME;
+		else process.env.VETTA_EXECUTABLE_NAME = previousExecutable;
+	}
+});

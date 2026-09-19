@@ -10,19 +10,25 @@
 #ifndef Arch
   #error Arch is required
 #endif
+#ifndef AppProductName
+  #define AppProductName "FlowsToken"
+#endif
+#ifndef AppExecutableName
+  #define AppExecutableName "FlowsToken"
+#endif
 
 [Setup]
 AppId={{A2B92798-AB76-4F6B-A9B9-C252DBCB617C}
-AppName=Vetta
-AppVerName=Vetta {#AppVersion}
+AppName={#AppProductName}
+AppVerName={#AppProductName} {#AppVersion}
 AppVersion={#AppVersion}
-AppPublisher=Vetta
-DefaultDirName={localappdata}\Programs\Vetta
-DefaultGroupName=Vetta
+AppPublisher={#AppProductName}
+DefaultDirName={localappdata}\Programs\{#AppProductName}
+DefaultGroupName={#AppProductName}
 OutputDir={#OutputDir}
-OutputBaseFilename=Vetta-{#AppVersion}-win-{#Arch}
+OutputBaseFilename={#AppProductName}-{#AppVersion}-win-{#Arch}
 SetupIconFile={#SourceDir}\versions\{#AppVersion}\resources\build\icon.ico
-UninstallDisplayIcon={app}\Vetta.exe
+UninstallDisplayIcon={app}\{#AppExecutableName}.exe
 Compression=lzma2/max
 SolidCompression=no
 PrivilegesRequired=lowest
@@ -54,7 +60,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; Flags: unchecked
 Name: "{app}\versions"; Check: IsNotBackgroundUpdate
 
 [Files]
-Source: "{#SourceDir}\Vetta.exe"; DestDir: "{app}"; Flags: ignoreversion; Check: IsNotBackgroundUpdate
+Source: "{#SourceDir}\{#AppExecutableName}.exe"; DestDir: "{app}"; Flags: ignoreversion; Check: IsNotBackgroundUpdate
 Source: "{#SourceDir}\current.json"; DestDir: "{app}"; Flags: ignoreversion; Check: IsNotBackgroundUpdate
 ; app.asar is already an archive. Keeping it uncompressed lets the outer blockmap
 ; reuse unchanged chunks instead of invalidating one large LZMA2 stream.
@@ -64,23 +70,23 @@ Source: "{#SourceDir}\versions\{#AppVersion}\*"; DestDir: "{code:GetUpdateVersio
 Source: "{#SourceDir}\versions\{#AppVersion}\resources\app.asar"; DestDir: "{code:GetUpdateVersionDirectory}\resources"; Flags: ignoreversion nocompression; Check: IsBackgroundUpdate
 
 [Icons]
-Name: "{group}\Vetta"; Filename: "{app}\Vetta.exe"; Check: IsNotBackgroundUpdate
-Name: "{autodesktop}\Vetta"; Filename: "{app}\Vetta.exe"; Tasks: desktopicon; Check: IsNotBackgroundUpdate
+Name: "{group}\{#AppProductName}"; Filename: "{app}\{#AppExecutableName}.exe"; Check: IsNotBackgroundUpdate
+Name: "{autodesktop}\{#AppProductName}"; Filename: "{app}\{#AppExecutableName}.exe"; Tasks: desktopicon; Check: IsNotBackgroundUpdate
 
 [Registry]
-Root: HKCU; Subkey: "Software\Classes\vetta"; ValueType: string; ValueName: ""; ValueData: "URL:Vetta Protocol"; Flags: uninsdeletekey; Check: IsNotBackgroundUpdate
+Root: HKCU; Subkey: "Software\Classes\vetta"; ValueType: string; ValueName: ""; ValueData: "URL:{#AppProductName} Protocol"; Flags: uninsdeletekey; Check: IsNotBackgroundUpdate
 Root: HKCU; Subkey: "Software\Classes\vetta"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""; Check: IsNotBackgroundUpdate
-Root: HKCU; Subkey: "Software\Classes\vetta\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\Vetta.exe,0"; Check: IsNotBackgroundUpdate
-Root: HKCU; Subkey: "Software\Classes\vetta\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\Vetta.exe"" ""%1"""; Check: IsNotBackgroundUpdate
+Root: HKCU; Subkey: "Software\Classes\vetta\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\{#AppExecutableName}.exe,0"; Check: IsNotBackgroundUpdate
+Root: HKCU; Subkey: "Software\Classes\vetta\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExecutableName}.exe"" ""%1"""; Check: IsNotBackgroundUpdate
 
 [Run]
-Filename: "{app}\Vetta.exe"; Description: "{cm:LaunchProgram,Vetta}"; Flags: nowait postinstall skipifsilent; Check: IsNotBackgroundUpdate
+Filename: "{app}\{#AppExecutableName}.exe"; Description: "{cm:LaunchProgram,{#AppProductName}}"; Flags: nowait postinstall skipifsilent; Check: IsNotBackgroundUpdate
 
 [UninstallDelete]
-Type: filesandordirs; Name: "{localappdata}\Vetta\versions"
-Type: filesandordirs; Name: "{localappdata}\Vetta\installer"
-Type: filesandordirs; Name: "{localappdata}\Vetta\staging"
-Type: files; Name: "{localappdata}\Vetta\current.json"
+Type: filesandordirs; Name: "{localappdata}\{#AppProductName}\versions"
+Type: filesandordirs; Name: "{localappdata}\{#AppProductName}\installer"
+Type: filesandordirs; Name: "{localappdata}\{#AppProductName}\staging"
+Type: files; Name: "{localappdata}\{#AppProductName}\current.json"
 
 [Code]
 function CreateHardLinkW(
@@ -208,7 +214,7 @@ begin
     else
     begin
       SeedUpdaterDifferentialCache();
-      DeleteFile(ExpandConstant('{localappdata}\Vetta\current.json'));
+      DeleteFile(ExpandConstant('{localappdata}\{#AppProductName}\current.json'));
     end;
   end;
 end;

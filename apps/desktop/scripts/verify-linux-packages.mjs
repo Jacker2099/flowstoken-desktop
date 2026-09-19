@@ -8,7 +8,15 @@ import { parse } from "yaml";
 const execFileAsync = promisify(execFile);
 const packageDir = resolve(import.meta.dirname, "..");
 const defaultReleaseDir = join(packageDir, "release");
-const requiredPayloadPaths = ["/opt/Vetta/Vetta", "/opt/Vetta/resources/package-type"];
+
+function resolveInstallName() {
+	const value = process.env.VETTA_EXECUTABLE_NAME?.trim() || process.env.VETTA_PRODUCT_NAME?.trim();
+	return value && value.length > 0 ? value : "Vetta";
+}
+
+function requiredPayloadPathsFor(name = resolveInstallName()) {
+	return [`/opt/${name}/${name}`, `/opt/${name}/resources/package-type`];
+}
 
 function requireValue(value, label) {
 	if (typeof value !== "string" || value.trim().length === 0) {
@@ -48,9 +56,9 @@ export function parseRpmFields(output) {
 	};
 }
 
-function verifyPayload(format, paths) {
+function verifyPayload(format, paths, installName = resolveInstallName()) {
 	const pathSet = new Set(paths);
-	for (const requiredPath of requiredPayloadPaths) {
+	for (const requiredPath of requiredPayloadPathsFor(installName)) {
 		if (!pathSet.has(requiredPath)) {
 			throw new Error(`[verify-linux-packages] ${format} package is missing ${requiredPath}`);
 		}
@@ -76,8 +84,9 @@ function verifyIdentity(format, actual, expected) {
 export function verifyLinuxPackageInspection({ expectedVersion, deb, rpm }) {
 	verifyIdentity("Debian", deb, { name: "vetta", version: expectedVersion, arch: "amd64" });
 	verifyIdentity("RPM", rpm, { name: "vetta", version: expectedVersion, arch: "x86_64" });
-	verifyPayload("Debian", deb.paths);
-	verifyPayload("RPM", rpm.paths);
+	const installName = resolveInstallName();
+	verifyPayload("Debian", deb.paths, installName);
+	verifyPayload("RPM", rpm.paths, installName);
 }
 
 async function findExactlyOnePackage(releaseDir, extension) {
