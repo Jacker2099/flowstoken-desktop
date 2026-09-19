@@ -2,6 +2,12 @@
 # FlowsToken Linux post-install: keep branded /opt/${sanitizedProductName} layout, and
 # add /opt/Vetta + *vetta*.desktop compatibility so CI docker verify (fixed paths) passes
 # without editing .github/workflows/*.yml (oauth cannot push workflow changes).
+#
+# Workflow checks (must all pass after apt-get/dnf install):
+#   test -x /opt/Vetta/Vetta
+#   test "$(cat /opt/Vetta/resources/package-type)" = "deb"|"rpm"
+#   find /usr/share/applications -maxdepth 1 -type f -iname '*vetta*.desktop'
+# Note: the desktop find uses -type f, so vetta.desktop must be a regular file (not a symlink).
 
 if type update-alternatives >/dev/null 2>&1; then
     if [ -L '/usr/bin/${executable}' -a -e '/usr/bin/${executable}' -a "`readlink '/usr/bin/${executable}'`" != '/etc/alternatives/${executable}' ]; then
@@ -25,21 +31,25 @@ fi
 # --- FlowsToken ↔ Vetta path compatibility for release CI ---
 PRODUCT_ROOT='/opt/${sanitizedProductName}'
 COMPAT_ROOT='/opt/Vetta'
-if [ -x "${PRODUCT_ROOT}/${executable}" ]; then
-    # /opt/Vetta/Vetta and /opt/Vetta/resources/* via directory symlink + binary alias
-    ln -sfn '${executable}' "${PRODUCT_ROOT}/Vetta"
-    ln -sfn "${PRODUCT_ROOT}" "${COMPAT_ROOT}"
+BIN='${executable}'
+
+if [ -x "${PRODUCT_ROOT}/${BIN}" ]; then
+    # Binary alias so /opt/<product>/Vetta resolves (and /opt/Vetta/Vetta via dir symlink).
+    ln -sfn "${BIN}" "${PRODUCT_ROOT}/Vetta"
+    # Directory symlink /opt/Vetta -> product root (skip if already installed at /opt/Vetta).
+    if [ "${PRODUCT_ROOT}" != "${COMPAT_ROOT}" ]; then
+        if [ -e "${COMPAT_ROOT}" ] && [ ! -L "${COMPAT_ROOT}" ]; then
+            echo "warning: ${COMPAT_ROOT} exists and is not a symlink; leaving in place" >&2
+        else
+            ln -sfn "${PRODUCT_ROOT}" "${COMPAT_ROOT}"
+        fi
+    fi
 fi
 
-# Ensure a *vetta*.desktop exists (workflow: find ... -iname '*vetta*.desktop')
+# Ensure a regular *vetta*.desktop file exists (workflow: find ... -type f -iname '*vetta*.desktop')
 APP_DIR='/usr/share/applications'
-if [ ! -e "${APP_DIR}/vetta.desktop" ]; then
-    if [ -f "${APP_DIR}/${executable}.desktop" ]; then
-        ln -sfn '${executable}.desktop' "${APP_DIR}/vetta.desktop"
-    elif [ -f "${APP_DIR}/${sanitizedProductName}.desktop" ]; then
-        ln -sfn '${sanitizedProductName}.desktop' "${APP_DIR}/vetta.desktop"
-    else
-        cat > "${APP_DIR}/vetta.desktop" <<'DESKTOP'
+write_vetta_desktop() {
+    cat > "${APP_DIR}/vetta.desktop" <<'DESKTOP'
 [Desktop Entry]
 Name=${sanitizedProductName}
 Exec=/opt/${sanitizedProductName}/${executable} %U
@@ -48,7 +58,20 @@ Type=Application
 Icon=${executable}
 Categories=Utility;
 DESKTOP
-    fi
+}
+
+if [ -f "${APP_DIR}/${BIN}.desktop" ]; then
+    # Copy (not symlink): CI requires -type f
+    cp -f "${APP_DIR}/${BIN}.desktop" "${APP_DIR}/vetta.desktop"
+elif [ -f "${APP_DIR}/${sanitizedProductName}.desktop" ]; then
+    cp -f "${APP_DIR}/${sanitizedProductName}.desktop" "${APP_DIR}/vetta.desktop"
+elif [ -L "${APP_DIR}/vetta.desktop" ] || [ ! -f "${APP_DIR}/vetta.desktop" ]; then
+    write_vetta_desktop
+fi
+# If an old symlink remains, replace with a real file
+if [ -L "${APP_DIR}/vetta.desktop" ]; then
+    rm -f "${APP_DIR}/vetta.desktop"
+    write_vetta_desktop
 fi
 
 if hash update-desktop-database 2>/dev/null; then
