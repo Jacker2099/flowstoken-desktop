@@ -40,6 +40,18 @@ bun run check:quick   # or the project’s current quick check
 
 Do not enable `VETTA_CLOUD_ENABLED=true` (Vetta Serv). FlowsToken uses its own API.
 
+## Preserve FlowsToken integrations (mandatory)
+
+When merging `upstream`, **never drop** FlowsToken product layers. Prefer ours on conflict for:
+
+- `branding/flowstoken/**`, `docs/flowstoken/**`, `FLOWSTOKEN.md`
+- `apps/desktop/src/main/models/presets/flowstoken-presets.ts` and its wiring in `catalog.ts`
+- Marketplace hardened off (`VETTA_DISABLE_BUILTIN_MARKETPLACE` / empty builtin source)
+- Packaging brand env overrides (`VETTA_PRODUCT_NAME`, `VETTA_APP_ID`, …) in `prepare-pack.js` / build-env / vite defines
+- Security bar: no baked secrets, no auto-approve in prod, HTTPS to flowstoken.com
+
+Upstream wins for unrelated Electron/runtime/security fixes outside this list. After merge, re-run a quick smoke: presets still list 普通/智能/官方, marketplace stays off, brand env still packs as FlowsToken.
+
 ## Security sync
 
 Always prefer upstream patches for Electron, credential vault, permission prompts, and dependency CVEs. After merge, re-verify:
