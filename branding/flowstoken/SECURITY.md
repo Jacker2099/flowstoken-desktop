@@ -16,3 +16,7 @@
 - Marketplace auto-update is a supply-chain surface; disabling builtin marketplace is intentional.
 - A compromised API key only affects the user’s FlowsToken balance/quota — still treat vault access as sensitive.
 - Do not proxy arbitrary URLs through the desktop main process without allowlisting.
+
+## Multi-platform releases
+
+Publish macOS, Windows, and Linux from the same tagged opensource build (upstream `desktop-release` workflow). Prefer GitHub Releases artifacts over ad-hoc USB copies so hashes stay auditable.

@@ -7,5 +7,15 @@
   "dataHomeEnv": "VETTA_HOME",
   "recommendedDataHome": "~/.flowstoken-desktop",
   "cloudEnabled": false,
-  "builtinMarketplace": false
+  "builtinMarketplace": false,
+  "platforms": [
+    "macOS",
+    "Windows",
+    "Linux"
+  ],
+  "release": {
+    "channel": "github-releases",
+    "workflow": ".github/workflows/desktop-release.yml",
+    "syncWithUpstream": true
+  }
 }
