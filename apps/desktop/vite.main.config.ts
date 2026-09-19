@@ -71,6 +71,9 @@ export default defineConfig(({ mode }) => {
 	define["process.env.VETTA_OPEN_MARKETPLACE_ARCHIVE_URL"] = JSON.stringify(
 		env.VETTA_OPEN_MARKETPLACE_ARCHIVE_URL?.trim() || "",
 	);
+	define["process.env.VETTA_DISABLE_BUILTIN_MARKETPLACE"] = JSON.stringify(
+		env.VETTA_DISABLE_BUILTIN_MARKETPLACE?.trim() || "",
+	);
 
 	return {
 		define,

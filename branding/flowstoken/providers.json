@@ -1,0 +1,36 @@
+{
+  "apiBaseUrl": "https://www.flowstoken.com/v1",
+  "siteUrl": "https://www.flowstoken.com",
+  "groups": [
+    {
+      "id": "normal",
+      "labelZh": "普通组",
+      "labelEn": "Standard",
+      "descriptionZh": "经济实用，适合日常对话与轻量任务",
+      "defaultModelHint": null,
+      "openaiCompatible": true
+    },
+    {
+      "id": "smart",
+      "labelZh": "智能组",
+      "labelEn": "Smart",
+      "descriptionZh": "智能选模，一个入口（bestoo-auto）",
+      "defaultModel": "bestoo-auto",
+      "openaiCompatible": true
+    },
+    {
+      "id": "official",
+      "labelZh": "官方组",
+      "labelEn": "Official",
+      "descriptionZh": "厂商官方模型（GPT / Claude 等），模型 ID 与厂商一致",
+      "defaultModelHint": null,
+      "openaiCompatible": true,
+      "copyRules": "Never mention Vercel, Fireworks, or third-party relay brands in UI."
+    }
+  ],
+  "auth": {
+    "preferred": "account_login_then_create_key",
+    "mvpFallback": "paste_api_key_into_provider_form",
+    "notes": "Account→key one-click is staged; BYOK against apiBaseUrl ships first."
+  }
+}

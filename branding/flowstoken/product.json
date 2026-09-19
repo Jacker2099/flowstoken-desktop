@@ -1,0 +1,11 @@
+{
+  "productName": "FlowsToken",
+  "appId": "com.flowstoken.desktop",
+  "executableName": "FlowsToken",
+  "homepage": "https://www.flowstoken.com",
+  "downloadPage": "https://www.flowstoken.com/desktop",
+  "dataHomeEnv": "VETTA_HOME",
+  "recommendedDataHome": "~/.flowstoken-desktop",
+  "cloudEnabled": false,
+  "builtinMarketplace": false
+}

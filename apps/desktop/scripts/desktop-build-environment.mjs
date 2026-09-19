@@ -23,7 +23,7 @@ const OPTIONAL_BOOLEAN_KEYS = [
 	"VETTA_POSTHOG_REPLAY_ENABLED",
 	"VETTA_SHOW_UI_THEME",
 ];
-const OPTIONAL_ZERO_ONE_KEYS = ["VETTA_REQUIRE_MAC_SIGNATURE"];
+const OPTIONAL_ZERO_ONE_KEYS = ["VETTA_REQUIRE_MAC_SIGNATURE", "VETTA_DISABLE_BUILTIN_MARKETPLACE"];
 const SAMPLE_RATE_KEYS = ["VETTA_POSTHOG_REPLAY_SAMPLE_RATE", "VETTA_SENTRY_TRACES_SAMPLE_RATE"];
 const MARKETPLACE_REF_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/;
 const GITHUB_COORDINATE_PATTERN = /^[A-Za-z0-9_.-]+$/;
@@ -206,9 +206,18 @@ export function createOpenSourceBuildEnvironment(env = process.env) {
 		"VETTA_OPEN_MARKETPLACE_REF",
 		"VETTA_UPDATE_GITHUB_OWNER",
 		"VETTA_UPDATE_GITHUB_REPO",
+		"VETTA_DISABLE_BUILTIN_MARKETPLACE",
+		"VETTA_PRODUCT_NAME",
+		"VETTA_APP_ID",
+		"VETTA_EXECUTABLE_NAME",
 	]) {
 		const configured = readValue(env, key);
 		if (configured) next[key] = configured;
+	}
+	// FlowsToken: allow explicit empty marketplace + disable flag without falling back to Vetta official
+	if (env.VETTA_OPEN_MARKETPLACE_REPOSITORY === "") next.VETTA_OPEN_MARKETPLACE_REPOSITORY = "";
+	if (env.VETTA_DISABLE_BUILTIN_MARKETPLACE === "1" || env.VETTA_DISABLE_BUILTIN_MARKETPLACE === "true") {
+		next.VETTA_DISABLE_BUILTIN_MARKETPLACE = "1";
 	}
 	return next;
 }

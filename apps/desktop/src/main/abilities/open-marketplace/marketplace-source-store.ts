@@ -128,6 +128,16 @@ function parseSource(value: unknown): MarketplaceSource | null {
 
 function createDefaultSources(now: Date): MarketplaceSource[] {
 	const configuredRepository = process.env.VETTA_OPEN_MARKETPLACE_REPOSITORY?.trim();
+	// FlowsToken / hardened forks: explicit disable must NOT fall back to Vetta official marketplace
+	// (supply-chain). Set VETTA_DISABLE_BUILTIN_MARKETPLACE=1, or set the repository env to empty
+	// string after vite inlines it. Unset (undefined) keeps upstream default: official source.
+	const disableBuiltin =
+		process.env.VETTA_DISABLE_BUILTIN_MARKETPLACE === "1" ||
+		process.env.VETTA_DISABLE_BUILTIN_MARKETPLACE === "true" ||
+		process.env.VETTA_OPEN_MARKETPLACE_REPOSITORY === "";
+	if (disableBuiltin) {
+		return [];
+	}
 	// 发行方可用 fork 仓库替换官方源；未配置时始终注册 Vetta 官方源。
 	const normalizedRepository = normalizeGitHubRepository(configuredRepository || OFFICIAL_MARKETPLACE_REPOSITORY);
 	const ref = validateRef(process.env.VETTA_OPEN_MARKETPLACE_REF);

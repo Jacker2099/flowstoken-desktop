@@ -707,9 +707,9 @@ const extraResources = resolveExtraResources();
 
 // Write electron-builder config
 const builderConfig = {
-	appId: "com.vetta.desktop",
-	productName: "Vetta",
-	executableName: "Vetta",
+	appId: process.env.VETTA_APP_ID?.trim() || "com.vetta.desktop",
+	productName: process.env.VETTA_PRODUCT_NAME?.trim() || "Vetta",
+	executableName: process.env.VETTA_EXECUTABLE_NAME?.trim() || process.env.VETTA_PRODUCT_NAME?.trim() || "Vetta",
 	afterPack: join(projectRoot, "scripts", "windows-version-layout.mjs"),
 	electronVersion,
 	electronLanguages: ["zh-CN", "en-US"],
@@ -718,8 +718,9 @@ const builderConfig = {
 	...(releaseInfo ? { releaseInfo } : {}),
 	files: ["**/*", ...extraResources.map(({ from }) => `!${from}/**/*`)],
 	protocols: {
-		name: "Vetta",
-		schemes: ["vetta"],
+		name: process.env.VETTA_PRODUCT_NAME?.trim() || "Vetta",
+		// Keep scheme stable across forks so deep links / merge stay simple; override with VETTA_PROTOCOL_SCHEME if needed.
+		schemes: [process.env.VETTA_PROTOCOL_SCHEME?.trim() || "vetta"],
 	},
 	mac: {
 		target: ["dmg", "zip"],
