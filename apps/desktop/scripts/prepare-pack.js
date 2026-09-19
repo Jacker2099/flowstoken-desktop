@@ -802,10 +802,6 @@ const builderConfig = {
 		vendor: LINUX_PACKAGE_METADATA.vendor,
 		// Keep AppImage / deb / rpm artifact names on FlowsToken branding.
 		artifactName: "${productName}-${version}.${ext}",
-		desktop: {
-			Name: process.env.VETTA_PRODUCT_NAME?.trim() || "FlowsToken",
-			StartupWMClass: process.env.VETTA_EXECUTABLE_NAME?.trim() || process.env.VETTA_PRODUCT_NAME?.trim() || "FlowsToken",
-		},
 	},
 	deb: {
 		afterInstall: "build/linux/after-install.sh",
