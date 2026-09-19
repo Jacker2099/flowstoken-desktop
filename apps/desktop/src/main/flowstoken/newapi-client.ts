@@ -40,9 +40,10 @@ async function apiFetch<T>(
 		method: init.method ?? "GET",
 		headers,
 		body: init.body,
-		session,
 		credentials: "include",
-	});
+		// Electron net.fetch accepts session; typings lag behind.
+		...({ session } as object),
+	} as RequestInit);
 
 	const text = await response.text();
 	let json: ApiEnvelope<T> | null = null;
@@ -94,9 +95,9 @@ export async function loginWithPassword(
 			"Content-Type": "application/json",
 		},
 		body: JSON.stringify({ username, password }),
-		session,
 		credentials: "include",
-	});
+		...({ session } as object),
+	} as RequestInit);
 	const json = (await response.json()) as ApiEnvelope<Record<string, unknown>>;
 	if (!response.ok || json.success === false) {
 		throw new FlowstokenApiError(json.message || "登录失败", response.status);
