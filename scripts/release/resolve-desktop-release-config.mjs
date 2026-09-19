@@ -218,6 +218,16 @@ export function toGithubEnv(config) {
 		["VETTA_R2_BUCKET", config.r2Bucket],
 		["VETTA_R2_PREFIX", config.r2Prefix],
 	];
+	// FlowsToken open-source branding (CI uses dist:desktop, not dist:opensource)
+	if (config.cloudEnabled === "false") {
+		entries.push(
+			["VETTA_PRODUCT_NAME", "FlowsToken"],
+			["VETTA_EXECUTABLE_NAME", "FlowsToken"],
+			["VETTA_APP_ID", "com.flowstoken.desktop"],
+			["VETTA_PROTOCOL_SCHEME", "flowstoken"],
+			["VETTA_DISABLE_BUILTIN_MARKETPLACE", "1"],
+		);
+	}
 	return entries
 		.filter(([, value]) => value !== "")
 		.map(([key, value]) => `${key}=${value}`)

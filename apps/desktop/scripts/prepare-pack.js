@@ -272,7 +272,7 @@ if (preparedSpeechModel) {
 const appPkg = {
 	name: "vetta",
 	version: appVersion,
-	description: "Vetta Desktop App",
+	description: "FlowsToken Desktop App",
 	author: LINUX_PACKAGE_METADATA.author,
 	homepage: LINUX_PACKAGE_METADATA.homepage,
 	license: LINUX_PACKAGE_METADATA.license,
@@ -707,9 +707,9 @@ const extraResources = resolveExtraResources();
 
 // Write electron-builder config
 const builderConfig = {
-	appId: process.env.VETTA_APP_ID?.trim() || "com.vetta.desktop",
-	productName: process.env.VETTA_PRODUCT_NAME?.trim() || "Vetta",
-	executableName: process.env.VETTA_EXECUTABLE_NAME?.trim() || process.env.VETTA_PRODUCT_NAME?.trim() || "Vetta",
+	appId: process.env.VETTA_APP_ID?.trim() || "com.flowstoken.desktop",
+	productName: process.env.VETTA_PRODUCT_NAME?.trim() || "FlowsToken",
+	executableName: process.env.VETTA_EXECUTABLE_NAME?.trim() || process.env.VETTA_PRODUCT_NAME?.trim() || "FlowsToken",
 	afterPack: join(projectRoot, "scripts", "windows-version-layout.mjs"),
 	electronVersion,
 	electronLanguages: ["zh-CN", "en-US"],
@@ -718,9 +718,9 @@ const builderConfig = {
 	...(releaseInfo ? { releaseInfo } : {}),
 	files: ["**/*", ...extraResources.map(({ from }) => `!${from}/**/*`)],
 	protocols: {
-		name: process.env.VETTA_PRODUCT_NAME?.trim() || "Vetta",
+		name: process.env.VETTA_PRODUCT_NAME?.trim() || "FlowsToken",
 		// Keep scheme stable across forks so deep links / merge stay simple; override with VETTA_PROTOCOL_SCHEME if needed.
-		schemes: [process.env.VETTA_PROTOCOL_SCHEME?.trim() || "vetta"],
+		schemes: [process.env.VETTA_PROTOCOL_SCHEME?.trim() || "flowstoken"],
 	},
 	mac: {
 		target: ["dmg", "zip"],
@@ -759,7 +759,7 @@ const builderConfig = {
 				NSAllowsLocalNetworking: true,
 			},
 			NSLocalNetworkUsageDescription:
-				"Vetta 需要访问本地网络以连接你在局域网内运行的 AI 模型服务（如 Ollama、LM Studio、vLLM 等）。",
+				"FlowsToken 需要访问本地网络以连接你在局域网内运行的 AI 模型服务（如 Ollama、LM Studio、vLLM 等）。",
 			NSBonjourServices: ["_http._tcp", "_https._tcp"],
 		},
 	},
@@ -795,7 +795,7 @@ const builderConfig = {
 	linux: {
 		target: LINUX_RELEASE_TARGETS,
 		category: "Utility",
-		description: "Vetta AI agent desktop application",
+		description: "FlowsToken AI agent desktop application",
 		icon: "build/icon.png",
 		maintainer: LINUX_PACKAGE_METADATA.maintainer,
 		synopsis: "AI agent desktop application",
