@@ -82,10 +82,12 @@ PY
 echo "== public checks =="
 for u in \
   "https://www.flowstoken.com/desktop.html" \
-  "https://www.flowstoken.com/downloads/desktop/FlowsToken-${VER}-arm64.dmg" \
-  "https://www.flowstoken.com/downloads/desktop/FlowsToken-${VER}.dmg" \
-  "https://www.flowstoken.com/downloads/desktop/FlowsToken-${VER}-win-x64.exe" \
-  "https://www.flowstoken.com/downloads/desktop/FlowsToken-${VER}.AppImage"
+  "https://anthropic-api.download/downloads/desktop/FlowsToken-${VER}-arm64.dmg" \
+  "https://anthropic-api.download/downloads/desktop/FlowsToken-${VER}.dmg" \
+  "https://anthropic-api.download/downloads/desktop/FlowsToken-${VER}-win-x64.exe" \
+  "https://anthropic-api.download/downloads/desktop/FlowsToken-${VER}.AppImage" \
+  "https://anthropic-api.download/downloads/desktop/FlowsToken-${VER}.deb" \
+  "https://anthropic-api.download/downloads/desktop/FlowsToken-${VER}.rpm"
  do
   code=$(curl -sS -o /dev/null -w '%{http_code}' -m 20 "$u" || echo ERR)
   echo "$code $u"
