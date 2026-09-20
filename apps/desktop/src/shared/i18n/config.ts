@@ -13,14 +13,14 @@ export type AppLanguage = (typeof SUPPORTED_LANGUAGES)[number];
 export const LANGUAGE_PREFERENCES = ["system", "zh", "en"] as const;
 export type LanguagePreference = (typeof LANGUAGE_PREFERENCES)[number];
 
-/** 用户未写过 language 时的默认偏好：跟随系统。 */
-export const DEFAULT_LANGUAGE_PREFERENCE: LanguagePreference = "system";
+/** 用户未写过 language 时的默认偏好：默认中文。 */
+export const DEFAULT_LANGUAGE_PREFERENCE: LanguagePreference = "zh";
 
 /**
  * 系统 locale 无法解析（空串 / 读取失败）时的最终兜底 UI 语言。
- * 与 FALLBACK_LANGUAGE 分离：无法推断时的默认语言 vs 缺译回退语言。
+ * FlowsToken 客户端默认中文。
  */
-export const DEFAULT_LANGUAGE: AppLanguage = "en";
+export const DEFAULT_LANGUAGE: AppLanguage = "zh";
 
 /** 回退语言：key 缺译文时回退中文，绝不暴露原始 key（见 ADR-0031）。 */
 export const FALLBACK_LANGUAGE: AppLanguage = "zh";

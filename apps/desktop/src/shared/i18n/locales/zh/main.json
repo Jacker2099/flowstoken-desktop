@@ -1,83 +1,83 @@
 {
-	"tray": {
-		"showWindow": "显示窗口",
-		"hideWindow": "隐藏窗口",
-		"quitVetta": "退出 Vetta",
-		"quit": "退出",
-		"hideToTray": "隐藏到托盘"
-	},
-	"menu": {
-		"app": {
-			"title": "Vetta",
-			"about": "关于 Vetta",
-			"services": "服务",
-			"hide": "隐藏 Vetta",
-			"hideOthers": "隐藏其他",
-			"unhide": "全部显示",
-			"quit": "退出 Vetta"
-		},
-		"edit": {
-			"title": "编辑",
-			"undo": "撤销",
-			"redo": "重做",
-			"cut": "剪切",
-			"copy": "复制",
-			"paste": "粘贴",
-			"pasteAndMatchStyle": "粘贴并匹配样式",
-			"delete": "删除",
-			"selectAll": "全选"
-		},
-		"view": {
-			"title": "视图",
-			"reload": "重新加载",
-			"forceReload": "强制重新加载",
-			"toggleDevTools": "切换开发者工具",
-			"resetZoom": "实际大小",
-			"zoomIn": "放大",
-			"zoomOut": "缩小",
-			"toggleFullScreen": "进入全屏幕"
-		},
-		"window": {
-			"title": "窗口",
-			"minimize": "最小化",
-			"zoom": "缩放",
-			"front": "前置全部窗口",
-			"close": "关闭窗口"
-		}
-	},
-	"notification": {
-		"turnComplete": "已完成回答",
-		"turnError": "本轮回答出错",
-		"questionPending": "有问题待确认，点击查看",
-		"sessionFallback": "新会话"
-	},
-	"pet": {
-		"openDevTools": "打开桌宠开发者工具"
-	},
-	"mcpOAuth": {
-		"authorizationSuccessful": "授权成功",
-		"authorizationFailed": "授权失败",
-		"returnToVetta": "你可以关闭此窗口并返回 Vetta。",
-		"closeAndRetry": "你可以关闭此窗口并返回 Vetta 重试。",
-		"missingAuthorizationCode": "缺少授权码",
-		"callbackAlreadySettled": "OAuth 回调已经结束",
-		"callbackTimedOut": "等待浏览器 OAuth 授权超时",
-		"callbackBindFailed": "无法启动 OAuth 回调服务",
-		"devicePageBindFailed": "无法启动设备码展示服务",
-		"connectGitHub": "连接 GitHub",
-		"enterDeviceCode": "请在 GitHub 页面输入此代码，然后点击授权。",
-		"copyCode": "复制代码",
-		"openGitHub": "打开 GitHub 进行授权",
-		"closeAfterAuthorization": "在 Vetta 中完成授权后即可关闭此窗口。",
-		"deviceFlowDisabled": "设备码请求失败（422）。请在 OAuth 或 GitHub App 设置中启用 Device Flow：{{details}}"
-	},
-	"updater": {
-		"errors": {
-			"developmentUnsupported": "开发模式不支持自动更新",
-			"configurationUnavailable": "当前构建未配置更新源",
-			"checkFailed": "检查更新失败",
-			"downloadFailed": "下载更新失败",
-			"installFailed": "安装更新失败"
-		}
-	}
+  "tray": {
+    "showWindow": "显示窗口",
+    "hideWindow": "隐藏窗口",
+    "quitVetta": "退出 FlowsToken",
+    "quit": "退出",
+    "hideToTray": "隐藏到托盘"
+  },
+  "menu": {
+    "app": {
+      "title": "FlowsToken",
+      "about": "关于 FlowsToken",
+      "services": "服务",
+      "hide": "隐藏 FlowsToken",
+      "hideOthers": "隐藏其他",
+      "unhide": "全部显示",
+      "quit": "退出 FlowsToken"
+    },
+    "edit": {
+      "title": "编辑",
+      "undo": "撤销",
+      "redo": "重做",
+      "cut": "剪切",
+      "copy": "复制",
+      "paste": "粘贴",
+      "pasteAndMatchStyle": "粘贴并匹配样式",
+      "delete": "删除",
+      "selectAll": "全选"
+    },
+    "view": {
+      "title": "视图",
+      "reload": "重新加载",
+      "forceReload": "强制重新加载",
+      "toggleDevTools": "切换开发者工具",
+      "resetZoom": "实际大小",
+      "zoomIn": "放大",
+      "zoomOut": "缩小",
+      "toggleFullScreen": "进入全屏幕"
+    },
+    "window": {
+      "title": "窗口",
+      "minimize": "最小化",
+      "zoom": "缩放",
+      "front": "前置全部窗口",
+      "close": "关闭窗口"
+    }
+  },
+  "notification": {
+    "turnComplete": "已完成回答",
+    "turnError": "本轮回答出错",
+    "questionPending": "有问题待确认，点击查看",
+    "sessionFallback": "新会话"
+  },
+  "pet": {
+    "openDevTools": "打开桌宠开发者工具"
+  },
+  "mcpOAuth": {
+    "authorizationSuccessful": "授权成功",
+    "authorizationFailed": "授权失败",
+    "returnToVetta": "你可以关闭此窗口并返回 FlowsToken。",
+    "closeAndRetry": "你可以关闭此窗口并返回 FlowsToken 重试。",
+    "missingAuthorizationCode": "缺少授权码",
+    "callbackAlreadySettled": "OAuth 回调已经结束",
+    "callbackTimedOut": "等待浏览器 OAuth 授权超时",
+    "callbackBindFailed": "无法启动 OAuth 回调服务",
+    "devicePageBindFailed": "无法启动设备码展示服务",
+    "connectGitHub": "连接 GitHub",
+    "enterDeviceCode": "请在 GitHub 页面输入此代码，然后点击授权。",
+    "copyCode": "复制代码",
+    "openGitHub": "打开 GitHub 进行授权",
+    "closeAfterAuthorization": "在 FlowsToken 中完成授权后即可关闭此窗口。",
+    "deviceFlowDisabled": "设备码请求失败（422）。请在 OAuth 或 GitHub App 设置中启用 Device Flow：{{details}}"
+  },
+  "updater": {
+    "errors": {
+      "developmentUnsupported": "开发模式不支持自动更新",
+      "configurationUnavailable": "当前构建未配置更新源",
+      "checkFailed": "检查更新失败",
+      "downloadFailed": "下载更新失败",
+      "installFailed": "安装更新失败"
+    }
+  }
 }

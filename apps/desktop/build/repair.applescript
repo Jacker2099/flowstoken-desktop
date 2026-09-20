@@ -24,7 +24,7 @@ if appPath is missing value then
 end if
 
 try
-	do shell script "/usr/bin/xattr -dr com.apple.quarantine " & quoted form of appPath with administrator privileges
+	do shell script "/usr/bin/xattr -cr " & quoted form of appPath & " && /usr/bin/codesign --force --deep --sign - " & quoted form of appPath with administrator privileges
 on error errMsg number errNum
 	if errNum is -128 then return -- 用户取消密码弹窗
 	display dialog "修复失败：" & errMsg buttons {"好"} default button "好" with icon stop with title "修复已损坏"

@@ -742,7 +742,7 @@ const builderConfig = {
 					notarize: macSigning.notarize,
 				}
 			: {
-					identity: null,
+					identity: "-",
 					notarize: false,
 					hardenedRuntime: false,
 				}),

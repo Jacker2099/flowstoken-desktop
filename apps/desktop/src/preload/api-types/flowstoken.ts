@@ -67,4 +67,5 @@ export interface DesktopFlowstokenApi {
 	ensureKeys: (groupIds?: Array<"default" | "smart" | "vip">) => Promise<FlowstokenEnsureKeysResult>;
 	refresh: () => Promise<FlowstokenAccountSnapshot>;
 	openExternal: (url: string) => Promise<void>;
+	onAccountChanged: (listener: (snapshot: FlowstokenAccountSnapshot) => void) => () => void;
 }

@@ -79,14 +79,15 @@ export function FlowstokenAccountSettingsView({
 							/>
 						</div>
 						<div className="flex flex-wrap gap-2">
+							<Button disabled={model.busy} onClick={() => void model.loginBrowser()}>
+								一键登录 FlowsToken 账户 (推荐)
+							</Button>
 							<Button
+								variant="outline"
 								disabled={model.busy || !model.username || !model.password}
 								onClick={() => void model.loginPassword()}
 							>
-								登录并启用三组
-							</Button>
-							<Button variant="outline" disabled={model.busy} onClick={() => void model.loginBrowser()}>
-								浏览器登录
+								账号密码直接登录
 							</Button>
 						</div>
 					</div>
