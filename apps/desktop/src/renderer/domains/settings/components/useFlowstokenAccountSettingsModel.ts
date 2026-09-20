@@ -32,6 +32,17 @@ export function useFlowstokenAccountSettingsModel(): FlowstokenAccountSettingsMo
 			const next = await window.vetta.flowstoken.refresh();
 			setSnapshot(next);
 			if (next.lastError) setError(next.lastError);
+			// 自动静默检测：若已登录且有未接入分组，全自动在后台补齐，无需人工点击
+			if (next.loggedIn && next.groups?.some((g) => !g.wired)) {
+				void window.vetta.flowstoken
+					.ensureKeys()
+					.then((res) => {
+						if (res.snapshot) setSnapshot(res.snapshot);
+					})
+					.catch((e) => {
+						console.warn("[AccountSettings] Auto ensureKeys failed:", e);
+					});
+			}
 		} catch (err) {
 			setError(err instanceof Error ? err.message : String(err));
 		} finally {
@@ -41,6 +52,12 @@ export function useFlowstokenAccountSettingsModel(): FlowstokenAccountSettingsMo
 
 	useEffect(() => {
 		void refresh();
+		const unsub = window.vetta?.flowstoken?.onAccountChanged?.((nextSnapshot) => {
+			setSnapshot(nextSnapshot);
+		});
+		return () => {
+			if (typeof unsub === "function") unsub();
+		};
 	}, [refresh]);
 
 	const run = useCallback(async (action: () => Promise<void>) => {

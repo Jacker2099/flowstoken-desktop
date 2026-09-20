@@ -47,14 +47,27 @@ export function FlowstokenAuthGate({ children }: FlowstokenAuthGateProps): JSX.E
 		try {
 			const res = await window.vetta.flowstoken.loginWithBrowser();
 			if (res.ok && res.snapshot?.loggedIn) {
-				setStatusText("登录成功！正在加载普通组、智能组与官方组通道...");
+				let currentSnap = res.snapshot;
+				// 如果有任何分组尚未接入，自动进行二次保障同步，无需人工点击
+				if (currentSnap.groups?.some((g) => !g.wired)) {
+					setStatusText("登录成功！正在全自动同步普通组、智能组与官方组...");
+					try {
+						const ensureRes = await window.vetta.flowstoken.ensureKeys();
+						if (ensureRes.snapshot) {
+							currentSnap = ensureRes.snapshot;
+						}
+					} catch (e) {
+						console.warn("[FlowstokenAuthGate] Secondary key ensure failed:", e);
+					}
+				}
+				setStatusText("登录成功！普通组、智能组与官方组已全部就绪...");
 				showToast({
 					variant: "success",
 					title: "登录成功",
 					message: "已启用智能组、普通组与官方组，可在下方随时切换模型与通道",
 					durationMs: 5000,
 				});
-				setSnapshot(res.snapshot);
+				setSnapshot(currentSnap);
 			} else {
 				const msg = res.error || "登录未完成或已取消";
 				setError(msg.includes("已关闭") ? "登录窗口已关闭，请重新点击登录" : msg);

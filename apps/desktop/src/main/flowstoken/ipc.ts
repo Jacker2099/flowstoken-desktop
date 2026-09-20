@@ -6,6 +6,7 @@ import {
 	loginWithCredentials,
 	logoutAccount,
 	refreshAccount,
+	setSnapshotBroadcastListener,
 } from "./account-service.js";
 import type { FlowstokenGroupId } from "./constants.js";
 import type { FlowstokenAccountSnapshot } from "./types.js";
@@ -30,6 +31,7 @@ function broadcastAccountSnapshot(snapshot: FlowstokenAccountSnapshot): void {
 }
 
 export function registerFlowstokenAccountIpc(): () => void {
+	setSnapshotBroadcastListener(broadcastAccountSnapshot);
 	ipcMain.handle(CHANNELS.GET_SNAPSHOT, async () => getAccountSnapshot({ includeUsage: true }));
 	ipcMain.handle(CHANNELS.LOGIN_BROWSER, async () => {
 		const result = await loginWithBrowser();

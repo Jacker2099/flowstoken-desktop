@@ -33,6 +33,7 @@ import type {
 	FlowstokenEnsureKeysResult,
 	FlowstokenGroupKeyState,
 	FlowstokenLoginResult,
+	FlowstokenUserSnapshot,
 } from "./types.js";
 
 function usd(quota: number): string {
@@ -62,6 +63,44 @@ async function groupStates(): Promise<FlowstokenGroupKeyState[]> {
 			enabled: wired,
 		};
 	});
+}
+
+type SnapshotListener = (snapshot: FlowstokenAccountSnapshot) => void;
+let snapshotBroadcastListener: SnapshotListener | null = null;
+
+export function setSnapshotBroadcastListener(listener: SnapshotListener): void {
+	snapshotBroadcastListener = listener;
+}
+
+function broadcastSnapshot(snapshot: FlowstokenAccountSnapshot): void {
+	if (snapshotBroadcastListener) {
+		try {
+			snapshotBroadcastListener(snapshot);
+		} catch {
+			// Non-blocking
+		}
+	}
+}
+
+let autoSyncPromise: Promise<void> | null = null;
+
+function triggerBackgroundSyncIfUnwired(user: FlowstokenUserSnapshot | null, groups: FlowstokenGroupKeyState[]): void {
+	if (!user) return;
+	if (groups.length > 0 && groups.every((g) => g.wired)) return;
+	if (autoSyncPromise) return;
+
+	autoSyncPromise = (async () => {
+		try {
+			const res = await ensureGroupKeysAndProviders();
+			if (res.snapshot) {
+				broadcastSnapshot(res.snapshot);
+			}
+		} catch (e) {
+			console.warn("[FlowsToken] Auto-sync unwired keys in background failed:", e);
+		} finally {
+			autoSyncPromise = null;
+		}
+	})();
 }
 
 export async function getAccountSnapshot(options?: {
@@ -102,12 +141,15 @@ export async function getAccountSnapshot(options?: {
 		}
 	}
 
+	const groups = await groupStates();
+	triggerBackgroundSyncIfUnwired(user, groups);
+
 	return {
 		loggedIn: true,
 		user,
 		balanceUsd: usd(user.quota),
 		usedUsd: usd(user.usedQuota),
-		groups: await groupStates(),
+		groups,
 		usage,
 		siteUrl: FLOWSTOKEN_SITE_URL,
 		topupUrl: FLOWSTOKEN_TOPUP_URL,
@@ -117,35 +159,42 @@ export async function getAccountSnapshot(options?: {
 	};
 }
 
-async function wireProvider(
-	providerId: string,
-	labelZh: string,
-	apiKey: string,
-	modelIds: readonly string[],
+async function wireAllProviders(
+	items: Array<{
+		providerId: string;
+		labelZh: string;
+		apiKey: string;
+		modelIds: readonly string[];
+	}>,
 ): Promise<void> {
 	const service = getDesktopModelSettingsService();
 	const config = await service.getConfig();
-	const existing = config.providers[providerId];
+	const nextProviders = { ...config.providers };
+	for (const item of items) {
+		const existing = nextProviders[item.providerId];
+		nextProviders[item.providerId] = {
+			...existing,
+			source: "template",
+			templateId: item.providerId,
+			displayName: `FlowsToken ${item.labelZh}`,
+			icon: "openai",
+			api: "openai-completions",
+			baseUrl: FLOWSTOKEN_OPENAI_BASE_URL,
+			apiKey: item.apiKey,
+			models:
+				item.modelIds.length > 0
+					? item.modelIds.map((id) => ({ id, name: id, api: "openai-completions" }))
+					: (existing?.models ?? []),
+			modelsSyncedAt: new Date().toISOString(),
+		};
+	}
 	await service.replaceConfig({
 		...config,
-		providers: {
-			...config.providers,
-			[providerId]: {
-				...existing,
-				source: "template",
-				templateId: providerId,
-				displayName: `FlowsToken ${labelZh}`,
-				icon: "openai",
-				api: "openai-completions",
-				baseUrl: FLOWSTOKEN_OPENAI_BASE_URL,
-				apiKey,
-				models:
-					modelIds.length > 0
-						? modelIds.map((id) => ({ id, name: id, api: "openai-completions" }))
-						: (existing?.models ?? []),
-				modelsSyncedAt: new Date().toISOString(),
-			},
-		},
+		providers: nextProviders,
+		defaultModel:
+			!config.defaultModel || !config.defaultModel.startsWith("flowstoken-")
+				? "flowstoken-smart/Bestoo-Auto"
+				: config.defaultModel,
 	});
 }
 
@@ -199,6 +248,13 @@ export async function ensureGroupKeysAndProviders(groupIds?: FlowstokenGroupId[]
 		const targets = FLOWSTOKEN_GROUPS.filter((g) => !groupIds || groupIds.includes(g.id));
 		let tokens = await listTokens(getFlowstokenSession());
 		const liveGroupModels = await fetchGroupModels();
+		const wireBatch: Array<{
+			providerId: string;
+			labelZh: string;
+			apiKey: string;
+			modelIds: readonly string[];
+		}> = [];
+
 		for (const group of targets) {
 			let managed = findManagedToken(tokens, group.id);
 			if (!managed) {
@@ -212,8 +268,18 @@ export async function ensureGroupKeysAndProviders(groupIds?: FlowstokenGroupId[]
 			if (!managed) throw new FlowstokenApiError(`无法准备「${group.labelZh}」令牌`);
 			const key = await revealTokenKey(getFlowstokenSession(), managed.id);
 			const modelsToWire = liveGroupModels[group.id]?.length > 0 ? liveGroupModels[group.id] : group.defaultModels;
-			await wireProvider(group.providerId, group.labelZh, key, modelsToWire);
+			wireBatch.push({
+				providerId: group.providerId,
+				labelZh: group.labelZh,
+				apiKey: key,
+				modelIds: modelsToWire,
+			});
 		}
+
+		if (wireBatch.length > 0) {
+			await wireAllProviders(wireBatch);
+		}
+
 		return { ok: true, created, reused, snapshot: await getAccountSnapshot() };
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
@@ -228,20 +294,17 @@ export async function ensureGroupKeysAndProviders(groupIds?: FlowstokenGroupId[]
 }
 
 async function afterLogin(): Promise<FlowstokenAccountSnapshot> {
-	const ensured = await ensureGroupKeysAndProviders();
-	try {
-		const service = getDesktopModelSettingsService();
-		const config = await service.getConfig();
-		if (!config.defaultModel || !config.defaultModel.startsWith("flowstoken-")) {
-			await service.replaceConfig({
-				...config,
-				defaultModel: "flowstoken-smart/Bestoo-Auto",
-			});
+	let lastSnapshot: FlowstokenAccountSnapshot | null = null;
+	// Retry up to 3 times with exponential backoff to ensure keys and providers are completely wired
+	for (let attempt = 1; attempt <= 3; attempt++) {
+		const ensured = await ensureGroupKeysAndProviders();
+		lastSnapshot = ensured.snapshot ?? null;
+		if (ensured.ok && lastSnapshot?.groups.every((g) => g.wired)) {
+			break;
 		}
-	} catch {
-		// Non-blocking
+		await new Promise((resolve) => setTimeout(resolve, 600 * attempt));
 	}
-	return ensured.snapshot ?? (await getAccountSnapshot());
+	return lastSnapshot ?? (await getAccountSnapshot());
 }
 
 export async function loginWithBrowser(): Promise<FlowstokenLoginResult> {
