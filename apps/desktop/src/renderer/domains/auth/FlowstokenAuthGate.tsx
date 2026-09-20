@@ -1,4 +1,5 @@
 import { Button } from "@shared/components/ui/button";
+import { showToast } from "@shared/store/toast-atoms";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import type { FlowstokenAccountSnapshot } from "../../../preload/api-types/flowstoken.js";
 
@@ -47,6 +48,12 @@ export function FlowstokenAuthGate({ children }: FlowstokenAuthGateProps): JSX.E
 			const res = await window.vetta.flowstoken.loginWithBrowser();
 			if (res.ok && res.snapshot?.loggedIn) {
 				setStatusText("登录成功！正在加载普通组、智能组与官方组通道...");
+				showToast({
+					variant: "success",
+					title: "登录成功",
+					message: "已启用智能组、普通组与官方组，可在下方随时切换模型与通道",
+					durationMs: 5000,
+				});
 				setSnapshot(res.snapshot);
 			} else {
 				const msg = res.error || "登录未完成或已取消";

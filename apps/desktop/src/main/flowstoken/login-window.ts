@@ -151,6 +151,7 @@ export function loginViaBrowserWindow(): Promise<FlowstokenUserSnapshot> {
 			win.webContents.removeListener("did-navigate", onNavigate);
 			win.webContents.removeListener("did-navigate-in-page", onNavigate);
 			win.webContents.removeListener("did-finish-load", onNavigate);
+			void ses.cookies.flushStore().catch(() => {});
 			fn();
 			if (!win.isDestroyed()) win.close();
 		};
