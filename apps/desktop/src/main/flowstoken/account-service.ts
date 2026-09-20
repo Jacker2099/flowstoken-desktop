@@ -1,10 +1,14 @@
+import { net } from "electron";
 import { getDesktopModelSettingsService } from "../models/model-settings-host.js";
 import {
 	FLOWSTOKEN_CONSOLE_URL,
+	FLOWSTOKEN_DEFAULT_GROUP_MODELS,
 	FLOWSTOKEN_GROUPS,
+	FLOWSTOKEN_OFFICIAL_GROUP_MODELS,
 	FLOWSTOKEN_OPENAI_BASE_URL,
 	FLOWSTOKEN_QUOTA_PER_USD,
 	FLOWSTOKEN_SITE_URL,
+	FLOWSTOKEN_SMART_GROUP_MODELS,
 	FLOWSTOKEN_TOPUP_URL,
 	type FlowstokenGroupId,
 } from "./constants.js";
@@ -145,6 +149,48 @@ async function wireProvider(
 	});
 }
 
+async function fetchGroupModels(): Promise<Record<FlowstokenGroupId, readonly string[]>> {
+	try {
+		const controller = new AbortController();
+		const timer = setTimeout(() => controller.abort(), 6000);
+		const resp = await net.fetch("https://www.flowstoken.com/api/pricing", {
+			signal: controller.signal,
+		});
+		clearTimeout(timer);
+		if (resp.ok) {
+			const json = (await resp.json()) as { data?: Array<{ model_name?: string; enable_groups?: string[] }> };
+			if (Array.isArray(json.data) && json.data.length > 0) {
+				const map: Record<FlowstokenGroupId, string[]> = {
+					default: [],
+					smart: [],
+					vip: [],
+				};
+				for (const item of json.data) {
+					const name = item.model_name?.trim();
+					const groups = Array.isArray(item.enable_groups) ? item.enable_groups : [];
+					if (!name) continue;
+					if (groups.includes("default")) map.default.push(name);
+					if (groups.includes("smart")) map.smart.push(name);
+					if (groups.includes("vip")) map.vip.push(name);
+				}
+				if (!map.smart.includes("Bestoo-Auto")) {
+					map.smart.unshift("Bestoo-Auto");
+				}
+				if (map.default.length > 0 && map.vip.length > 0) {
+					return map;
+				}
+			}
+		}
+	} catch {
+		// Non-blocking, fallback to static definitions
+	}
+	return {
+		default: FLOWSTOKEN_DEFAULT_GROUP_MODELS,
+		smart: FLOWSTOKEN_SMART_GROUP_MODELS,
+		vip: FLOWSTOKEN_OFFICIAL_GROUP_MODELS,
+	};
+}
+
 export async function ensureGroupKeysAndProviders(groupIds?: FlowstokenGroupId[]): Promise<FlowstokenEnsureKeysResult> {
 	const created: string[] = [];
 	const reused: string[] = [];
@@ -152,6 +198,7 @@ export async function ensureGroupKeysAndProviders(groupIds?: FlowstokenGroupId[]
 		await fetchSelf(getFlowstokenSession());
 		const targets = FLOWSTOKEN_GROUPS.filter((g) => !groupIds || groupIds.includes(g.id));
 		let tokens = await listTokens(getFlowstokenSession());
+		const liveGroupModels = await fetchGroupModels();
 		for (const group of targets) {
 			let managed = findManagedToken(tokens, group.id);
 			if (!managed) {
@@ -164,7 +211,8 @@ export async function ensureGroupKeysAndProviders(groupIds?: FlowstokenGroupId[]
 			}
 			if (!managed) throw new FlowstokenApiError(`无法准备「${group.labelZh}」令牌`);
 			const key = await revealTokenKey(getFlowstokenSession(), managed.id);
-			await wireProvider(group.providerId, group.labelZh, key, group.defaultModels);
+			const modelsToWire = liveGroupModels[group.id]?.length > 0 ? liveGroupModels[group.id] : group.defaultModels;
+			await wireProvider(group.providerId, group.labelZh, key, modelsToWire);
 		}
 		return { ok: true, created, reused, snapshot: await getAccountSnapshot() };
 	} catch (error) {
@@ -181,6 +229,18 @@ export async function ensureGroupKeysAndProviders(groupIds?: FlowstokenGroupId[]
 
 async function afterLogin(): Promise<FlowstokenAccountSnapshot> {
 	const ensured = await ensureGroupKeysAndProviders();
+	try {
+		const service = getDesktopModelSettingsService();
+		const config = await service.getConfig();
+		if (!config.defaultModel || !config.defaultModel.startsWith("flowstoken-")) {
+			await service.replaceConfig({
+				...config,
+				defaultModel: "flowstoken-smart/Bestoo-Auto",
+			});
+		}
+	} catch {
+		// Non-blocking
+	}
 	return ensured.snapshot ?? (await getAccountSnapshot());
 }
 

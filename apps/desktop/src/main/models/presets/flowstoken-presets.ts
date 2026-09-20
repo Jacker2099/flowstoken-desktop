@@ -21,6 +21,15 @@ function isFlowsTokenChatModel(id: string): boolean {
  */
 export const FLOWSTOKEN_PRESET_PROVIDERS: readonly PresetProviderDef[] = [
 	{
+		id: "flowstoken-default",
+		displayName: "FlowsToken 普通组",
+		icon: "openai",
+		api: "openai-completions",
+		baseUrl: FT_BASE,
+		fetcher: "openai-compatible",
+		isChatModel: isFlowsTokenChatModel,
+	},
+	{
 		id: "flowstoken-normal",
 		displayName: "FlowsToken 普通组",
 		icon: "openai",

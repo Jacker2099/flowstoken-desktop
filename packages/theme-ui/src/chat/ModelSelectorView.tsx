@@ -117,11 +117,62 @@ export function ModelSelectorView({
 	const searchInputRef = useRef<HTMLInputElement>(null);
 	const modelListRef = useRef<HTMLDivElement>(null);
 
-	const filteredGroups = useMemo(() => {
-		const query = normalizeSearchValue(searchQuery);
-		if (!query) return groups;
+	const hasFlowstokenGroups = useMemo(() => {
+		return groups.some((g) => g.provider.startsWith("flowstoken-"));
+	}, [groups]);
 
-		return groups.flatMap((group) => {
+	const [activeTab, setActiveTab] = useState<string>("all");
+	const [vendorFilter, setVendorFilter] = useState<string>("all");
+
+	useEffect(() => {
+		if (!open) return;
+		if (selectedOption?.provider?.startsWith("flowstoken-")) {
+			if (selectedOption.provider === "flowstoken-smart") {
+				setActiveTab("flowstoken-smart");
+			} else if (selectedOption.provider === "flowstoken-default" || selectedOption.provider === "flowstoken-normal") {
+				setActiveTab("flowstoken-default");
+			} else if (selectedOption.provider === "flowstoken-official") {
+				setActiveTab("flowstoken-official");
+			}
+		} else if (hasFlowstokenGroups) {
+			setActiveTab("flowstoken-smart");
+		} else {
+			setActiveTab("all");
+		}
+		setVendorFilter("all");
+	}, [open, selectedOption, hasFlowstokenGroups]);
+
+	const filteredGroups = useMemo(() => {
+		let currentGroups = groups;
+		if (activeTab === "flowstoken-smart") {
+			currentGroups = groups.filter((g) => g.provider === "flowstoken-smart");
+		} else if (activeTab === "flowstoken-default") {
+			currentGroups = groups.filter((g) => g.provider === "flowstoken-default" || g.provider === "flowstoken-normal");
+		} else if (activeTab === "flowstoken-official") {
+			currentGroups = groups.filter((g) => g.provider === "flowstoken-official");
+		}
+
+		if (activeTab === "flowstoken-official" && vendorFilter !== "all") {
+			currentGroups = currentGroups
+				.map((g) => {
+					const models = g.models.filter((m) => {
+						const id = m.modelId.toLowerCase();
+						if (vendorFilter === "anthropic") return id.includes("claude") || id.startsWith("anthropic/");
+						if (vendorFilter === "openai") return id.includes("gpt") || id.startsWith("openai/") || id.includes("o1") || id.includes("o3") || id.includes("o4");
+						if (vendorFilter === "deepseek") return id.includes("deepseek");
+						if (vendorFilter === "google") return id.includes("gemini") || id.startsWith("google/") || id.includes("gemma");
+						if (vendorFilter === "domestic") return id.includes("kimi") || id.includes("minimax") || id.includes("glm") || id.includes("qwen") || id.includes("grok") || id.includes("moonshot") || id.includes("zai") || id.includes("alibaba") || id.includes("step");
+						return true;
+					});
+					return { ...g, models };
+				})
+				.filter((g) => g.models.length > 0);
+		}
+
+		const query = normalizeSearchValue(searchQuery);
+		if (!query) return currentGroups;
+
+		return currentGroups.flatMap((group) => {
 			const models = group.models.filter((model) =>
 				[
 					model.displayName,
@@ -133,7 +184,7 @@ export function ModelSelectorView({
 			);
 			return models.length > 0 ? [{ ...group, models }] : [];
 		});
-	}, [groups, searchQuery]);
+	}, [groups, activeTab, vendorFilter, searchQuery]);
 
 	const handleOpenChange = useCallback(
 		(nextOpen: boolean) => {
@@ -193,6 +244,14 @@ export function ModelSelectorView({
 		setSearchQuery("");
 	};
 
+	const groupBadge = useMemo(() => {
+		if (!selectedOption?.provider) return null;
+		if (selectedOption.provider === "flowstoken-smart") return "智能";
+		if (selectedOption.provider === "flowstoken-default" || selectedOption.provider === "flowstoken-normal") return "普通";
+		if (selectedOption.provider === "flowstoken-official") return "官方";
+		return null;
+	}, [selectedOption]);
+
 	return (
 		<DropdownMenu open={open} onOpenChange={handleOpenChange}>
 			<DropdownMenuTrigger asChild>
@@ -201,18 +260,29 @@ export function ModelSelectorView({
 					title={selectedOption?.displayName ?? labels.placeholder}
 					className={cn(
 						// 输入卡 @container：窄宽缩短模型名、藏推理档，避免工具栏换行
-						"flex min-w-0 max-w-[5.5rem] items-center gap-1 rounded-full border border-transparent px-1.5 py-0.5 text-[11px] text-foreground transition-colors focus:outline-none focus-visible:outline-none data-[state=open]:bg-accent/60 data-[state=open]:text-foreground @[22rem]:max-w-[9rem] @[28rem]:max-w-[13rem]",
+						"flex min-w-0 max-w-[6.5rem] items-center gap-1 rounded-full border border-transparent px-1.5 py-0.5 text-[11px] text-foreground transition-colors focus:outline-none focus-visible:outline-none data-[state=open]:bg-accent/60 data-[state=open]:text-foreground @[22rem]:max-w-[10rem] @[28rem]:max-w-[14rem]",
 						className,
 						classNames?.trigger,
 					)}
 				>
-					{selectedOption && (
+					{groupBadge ? (
+						<span
+							className={cn(
+								"shrink-0 rounded px-1 text-[9px] font-semibold leading-[14px]",
+								groupBadge === "智能" && "bg-primary/20 text-primary font-bold",
+								groupBadge === "普通" && "bg-blue-500/15 text-blue-600 dark:text-blue-400",
+								groupBadge === "官方" && "bg-amber-500/15 text-amber-600 dark:text-amber-400",
+							)}
+						>
+							{groupBadge}
+						</span>
+					) : selectedOption ? (
 						<ProviderIcon
 							symbol={groups.find((g) => g.provider === selectedOption.provider)?.icon}
 							className="h-3 w-3 shrink-0"
 						/>
-					)}
-					<span className="min-w-0 flex-1 truncate text-left">
+					) : null}
+					<span className="min-w-0 flex-1 truncate text-left font-medium">
 						{selectedOption?.displayName ?? labels.placeholder}
 					</span>
 					{currentLevel && (
@@ -220,7 +290,7 @@ export function ModelSelectorView({
 							{labels.levelLabel(currentLevel)}
 						</span>
 					)}
-					<span className="icon-[solar--alt-arrow-down-linear] h-2.5 w-2.5 shrink-0" />
+					<span className="icon-[solar--alt-arrow-down-linear] h-2.5 w-2.5 shrink-0 text-muted-foreground" />
 				</button>
 			</DropdownMenuTrigger>
 			<AnimatePresence>
@@ -230,8 +300,7 @@ export function ModelSelectorView({
 						asChild
 						align="start"
 						className={cn(
-							// 底色跟搜索框走同一个变量：搜索行去掉底色后要和面板融成一块
-						"w-[min(16rem,calc(100vw-2rem))] min-w-[180px] max-w-[16rem] overflow-visible bg-background p-0",
+							"w-[min(22rem,calc(100vw-2rem))] min-w-[260px] max-w-[22rem] overflow-visible bg-background p-0 shadow-lg",
 							classNames?.content,
 						)}
 						style={{ animation: "none" }}
@@ -246,10 +315,143 @@ export function ModelSelectorView({
 								<ThemeSurface slot="chat.modelSelectorMenu" />
 								<div
 									className={cn(
-										"relative z-10 flex max-h-[min(360px,60vh)] flex-col overflow-hidden rounded-[inherit] p-1",
+										"relative z-10 flex max-h-[min(400px,65vh)] flex-col overflow-hidden rounded-[inherit] p-1",
 										classNames?.contentInner,
 									)}
 								>
+									{/* FlowsToken 三组切换 Tabs */}
+									{hasFlowstokenGroups && (
+										<div className="shrink-0 p-1 border-b border-border/40">
+											<div className="grid grid-cols-4 gap-1 rounded-lg bg-muted/60 p-0.5 text-[11px]">
+												<button
+													type="button"
+													onClick={() => {
+														setActiveTab("flowstoken-smart");
+														setVendorFilter("all");
+													}}
+													className={cn(
+														"flex items-center justify-center gap-1 rounded-md px-1.5 py-1 font-medium transition-all",
+														activeTab === "flowstoken-smart"
+															? "bg-background text-primary shadow-sm font-semibold"
+															: "text-muted-foreground hover:text-foreground",
+													)}
+												>
+													<span className="icon-[solar--magic-stick-3-linear] size-3 shrink-0" />
+													智能组
+												</button>
+												<button
+													type="button"
+													onClick={() => {
+														setActiveTab("flowstoken-default");
+														setVendorFilter("all");
+													}}
+													className={cn(
+														"flex items-center justify-center gap-1 rounded-md px-1.5 py-1 font-medium transition-all",
+														activeTab === "flowstoken-default"
+															? "bg-background text-primary shadow-sm font-semibold"
+															: "text-muted-foreground hover:text-foreground",
+													)}
+												>
+													<span className="icon-[solar--bolt-linear] size-3 shrink-0" />
+													普通组
+												</button>
+												<button
+													type="button"
+													onClick={() => {
+														setActiveTab("flowstoken-official");
+														setVendorFilter("all");
+													}}
+													className={cn(
+														"flex items-center justify-center gap-1 rounded-md px-1.5 py-1 font-medium transition-all",
+														activeTab === "flowstoken-official"
+															? "bg-background text-primary shadow-sm font-semibold"
+															: "text-muted-foreground hover:text-foreground",
+													)}
+												>
+													<span className="icon-[solar--crown-linear] size-3 shrink-0" />
+													官方组
+												</button>
+												<button
+													type="button"
+													onClick={() => {
+														setActiveTab("all");
+														setVendorFilter("all");
+													}}
+													className={cn(
+														"flex items-center justify-center gap-1 rounded-md px-1.5 py-1 font-medium transition-all",
+														activeTab === "all"
+															? "bg-background text-primary shadow-sm font-semibold"
+															: "text-muted-foreground hover:text-foreground",
+													)}
+												>
+													全部
+												</button>
+											</div>
+										</div>
+									)}
+
+									{/* 官方组厂商快捷筛选 Chips */}
+									{activeTab === "flowstoken-official" && (
+										<div className="shrink-0 flex items-center gap-1 overflow-x-auto px-1.5 pt-1.5 pb-0.5 text-[10px] no-scrollbar">
+											{[
+												{ id: "all", label: "全部厂商" },
+												{ id: "anthropic", label: "Claude" },
+												{ id: "openai", label: "OpenAI" },
+												{ id: "deepseek", label: "DeepSeek" },
+												{ id: "google", label: "Google" },
+												{ id: "domestic", label: "国内原厂" },
+											].map((chip) => (
+												<button
+													key={chip.id}
+													type="button"
+													onClick={() => setVendorFilter(chip.id)}
+													className={cn(
+														"shrink-0 rounded-full px-2 py-0.5 text-[10px] transition-colors",
+														vendorFilter === chip.id
+															? "bg-primary/20 font-semibold text-primary"
+															: "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground",
+													)}
+												>
+													{chip.label}
+												</button>
+											))}
+										</div>
+									)}
+
+									{/* 智能组专属推荐卡片 */}
+									{activeTab === "flowstoken-smart" && !searchQuery && (
+										<div className="shrink-0 p-1.5">
+											<div
+												onClick={() => {
+													const smartOption = groups.find((g) => g.provider === "flowstoken-smart")?.models[0];
+													if (smartOption) handleModelSelect(smartOption.key);
+												}}
+												className="group flex cursor-pointer flex-col gap-1 rounded-lg border border-primary/25 bg-gradient-to-br from-primary/10 via-primary/5 to-transparent p-2.5 transition-all hover:border-primary/50 hover:shadow-sm"
+											>
+												<div className="flex items-center justify-between">
+													<div className="flex items-center gap-1.5 text-xs font-semibold text-primary">
+														<span className="icon-[solar--magic-stick-3-bold] size-3.5 text-primary" />
+														Bestoo-Auto (智能选模)
+													</div>
+													<span className="rounded-full bg-primary/20 px-1.5 py-0.5 text-[9px] font-semibold text-primary">
+														推荐 · 智能组专享
+													</span>
+												</div>
+												<p className="text-[11px] leading-relaxed text-muted-foreground">
+													智能组唯一核心模型。自动根据任务难易度调度 Claude Sonnet 4.6、GPT-5.6 Sol、DeepSeek 等顶尖模型，兼顾超高智商与性价比。
+												</p>
+												<div className="mt-1 flex items-center justify-between text-[10px] text-primary/90 font-medium">
+													<span>
+														{selectedModel === "flowstoken-smart/Bestoo-Auto"
+															? "✓ 当前已选用此模型"
+															: "点击直接选用此模型"}
+													</span>
+													<span className="icon-[solar--arrow-right-linear] size-3 transition-transform group-hover:translate-x-0.5" />
+												</div>
+											</div>
+										</div>
+									)}
+
 									<div className="shrink-0 p-0.5">
 										<div className="relative" onKeyDown={handleSearchKeyDown}>
 											<span

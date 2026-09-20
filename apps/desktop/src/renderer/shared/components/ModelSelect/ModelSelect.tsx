@@ -101,6 +101,14 @@ export function ModelSelect({
 		: undefined;
 	const levelLabel = (v: string) => t(`modelSelect.reasoningLevel.${v}`, { defaultValue: v });
 
+	const groupBadge = useMemo(() => {
+		if (!selectedOption) return null;
+		if (selectedOption.provider === "flowstoken-smart") return "智能";
+		if (selectedOption.provider === "flowstoken-default" || selectedOption.provider === "flowstoken-normal") return "普通";
+		if (selectedOption.provider === "flowstoken-official") return "官方";
+		return null;
+	}, [selectedOption]);
+
 	const groups = useMemo(
 		() =>
 			[...grouped.entries()].map(([provider, models]) => ({
@@ -112,11 +120,43 @@ export function ModelSelect({
 		[grouped, iconFor, labelFor],
 	);
 
-	const filteredGroups = useMemo(() => {
-		const query = normalizeSearchValue(searchQuery);
-		if (!query) return groups;
+	const hasFlowstokenGroups = useMemo(() => {
+		return groups.some((g) => g.provider.startsWith("flowstoken-"));
+	}, [groups]);
 
-		return groups.flatMap((group) => {
+	const [activeTab, setActiveTab] = useState<string>("all");
+
+	useEffect(() => {
+		if (!open) return;
+		if (selectedOption?.provider?.startsWith("flowstoken-")) {
+			if (selectedOption.provider === "flowstoken-smart") {
+				setActiveTab("flowstoken-smart");
+			} else if (selectedOption.provider === "flowstoken-default" || selectedOption.provider === "flowstoken-normal") {
+				setActiveTab("flowstoken-default");
+			} else if (selectedOption.provider === "flowstoken-official") {
+				setActiveTab("flowstoken-official");
+			}
+		} else if (hasFlowstokenGroups) {
+			setActiveTab("flowstoken-smart");
+		} else {
+			setActiveTab("all");
+		}
+	}, [open, selectedOption, hasFlowstokenGroups]);
+
+	const filteredGroups = useMemo(() => {
+		let currentGroups = groups;
+		if (activeTab === "flowstoken-smart") {
+			currentGroups = groups.filter((g) => g.provider === "flowstoken-smart");
+		} else if (activeTab === "flowstoken-default") {
+			currentGroups = groups.filter((g) => g.provider === "flowstoken-default" || g.provider === "flowstoken-normal");
+		} else if (activeTab === "flowstoken-official") {
+			currentGroups = groups.filter((g) => g.provider === "flowstoken-official");
+		}
+
+		const query = normalizeSearchValue(searchQuery);
+		if (!query) return currentGroups;
+
+		return currentGroups.flatMap((group) => {
 			const models = group.models.filter((model) =>
 				[model.displayName, model.modelId, model.provider, group.label, ...(model.tags ?? [])].some((text) =>
 					normalizeSearchValue(text).includes(query),
@@ -124,7 +164,7 @@ export function ModelSelect({
 			);
 			return models.length > 0 ? [{ ...group, models }] : [];
 		});
-	}, [groups, searchQuery]);
+	}, [groups, activeTab, searchQuery]);
 
 	// Auto-apply the configured default when nothing is selected yet (chat input).
 	useEffect(() => {
@@ -208,7 +248,20 @@ export function ModelSelect({
 						triggerClassName,
 					)}
 				>
-					{selectedOption && <ProviderIcon symbol={iconFor(selectedOption.provider)} className="h-3.5 w-3.5" />}
+					{groupBadge ? (
+						<span
+							className={cn(
+								"shrink-0 rounded px-1 py-0.5 text-[9px] font-semibold tracking-tight",
+								groupBadge === "智能" && "bg-primary/20 text-primary",
+								groupBadge === "普通" && "bg-blue-500/15 text-blue-600 dark:text-blue-400",
+								groupBadge === "官方" && "bg-amber-500/15 text-amber-600 dark:text-amber-400",
+							)}
+						>
+							{groupBadge}
+						</span>
+					) : selectedOption ? (
+						<ProviderIcon symbol={iconFor(selectedOption.provider)} className="h-3.5 w-3.5" />
+					) : null}
 					<span className="min-w-0 flex-1 truncate text-left">
 						{selectedOption?.displayName ?? placeholder ?? t("modelSelect.placeholder")}
 					</span>
@@ -237,6 +290,65 @@ export function ModelSelect({
 							<div className="relative overflow-visible rounded-[inherit]">
 								<ThemeSurface slot="chat.modelSelectorMenu" />
 								<div className="relative z-10 flex max-h-[min(420px,65vh)] flex-col overflow-hidden rounded-[inherit] p-1">
+									{/* FlowsToken 三组切换 Tabs */}
+									{hasFlowstokenGroups && (
+										<div className="shrink-0 p-1 border-b border-border/40">
+											<div className="grid grid-cols-4 gap-1 rounded-lg bg-muted/60 p-0.5 text-[11px]">
+												<button
+													type="button"
+													onClick={() => setActiveTab("flowstoken-smart")}
+													className={cn(
+														"flex items-center justify-center gap-1 rounded-md px-1.5 py-1 font-medium transition-all",
+														activeTab === "flowstoken-smart"
+															? "bg-background text-primary shadow-sm font-semibold"
+															: "text-muted-foreground hover:text-foreground",
+													)}
+												>
+													<span className="icon-[solar--magic-stick-3-linear] size-3 shrink-0" />
+													智能组
+												</button>
+												<button
+													type="button"
+													onClick={() => setActiveTab("flowstoken-default")}
+													className={cn(
+														"flex items-center justify-center gap-1 rounded-md px-1.5 py-1 font-medium transition-all",
+														activeTab === "flowstoken-default"
+															? "bg-background text-primary shadow-sm font-semibold"
+															: "text-muted-foreground hover:text-foreground",
+													)}
+												>
+													<span className="icon-[solar--bolt-linear] size-3 shrink-0" />
+													普通组
+												</button>
+												<button
+													type="button"
+													onClick={() => setActiveTab("flowstoken-official")}
+													className={cn(
+														"flex items-center justify-center gap-1 rounded-md px-1.5 py-1 font-medium transition-all",
+														activeTab === "flowstoken-official"
+															? "bg-background text-primary shadow-sm font-semibold"
+															: "text-muted-foreground hover:text-foreground",
+													)}
+												>
+													<span className="icon-[solar--crown-linear] size-3 shrink-0" />
+													官方组
+												</button>
+												<button
+													type="button"
+													onClick={() => setActiveTab("all")}
+													className={cn(
+														"flex items-center justify-center gap-1 rounded-md px-1.5 py-1 font-medium transition-all",
+														activeTab === "all"
+															? "bg-background text-primary shadow-sm font-semibold"
+															: "text-muted-foreground hover:text-foreground",
+													)}
+												>
+													全部
+												</button>
+											</div>
+										</div>
+									)}
+
 									<div className="shrink-0 p-1">
 										<div className="relative" onKeyDown={handleSearchKeyDown}>
 											<span

@@ -104,21 +104,36 @@ export function useModelOptions(): UseModelOptionsResult {
 			list.push(m);
 			groups.set(m.provider, list);
 		}
-		return groups;
+		// Sort providers so FlowsToken groups are always first in order: smart, default, official
+		const priorityOrder = ["flowstoken-smart", "flowstoken-default", "flowstoken-normal", "flowstoken-official"];
+		const sorted = new Map<string, ModelOption[]>();
+		for (const p of priorityOrder) {
+			if (groups.has(p)) {
+				sorted.set(p, groups.get(p)!);
+				groups.delete(p);
+			}
+		}
+		for (const [k, v] of groups.entries()) {
+			sorted.set(k, v);
+		}
+		return sorted;
 	}, [options]);
 
 	const iconFor = (provider: string): string | undefined => {
 		const local = config?.providers[provider] as { icon?: string } | undefined;
 		const remote = (remoteProviders as Record<string, { icon?: string }>)[provider];
-		return local?.icon ?? remote?.icon;
+		return local?.icon ?? remote?.icon ?? "openai";
 	};
 
 	const labelFor = (provider: string): string => {
+		if (provider === "flowstoken-smart") return "FlowsToken 智能组";
+		if (provider === "flowstoken-default" || provider === "flowstoken-normal") return "FlowsToken 普通组";
+		if (provider === "flowstoken-official") return "FlowsToken 官方组";
 		const local = config?.providers[provider] as { displayName?: string } | undefined;
 		const remote = (remoteProviders as Record<string, { displayName?: string }>)[provider];
 		if (local?.displayName) return local.displayName;
 		if (remote?.displayName) return remote.displayName;
-		if (provider === "vetta-go") return "Vetta Go";
+		if (provider === "vetta-go") return "FlowsToken Go";
 		return provider;
 	};
 
