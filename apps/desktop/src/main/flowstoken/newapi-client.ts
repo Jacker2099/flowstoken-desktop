@@ -18,48 +18,41 @@ export class FlowstokenApiError extends Error {
 	}
 }
 
-async function apiFetch<T>(
-	session: Session,
-	path: string,
-	init: RequestInit & { query?: Record<string, string | number | undefined> } = {},
-): Promise<T> {
-	const url = new URL(path, FLOWSTOKEN_API_ORIGIN);
-	if (init.query) {
-		for (const [key, value] of Object.entries(init.query)) {
-			if (value === undefined || value === "") continue;
-			url.searchParams.set(key, String(value));
-		}
-	}
-	const headers = new Headers(init.headers);
-	if (init.body && !headers.has("Content-Type")) {
-		headers.set("Content-Type", "application/json");
-	}
-	headers.set("Accept", "application/json");
+/**
+ * Production NewAPI auth on www.flowstoken.com:
+ * - HttpOnly cookie `new_api_refresh` (Path=/api/user/auth, SameSite=Strict)
+ * - SPA calls POST /api/user/auth/refresh then uses Bearer access_token
+ * - GET /api/user/self requires Authorization: Bearer (refresh cookie is NOT sent there)
+ *
+ * Desktop used to poll /api/user/self with partition cookies only, so one-click login
+ * never resolved after the popup reached the console.
+ */
+let cachedAccessToken: string | null = null;
 
-	const response = await net.fetch(url.toString(), {
-		method: init.method ?? "GET",
-		headers,
-		body: init.body,
-		credentials: "include",
-		// Electron net.fetch accepts session; typings lag behind.
-		...({ session } as object),
-	} as RequestInit);
+export function clearCachedAccessToken(): void {
+	cachedAccessToken = null;
+}
 
-	const text = await response.text();
-	let json: ApiEnvelope<T> | null = null;
-	try {
-		json = text ? (JSON.parse(text) as ApiEnvelope<T>) : null;
-	} catch {
-		throw new FlowstokenApiError(`响应不是 JSON（HTTP ${response.status}）`, response.status);
-	}
+export function getCachedAccessToken(): string | null {
+	return cachedAccessToken;
+}
 
-	if (!response.ok) {
-		throw new FlowstokenApiError(json?.message || `HTTP ${response.status}`, response.status);
-	}
-	if (json && json.success === false) {
-		throw new FlowstokenApiError(json.message || "请求失败", response.status);
-	}
-	return (json?.data ?? (json as unknown as T)) as T;
+export function setCachedAccessToken(token: string | null | undefined): void {
+	const trimmed = typeof token === "string" ? token.trim() : "";
+	cachedAccessToken = trimmed || null;
+}
+
+type RefreshPayload = {
+	access_token?: string;
+	accessToken?: string;
+	token?: string;
+	user?: Record<string, unknown>;
+} & Record<string, unknown>;
+
+function pickAccessToken(data: RefreshPayload | null | undefined): string | null {
+	if (!data) return null;
+	const raw = data.access_token ?? data.accessToken ?? data.token;
+	return typeof raw === "string" && raw.trim() ? raw.trim() : null;
 }
 
 function mapUser(data: Record<string, unknown>): FlowstokenUserSnapshot {
@@ -75,9 +68,154 @@ function mapUser(data: Record<string, unknown>): FlowstokenUserSnapshot {
 	};
 }
 
+async function sessionFetch(session: Session, url: string, init: RequestInit): Promise<Response> {
+	if (typeof session.fetch === "function") {
+		return session.fetch(url, {
+			...init,
+			credentials: init.credentials ?? "include",
+		});
+	}
+	return net.fetch(url, {
+		...init,
+		credentials: init.credentials ?? "include",
+		...({ session } as object),
+	} as RequestInit);
+}
+
+export async function refreshAuth(session: Session): Promise<{
+	accessToken: string;
+	user: FlowstokenUserSnapshot;
+}> {
+	const url = new URL("/api/user/auth/refresh", FLOWSTOKEN_API_ORIGIN).toString();
+	const response = await sessionFetch(session, url, {
+		method: "POST",
+		headers: {
+			Accept: "application/json",
+			"Cache-Control": "no-store",
+		},
+	});
+
+	const text = await response.text();
+	let json: ApiEnvelope<RefreshPayload> | null = null;
+	try {
+		json = text ? (JSON.parse(text) as ApiEnvelope<RefreshPayload>) : null;
+	} catch {
+		throw new FlowstokenApiError(`刷新会话响应不是 JSON（HTTP ${response.status}）`, response.status);
+	}
+
+	if (!response.ok || json?.success === false) {
+		clearCachedAccessToken();
+		throw new FlowstokenApiError(json?.message || `刷新会话失败（HTTP ${response.status}）`, response.status);
+	}
+
+	const data = (json?.data ?? null) as RefreshPayload | null;
+	const accessToken = pickAccessToken(data);
+	if (!accessToken) {
+		clearCachedAccessToken();
+		throw new FlowstokenApiError("刷新会话未返回 access_token", response.status);
+	}
+	setCachedAccessToken(accessToken);
+
+	if (data?.user && typeof data.user === "object") {
+		return { accessToken, user: mapUser(data.user) };
+	}
+	if (data && data.id !== undefined) {
+		return { accessToken, user: mapUser(data) };
+	}
+	return { accessToken, user: await fetchSelfWithBearer(session, accessToken) };
+}
+
+async function ensureAccessToken(session: Session): Promise<string> {
+	if (cachedAccessToken) return cachedAccessToken;
+	return (await refreshAuth(session)).accessToken;
+}
+
+async function apiFetch<T>(
+	session: Session,
+	path: string,
+	init: RequestInit & { query?: Record<string, string | number | undefined> } = {},
+): Promise<T> {
+	const url = new URL(path, FLOWSTOKEN_API_ORIGIN);
+	if (init.query) {
+		for (const [key, value] of Object.entries(init.query)) {
+			if (value === undefined || value === "") continue;
+			url.searchParams.set(key, String(value));
+		}
+	}
+
+	const send = async (accessToken: string): Promise<Response> => {
+		const headers = new Headers(init.headers);
+		if (init.body && !headers.has("Content-Type")) {
+			headers.set("Content-Type", "application/json");
+		}
+		headers.set("Accept", "application/json");
+		headers.set("Authorization", `Bearer ${accessToken}`);
+		return sessionFetch(session, url.toString(), {
+			method: init.method ?? "GET",
+			headers,
+			body: init.body,
+		});
+	};
+
+	let accessToken = await ensureAccessToken(session);
+	let response = await send(accessToken);
+	if (response.status === 401) {
+		clearCachedAccessToken();
+		accessToken = (await refreshAuth(session)).accessToken;
+		response = await send(accessToken);
+	}
+
+	const text = await response.text();
+	let json: ApiEnvelope<T> | null = null;
+	try {
+		json = text ? (JSON.parse(text) as ApiEnvelope<T>) : null;
+	} catch {
+		throw new FlowstokenApiError(`响应不是 JSON（HTTP ${response.status}）`, response.status);
+	}
+	if (!response.ok) {
+		throw new FlowstokenApiError(json?.message || `HTTP ${response.status}`, response.status);
+	}
+	if (json && json.success === false) {
+		throw new FlowstokenApiError(json.message || "请求失败", response.status);
+	}
+	return (json?.data ?? (json as unknown as T)) as T;
+}
+
+async function fetchSelfWithBearer(session: Session, accessToken: string): Promise<FlowstokenUserSnapshot> {
+	const url = new URL("/api/user/self", FLOWSTOKEN_API_ORIGIN).toString();
+	const response = await sessionFetch(session, url, {
+		method: "GET",
+		headers: {
+			Accept: "application/json",
+			Authorization: `Bearer ${accessToken}`,
+		},
+	});
+	const text = await response.text();
+	let json: ApiEnvelope<Record<string, unknown>> | null = null;
+	try {
+		json = text ? (JSON.parse(text) as ApiEnvelope<Record<string, unknown>>) : null;
+	} catch {
+		throw new FlowstokenApiError(`响应不是 JSON（HTTP ${response.status}）`, response.status);
+	}
+	if (!response.ok || json?.success === false) {
+		throw new FlowstokenApiError(json?.message || `HTTP ${response.status}`, response.status);
+	}
+	return mapUser((json?.data ?? json) as Record<string, unknown>);
+}
+
 export async function fetchSelf(session: Session): Promise<FlowstokenUserSnapshot> {
-	const data = await apiFetch<Record<string, unknown>>(session, "/api/user/self");
-	return mapUser(data);
+	try {
+		return (await refreshAuth(session)).user;
+	} catch (refreshError) {
+		if (cachedAccessToken) {
+			try {
+				return await fetchSelfWithBearer(session, cachedAccessToken);
+			} catch {
+				clearCachedAccessToken();
+			}
+		}
+		throw refreshError;
+	}
 }
 
 export async function loginWithPassword(
@@ -88,21 +226,39 @@ export async function loginWithPassword(
 ): Promise<FlowstokenUserSnapshot> {
 	const url = new URL("/api/user/login", FLOWSTOKEN_API_ORIGIN);
 	url.searchParams.set("turnstile", turnstileToken);
-	const response = await net.fetch(url.toString(), {
+	const response = await sessionFetch(session, url.toString(), {
 		method: "POST",
 		headers: {
 			Accept: "application/json",
 			"Content-Type": "application/json",
 		},
 		body: JSON.stringify({ username, password }),
-		credentials: "include",
-		...({ session } as object),
-	} as RequestInit);
-	const json = (await response.json()) as ApiEnvelope<Record<string, unknown>>;
+	});
+	const json = (await response.json()) as ApiEnvelope<RefreshPayload>;
 	if (!response.ok || json.success === false) {
 		throw new FlowstokenApiError(json.message || "登录失败", response.status);
 	}
-	if (json.data) return mapUser(json.data);
+
+	const token = pickAccessToken(json.data ?? undefined);
+	if (token) setCachedAccessToken(token);
+
+	const userRaw =
+		json.data?.user && typeof json.data.user === "object"
+			? json.data.user
+			: json.data && json.data.id !== undefined
+				? json.data
+				: null;
+
+	if (!cachedAccessToken) {
+		try {
+			return (await refreshAuth(session)).user;
+		} catch {
+			if (userRaw) return mapUser(userRaw);
+			throw new FlowstokenApiError("登录成功但无法刷新访问令牌");
+		}
+	}
+
+	if (userRaw) return mapUser(userRaw);
 	return fetchSelf(session);
 }
 

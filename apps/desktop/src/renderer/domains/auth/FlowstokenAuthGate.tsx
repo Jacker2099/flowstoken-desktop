@@ -52,7 +52,8 @@ export function FlowstokenAuthGate({ children }: FlowstokenAuthGateProps): JSX.E
 				setStatusText("登录成功！正在同步「普通/智能/官方」通道密钥...");
 				setSnapshot(res.snapshot);
 			} else {
-				setError(res.error || "登录未完成或已取消");
+				const msg = res.error || "登录未完成或已取消";
+				setError(msg.includes("已关闭") ? "已取消登录" : msg);
 				setStatusText(null);
 			}
 		} catch (err) {
