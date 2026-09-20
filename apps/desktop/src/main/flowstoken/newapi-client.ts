@@ -69,14 +69,37 @@ function mapUser(data: Record<string, unknown>): FlowstokenUserSnapshot {
 }
 
 async function sessionFetch(session: Session, url: string, init: RequestInit): Promise<Response> {
+	const headers = new Headers(init.headers);
+	try {
+		let cookies = await session.cookies.get({ url });
+		if (!cookies.length) {
+			cookies = await session.cookies.get({});
+		}
+		const cookieStr = cookies.map((c) => `${c.name}=${c.value}`).join("; ");
+		if (cookieStr && !headers.has("Cookie")) {
+			headers.set("Cookie", cookieStr);
+		}
+	} catch {
+		// Non-blocking
+	}
+
+	if (!headers.has("Origin")) {
+		headers.set("Origin", FLOWSTOKEN_API_ORIGIN);
+	}
+	if (!headers.has("Referer")) {
+		headers.set("Referer", `${FLOWSTOKEN_API_ORIGIN}/`);
+	}
+
 	if (typeof session.fetch === "function") {
 		return session.fetch(url, {
 			...init,
+			headers,
 			credentials: init.credentials ?? "include",
 		});
 	}
 	return net.fetch(url, {
 		...init,
+		headers,
 		credentials: init.credentials ?? "include",
 		...({ session } as object),
 	} as RequestInit);

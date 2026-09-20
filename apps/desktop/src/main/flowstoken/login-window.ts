@@ -51,7 +51,7 @@ async function probeLoginInPage(win: BrowserWindow): Promise<FlowstokenUserSnaps
 	if (win.isDestroyed() || win.webContents.isDestroyed()) return null;
 	try {
 		const result = (await win.webContents.executeJavaScript(
-			`(+async () => {
+			`(async () => {
 				try {
 					const res = await fetch('/api/user/auth/refresh', {
 						method: 'POST',
@@ -60,21 +60,45 @@ async function probeLoginInPage(win: BrowserWindow): Promise<FlowstokenUserSnaps
 						headers: { 'Accept': 'application/json', 'Cache-Control': 'no-store' },
 					});
 					const body = await res.json().catch(() => null);
-					if (!res.ok || !body || body.success === false || !body.data) return { ok: false };
-					const data = body.data;
-					const accessToken = data.access_token || data.accessToken || data.token || null;
-					const user = data.user && typeof data.user === 'object' ? data.user : data;
-					if (!accessToken) return { ok: false };
-					return { ok: true, accessToken, user };
-				} catch {
-					return { ok: false };
-				}
+					if (res.ok && body && body.success !== false && body.data) {
+						const data = body.data;
+						const accessToken = data.access_token || data.accessToken || data.token || null;
+						const user = data.user && typeof data.user === 'object' ? data.user : data;
+						if (accessToken) return { ok: true, accessToken, user };
+					}
+				} catch {}
+				try {
+					const resSelf = await fetch('/api/user/self', {
+						method: 'GET',
+						credentials: 'include',
+						headers: { 'Accept': 'application/json' },
+					});
+					if (resSelf.ok) {
+						const body = await resSelf.json().catch(() => null);
+						if (body && body.success !== false && body.data) {
+							return { ok: true, user: body.data };
+						}
+					}
+				} catch {}
+				try {
+					const raw = window.localStorage.getItem('user');
+					if (raw) {
+						const localUser = JSON.parse(raw);
+						if (localUser && (localUser.id || localUser.username)) {
+							const accessToken = localUser.token || localUser.access_token || null;
+							return { ok: true, accessToken, user: localUser };
+						}
+					}
+				} catch {}
+				return { ok: false };
 			})()`,
 			true,
 		)) as InPageRefreshResult | null;
 
-		if (!result?.ok || !result.accessToken) return null;
-		setCachedAccessToken(result.accessToken);
+		if (!result?.ok) return null;
+		if (result.accessToken) {
+			setCachedAccessToken(result.accessToken);
+		}
 		if (result.user && result.user.id !== undefined) {
 			return mapUserFromUnknown(result.user);
 		}
@@ -156,7 +180,7 @@ export function loginViaBrowserWindow(): Promise<FlowstokenUserSnapshot> {
 
 		const timer = setInterval(() => {
 			void tryProbe();
-		}, 1200);
+		}, 800);
 
 		win.webContents.on("did-navigate", onNavigate);
 		win.webContents.on("did-navigate-in-page", onNavigate);
