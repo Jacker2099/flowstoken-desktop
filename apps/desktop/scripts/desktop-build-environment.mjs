@@ -2,6 +2,7 @@ import { resolveMacSigningConfig } from "./mac-signing-config.mjs";
 import { resolveSpeechInputBuildConfig } from "./speech-input-build-config.js";
 import { resolveSystemPluginSelection } from "./stage-system-plugins.mjs";
 import { resolveUpdatePublishConfig } from "./resolve-update-publish-config.mjs";
+import { isFlowsTokenUpdateFeed } from "../../../branding/flowstoken/update-feed.mjs";
 
 export const OPEN_SOURCE_BUILD_DEFAULTS = Object.freeze({
 	VETTA_BUILD_ENV: "opensource",
@@ -271,7 +272,8 @@ export function validateDesktopBuildEnvironment({
 	} else if (cloudFlag === "false") {
 		if (readValue(env, "VETTA_SERVER_URL")) errors.push("VETTA_SERVER_URL must be empty for an open-source build");
 		if (readValue(env, "VETTA_SITE_URL")) errors.push("VETTA_SITE_URL must be empty for an open-source build");
-		if (updateConfig && updateConfig.provider !== "github") {
+		// FlowsToken: open-source builds may also use our self-hosted generic feed.
+		if (updateConfig && updateConfig.provider !== "github" && !isFlowsTokenUpdateFeed(updateConfig)) {
 			errors.push("open-source builds must use VETTA_UPDATE_PROVIDER=github");
 		}
 	}

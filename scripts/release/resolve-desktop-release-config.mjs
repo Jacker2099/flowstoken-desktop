@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { FLOWSTOKEN_UPDATE_URL } from "../../branding/flowstoken/update-feed.mjs";
 
 /**
  * Resolve desktop-release configuration.
@@ -220,7 +221,13 @@ export function toGithubEnv(config) {
 	];
 	// FlowsToken open-source branding (CI uses dist:desktop, not dist:opensource)
 	if (config.cloudEnabled === "false") {
+		// Update from our own server, not GitHub Releases (see branding/flowstoken/update-feed.mjs).
+		for (const entry of entries) {
+			if (entry[0] === "VETTA_UPDATE_PROVIDER") entry[1] = "generic";
+			if (entry[0] === "VETTA_UPDATE_URL") entry[1] = "";
+		}
 		entries.push(
+			["VETTA_UPDATE_URL", FLOWSTOKEN_UPDATE_URL],
 			["VETTA_PRODUCT_NAME", "FlowsToken"],
 			["VETTA_EXECUTABLE_NAME", "FlowsToken"],
 			["VETTA_APP_ID", "com.flowstoken.desktop"],

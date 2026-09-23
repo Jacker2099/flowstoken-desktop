@@ -14,8 +14,10 @@
     "Linux"
   ],
   "release": {
-    "channel": "github-releases",
-    "workflow": ".github/workflows/desktop-release.yml",
+    "channel": "self-hosted",
+    "updateFeed": "https://www.flowstoken.com/downloads/desktop",
+    "artifactStore": "GitHub Releases (Jacker2099/flowstoken-desktop), mirrored to the server",
+    "workflow": ".github/workflows/flowstoken-release.yml",
     "syncWithUpstream": true
   }
 }
