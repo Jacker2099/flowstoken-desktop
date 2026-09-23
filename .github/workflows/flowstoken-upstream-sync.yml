@@ -133,7 +133,8 @@ jobs:
           } > ".github/release-notes/v${VERSION}.md"
           git add apps/desktop/package.json "$MARKER" ".github/release-notes/v${VERSION}.md"
 
-      - name: Install dependencies
+      # Not the shared frozen install: after a merge bun.lock must be refreshed against the merged manifests.
+      - name: Refresh workspace dependencies after the merge
         if: steps.detect.outputs.skip != 'true'
         run: bun install
 
