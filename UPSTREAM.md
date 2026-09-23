@@ -10,7 +10,24 @@ git remote -v
 # upstream → openvetta/open-vetta
 ```
 
-## Merge procedure
+## Automatic sync (2026-09-23)
+
+Everything below is automated; the manual procedure remains as the fallback.
+
+| Piece | What it does |
+|------|---------|
+| `.github/workflows/flowstoken-upstream-sync.yml` | Daily 10:17 Beijing (or manual): if Open Vetta has a new **release** tag not in `branding/flowstoken/UPSTREAM_SYNCED`, merge it (`merge.conflictStyle=diff3`), resolve conflicts with `scripts/flowstoken/resolve-upstream-conflicts.mjs`, bump the FlowsToken patch version, write `.github/release-notes/v<ver>.md`, run brand guard + release-notes check + `bun run check` + `test:quality` + `test:packaging` + `test:changed`, push `main`, then dispatch `flowstoken-release`. Any refusal/failure: nothing ships, the attempt goes to branch `upstream-sync/<tag>` and an issue labelled `upstream-sync` is opened (server forwards it to Telegram). |
+| `.github/workflows/flowstoken-release.yml` | Tags `v<version>` (GITHUB_TOKEN push, so upstream's tag-triggered release does not fire), runs upstream `desktop-release` as a non-publishing dispatch (all platforms, unsigned macOS allowed), downloads the artifacts, merges macOS metadata, publishes the GitHub Release and verifies its feed. |
+| `branding/flowstoken/tests/*.test.mjs` | Brand guard: FlowsToken branding, self-hosted update feed, account login/key sync wiring, the four group presets, Bestoo AI identity, marketplace off. Run `node --test branding/flowstoken/tests/*.test.mjs`. |
+| Server `ft-desktop-release-sync.py` (flowstoken-deploy, every 10 min) | Mirrors a newer GitHub Release into `www.flowstoken.com/downloads/desktop` after size+sha512 checks (feeds last), keeps current+previous, updates desktop.html/install.sh versions and the Aliyun drive, Telegram. |
+
+Conflict rules: `*.json` 3-way key merge (keys FlowsToken changed keep ours — this is how our version survives), release notes keep ours, `bun.lock` takes upstream then `bun install`, text hunks where both sides only appended keep both; everything else stops the sync.
+
+To keep future syncs automatic, **add FlowsToken code in new files** (`branding/flowstoken/**`, `apps/desktop/src/main/flowstoken/**`, new `*.test.ts`) and keep edits to upstream files to one-line hooks. Never add FlowsToken tests to upstream test lists in `package.json`; put them under `branding/flowstoken/tests/`.
+
+Versioning: FlowsToken has its own version line from 0.6.0 (upstream was at 0.5.59); upstream tags are fetched as `upstream/<tag>` so they never collide with ours.
+
+## Merge procedure (manual fallback)
 
 ```bash
 git fetch upstream

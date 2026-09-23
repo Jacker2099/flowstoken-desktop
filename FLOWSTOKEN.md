@@ -41,7 +41,7 @@ cd apps/desktop && bun run dev
 - `VETTA_EXECUTABLE_NAME=FlowsToken`
 - `VETTA_CLOUD_ENABLED=false`
 - `VETTA_DISABLE_BUILTIN_MARKETPLACE=1`
-- 更新源：`Jacker2099/flowstoken-desktop`
+- 更新源：自 0.6.0 起为 `https://www.flowstoken.com/downloads/desktop`（`branding/flowstoken/update-feed.mjs`，CI 经 `resolve-desktop-release-config.mjs` 注入 generic provider）；GitHub Releases 仍是制品仓库并承接 ≤0.5.61 老客户端的升级
 
 本地打包：
 
@@ -58,3 +58,7 @@ cd apps/desktop && bun run dist:opensource
 ## Upstream
 
 合并 Open Vetta 时务必保留本文件与 `UPSTREAM.md` 中列出的 FlowsToken 叠加层（账户服务、预设、品牌与市场关闭）。
+
+## 自动发版
+
+见 `UPSTREAM.md`「Automatic sync」：每日自动合并上游正式版 → 检查全过自动发版 → 服务器 10 分钟内镜像上线。自有功能改动：改完 bump `apps/desktop/package.json` 版本、写发布说明、推 main，然后手动运行 `flowstoken-release` 工作流。macOS 目前未做 Developer ID 签名与公证，Mac 客户端能检测到更新但可能无法原地安装（需从官网下载）；签名办好后配置 `MACOS_CERTIFICATE_*` / `APPLE_*` secrets 即可。
