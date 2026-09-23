@@ -17,6 +17,10 @@ on:
         description: "Why this release (shown in the run name)"
         type: string
         required: false
+      reuse_build_run:
+        description: "Retry only: publish from an existing desktop-release run (must have built the commit the version tag points to)"
+        type: string
+        required: false
 
 run-name: "flowstoken-release ${{ github.ref_name }} ${{ inputs.reason }}"
 
@@ -68,6 +72,7 @@ jobs:
           node scripts/release/release-notes.mjs --check
 
       - name: Tag the release commit
+        if: inputs.reuse_build_run == ''
         run: |
           TAG="${{ steps.v.outputs.tag }}"
           REMOTE="$(git ls-remote --tags origin "refs/tags/${TAG}" | cut -f1)"
@@ -87,6 +92,14 @@ jobs:
         id: build
         run: |
           TAG="${{ steps.v.outputs.tag }}"
+          if [ -n "${{ inputs.reuse_build_run }}" ]; then
+            RUN_ID="${{ inputs.reuse_build_run }}"
+            BUILT="$(gh run view "$RUN_ID" -R "$REPO" --json headSha --jq .headSha)"
+            TAGGED="$(git ls-remote --tags origin "refs/tags/${TAG}^{}" "refs/tags/${TAG}" | tail -1 | cut -f1)"
+            test -n "$TAGGED" && test "$BUILT" = "$TAGGED" || { echo "::error::run ${RUN_ID} built ${BUILT}, ${TAG} is ${TAGGED}"; exit 1; }
+            echo "run_id=${RUN_ID}" >> "$GITHUB_OUTPUT"
+            echo "Reusing https://github.com/${REPO}/actions/runs/${RUN_ID} (built ${BUILT})"
+          else
           SINCE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           gh workflow run desktop-release.yml -R "$REPO" --ref "${TAG}" \
             -f release_target=github -f channel=default -f notes="flowstoken ${TAG}"
@@ -100,14 +113,50 @@ jobs:
           test -n "$RUN_ID" || { echo "::error::desktop-release run did not start"; exit 1; }
           echo "run_id=${RUN_ID}" >> "$GITHUB_OUTPUT"
           echo "Waiting for https://github.com/${REPO}/actions/runs/${RUN_ID}"
-          gh run watch "$RUN_ID" -R "$REPO" --interval 60 --exit-status > /dev/null
+          gh run watch "$RUN_ID" -R "$REPO" --interval 60 > /dev/null || true
+          fi
+          # Gate on upstream's quality job and all four platform builds. Upstream's post-build "verify" jobs
+          # hard-code Vetta install paths (/opt/Vetta/Vetta) and (in v0.5.59) break on Windows paths, so they
+          # are reported, not gating; FlowsToken runs its own package verification below.
+          gh run view "$RUN_ID" -R "$REPO" --json jobs --jq '.jobs[] | "\(.name)\t\(.conclusion)"' | tee jobs.tsv
+          for job in "validate and test Desktop release" "build linux" "build windows" "build macos-arm64" "build macos-x64"; do
+            grep -qP "^${job}\tsuccess$" jobs.tsv || { echo "::error::upstream job '${job}' did not succeed"; exit 1; }
+          done
+          grep -P "^verify " jobs.tsv | grep -vP "\tsuccess$" | while IFS=$'\t' read -r name result; do
+            echo "::warning::upstream ${name} = ${result} (not a FlowsToken gate)"
+          done
 
-      - name: Collect build artifacts
+      - name: Collect build artifacts (from the build checkpoints)
         run: |
-          mkdir -p dl apps/desktop/release
-          gh run download "${{ steps.build.outputs.run_id }}" -R "$REPO" -p 'desktop-*' -D dl
-          find dl -type f -exec mv -f {} apps/desktop/release/ \;
+          mkdir -p ckpt apps/desktop/release
+          for platform in linux windows macos-arm64 macos-x64; do
+            gh run download "${{ steps.build.outputs.run_id }}" -R "$REPO" -n "release-build-${platform}" -D "ckpt/${platform}"
+            mkdir -p "ckpt/${platform}/x" && tar -xf "ckpt/${platform}/release-build.tar" -C "ckpt/${platform}/x"
+            src="ckpt/${platform}/x/release"
+            # Both macOS builds emit latest-mac.yml; name them per arch for merge:updates:mac.
+            case "$platform" in
+              macos-arm64) mv "$src/latest-mac.yml" "$src/latest-mac-arm64.yml" ;;
+              macos-x64) mv "$src/latest-mac.yml" "$src/latest-mac-x64.yml" ;;
+            esac
+            find "$src" -maxdepth 1 -type f \( -name '*.AppImage' -o -name '*.blockmap' -o -name '*.deb' -o -name '*.dmg' \
+              -o -name '*.exe' -o -name '*.msi' -o -name '*.rpm' -o -name '*.zip' -o -name 'latest*.yml' \) \
+              -exec mv -f {} apps/desktop/release/ \;
+          done
+          rm -rf ckpt
           ls -la apps/desktop/release
+
+      - name: Verify Linux packages (FlowsToken install paths)
+        working-directory: apps/desktop
+        env:
+          VETTA_PRODUCT_NAME: FlowsToken
+          VETTA_EXECUTABLE_NAME: FlowsToken
+        run: |
+          sudo apt-get update -q && sudo apt-get install --no-install-recommends -y rpm >/dev/null
+          node scripts/verify-linux-update.mjs --release
+          node scripts/verify-linux-packages.mjs
+          docker run --rm --volume "${PWD}/release:/release:ro" ubuntu:24.04 bash -euo pipefail -c '
+            apt-get update -q >/dev/null && apt-get install --yes /release/*.deb >/dev/null
+            test -x /opt/FlowsToken/FlowsToken && test -f /opt/FlowsToken/resources/package-type'
 
       - name: Merge macOS update metadata
         working-directory: apps/desktop
