@@ -1,0 +1,185 @@
+name: flowstoken-upstream-sync
+
+# Daily: when Open Vetta publishes a new release, merge it into main while keeping every FlowsToken
+# customization, run the full check set plus the FlowsToken brand guard, and — only if everything
+# passes — bump the FlowsToken version and hand over to flowstoken-release, which ships it.
+#
+# Conflicts are resolved only by scripts/flowstoken/resolve-upstream-conflicts.mjs (fixed rules). Anything
+# it refuses, or any failing check, stops the sync: nothing is released, the attempt is pushed to an
+# `upstream-sync/<tag>` branch and an issue labelled `upstream-sync` is opened (the FlowsToken server
+# forwards it to Telegram).
+#
+# Secret FT_SYNC_TOKEN (fine-grained PAT, this repo only: Contents + Workflows write) is needed because
+# upstream merges usually touch .github/workflows, which GitHub forbids the built-in token to push.
+
+on:
+  schedule:
+    - cron: "17 2 * * *" # 10:17 Beijing
+  workflow_dispatch:
+    inputs:
+      upstream_tag:
+        description: "Upstream release tag to merge (default: latest Open Vetta release)"
+        type: string
+        required: false
+      force:
+        description: "Re-run even if this upstream tag was already synced"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  issues: write
+  actions: write
+
+concurrency:
+  group: flowstoken-upstream-sync
+  cancel-in-progress: false
+
+env:
+  UPSTREAM_REPO: openvetta/open-vetta
+  MARKER: branding/flowstoken/UPSTREAM_SYNCED
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.FT_SYNC_TOKEN || github.token }}
+
+      - name: Detect a new upstream release
+        id: detect
+        run: |
+          TAG="${{ inputs.upstream_tag }}"
+          [ -n "$TAG" ] || TAG="$(gh api "repos/${UPSTREAM_REPO}/releases/latest" --jq .tag_name)"
+          SYNCED="$(cat "$MARKER" 2>/dev/null || echo none)"
+          echo "upstream=${TAG} synced=${SYNCED}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          if [ "$TAG" = "$SYNCED" ] && [ "${{ inputs.force }}" != "true" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v4
+        if: steps.detect.outputs.skip != 'true'
+        with:
+          node-version: 22
+
+      - uses: oven-sh/setup-bun@v2
+        if: steps.detect.outputs.skip != 'true'
+        with:
+          bun-version: "1.3.7"
+
+      - name: Merge upstream (FlowsToken-preserving rules)
+        id: merge
+        if: steps.detect.outputs.skip != 'true'
+        run: |
+          TAG="${{ steps.detect.outputs.tag }}"
+          git config user.name "flowstoken-sync[bot]"
+          git config user.email "flowstoken-sync@users.noreply.github.com"
+          git remote add upstream "https://github.com/${UPSTREAM_REPO}.git"
+          # Upstream tags live under upstream/* so they never collide with FlowsToken version tags.
+          git fetch --no-tags upstream "refs/tags/${TAG}:refs/tags/upstream/${TAG}"
+          echo "pre_merge=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          if git -c merge.conflictStyle=diff3 merge --no-ff --no-commit "upstream/${TAG}"; then
+            echo "conflicts=none" >> "$GITHUB_OUTPUT"
+          elif node scripts/flowstoken/resolve-upstream-conflicts.mjs > resolve.log 2>&1; then
+            cat resolve.log
+            echo "conflicts=resolved" >> "$GITHUB_OUTPUT"
+          else
+            cat resolve.log
+            {
+              echo "reason=unresolved merge conflicts"
+              echo 'detail<<EOF'; cat resolve.log; echo EOF
+            } >> "$GITHUB_OUTPUT"
+            git merge --abort
+            exit 1
+          fi
+          git commit -q --no-edit -m "chore(upstream): merge Open Vetta ${TAG}"
+
+      - name: Bump FlowsToken version and write release notes
+        id: bump
+        if: steps.detect.outputs.skip != 'true'
+        run: |
+          TAG="${{ steps.detect.outputs.tag }}"
+          VERSION="$(node -e '
+            const fs = require("fs"); const p = "apps/desktop/package.json";
+            const pkg = JSON.parse(fs.readFileSync(p, "utf8"));
+            const [a, b, c] = pkg.version.split(".").map(Number); pkg.version = `${a}.${b}.${c + 1}`;
+            fs.writeFileSync(p, JSON.stringify(pkg, null, "\t") + "\n"); process.stdout.write(pkg.version);')"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "${TAG}" > "$MARKER"
+          BODY="$(gh api "repos/${UPSTREAM_REPO}/releases/tags/${TAG}" --jq .body | head -c 6000)"
+          {
+            echo "# FlowsToken Desktop ${VERSION}"
+            echo
+            date -u +%Y-%m-%d
+            echo
+            echo "## 改进"
+            echo
+            echo "- 同步上游 Open Vetta ${TAG} 的更新（https://github.com/${UPSTREAM_REPO}/releases/tag/${TAG}），FlowsToken 登录、分组预设、品牌与更新通道保持不变。"
+            echo
+            echo "## 其他"
+            echo
+            echo "<details><summary>上游 ${TAG} 发布说明</summary>"
+            echo
+            echo "${BODY}"
+            echo
+            echo "</details>"
+          } > ".github/release-notes/v${VERSION}.md"
+          git add apps/desktop/package.json "$MARKER" ".github/release-notes/v${VERSION}.md"
+
+      - name: Install dependencies
+        if: steps.detect.outputs.skip != 'true'
+        run: bun install
+
+      - name: Install ripgrep (used by upstream tests)
+        if: steps.detect.outputs.skip != 'true'
+        run: command -v rg >/dev/null || { sudo apt-get update && sudo apt-get install --yes ripgrep; }
+
+      - name: Checks — brand guard, release notes, lint/types/guards, tests
+        id: checks
+        if: steps.detect.outputs.skip != 'true'
+        run: |
+          set -o pipefail
+          node --test branding/flowstoken/tests/*.test.mjs 2>&1 | tee -a checks.log
+          node scripts/release/release-notes.mjs --check 2>&1 | tee -a checks.log
+          # Same gates as upstream CI: lint + types + guards, quality suites, packaging contracts, and the
+          # unit tests of every workspace the upstream merge touched (test:changed builds their deps first).
+          bun run check 2>&1 | tail -40 | tee -a checks.log
+          bun run test:quality 2>&1 | tail -40 | tee -a checks.log
+          (cd apps/desktop && bun run test:packaging) 2>&1 | tail -40 | tee -a checks.log
+          bun run test:changed --base "${{ steps.merge.outputs.pre_merge }}" 2>&1 | tail -60 | tee -a checks.log
+
+      - name: Commit release bump and push main
+        if: steps.detect.outputs.skip != 'true'
+        run: |
+          git add bun.lock 2>/dev/null || true
+          git commit -q -m "chore(desktop): release ${{ steps.bump.outputs.version }} with upstream ${{ steps.detect.outputs.tag }}"
+          git push origin HEAD:main
+
+      - name: Ship it
+        if: steps.detect.outputs.skip != 'true'
+        run: gh workflow run flowstoken-release.yml -R "${{ github.repository }}" --ref main -f reason="upstream ${{ steps.detect.outputs.tag }}"
+
+      - name: Record the failed attempt
+        if: failure() && steps.detect.outputs.skip != 'true'
+        run: |
+          TAG="${{ steps.detect.outputs.tag }}"
+          RUN="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          BRANCH="upstream-sync/${TAG}"
+          if [ "${{ steps.merge.outputs.reason }}" = "" ] && git rev-parse -q --verify HEAD >/dev/null; then
+            git add -A >/dev/null 2>&1; git commit -q -m "wip: upstream ${TAG} sync (checks failed)" >/dev/null 2>&1 || true
+            git push -f origin "HEAD:refs/heads/${BRANCH}" >/dev/null 2>&1 || true
+          fi
+          REASON="${{ steps.merge.outputs.reason }}"; [ -n "$REASON" ] || REASON="checks failed"
+          gh label create upstream-sync --color D93F0B --description "Automatic upstream sync needs attention" >/dev/null 2>&1 || true
+          BODY="$(printf 'Open Vetta %s could not be synced automatically: **%s**. Nothing was released.\n\nRun: %s\nBranch: %s\n\n```\n%s\n```\n' \
+            "$TAG" "$REASON" "$RUN" "$BRANCH" "$( { echo "${{ steps.merge.outputs.detail }}"; tail -60 checks.log 2>/dev/null; } | tail -80)")"
+          EXISTING="$(gh issue list --label upstream-sync --state open --search "${TAG} in:title" --json number --jq '.[0].number // empty')"
+          if [ -n "$EXISTING" ]; then gh issue comment "$EXISTING" --body "$BODY"; else
+            gh issue create --title "upstream sync ${TAG} needs attention" --label upstream-sync --body "$BODY"; fi
