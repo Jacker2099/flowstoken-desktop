@@ -198,9 +198,12 @@ jobs:
             git push -f origin "HEAD:refs/heads/${BRANCH}" >/dev/null 2>&1 || true
           fi
           REASON="${{ steps.merge.outputs.reason }}"; [ -n "$REASON" ] || REASON="checks failed"
+          # Issues may be disabled on the repository; the FlowsToken server watches failed runs and reports them
+          # to Telegram either way, so an issue is a convenience, not the alert path.
           gh label create upstream-sync --color D93F0B --description "Automatic upstream sync needs attention" >/dev/null 2>&1 || true
           BODY="$(printf 'Open Vetta %s could not be synced automatically: **%s**. Nothing was released.\n\nRun: %s\nBranch: %s\n\n```\n%s\n```\n' \
             "$TAG" "$REASON" "$RUN" "$BRANCH" "$( { echo "${{ steps.merge.outputs.detail }}"; cat checks-failed.log 2>/dev/null; grep -E "FAIL |✖|× |error TS|error:" checks-full.log 2>/dev/null | head -40; } | tail -80)")"
-          EXISTING="$(gh issue list --label upstream-sync --state open --search "${TAG} in:title" --json number --jq '.[0].number // empty')"
-          if [ -n "$EXISTING" ]; then gh issue comment "$EXISTING" --body "$BODY"; else
-            gh issue create --title "upstream sync ${TAG} needs attention" --label upstream-sync --body "$BODY"; fi
+          EXISTING="$(gh issue list --label upstream-sync --state open --search "${TAG} in:title" --json number --jq '.[0].number // empty' 2>/dev/null || true)"
+          if [ -n "$EXISTING" ]; then gh issue comment "$EXISTING" --body "$BODY" || true; else
+            gh issue create --title "upstream sync ${TAG} needs attention" --label upstream-sync --body "$BODY" \
+              || echo "::warning::could not open an issue (issues disabled?); details are in the run log and artifact"; fi
