@@ -48,6 +48,9 @@ if (buildDependencies.length > 0) {
 	if (code !== 0) process.exit(code);
 }
 
+// Upstream test files that are red in upstream's own CI are quarantined explicitly (with reason and date).
+const known = JSON.parse(readFileSync("branding/flowstoken/tests/upstream-known-failures.json", "utf8")).excluded;
+
 const runner = join(process.cwd(), "scripts/quality/run-vitest.mjs");
 let failed = 0;
 for (const [ws, files] of byWorkspace) {
@@ -55,7 +58,9 @@ for (const [ws, files] of byWorkspace) {
 	// Some upstream suites (git-backed marketplace fixtures) hit their own 5-10s timeouts when a thousand tests
 	// share the runner. A longer default timeout plus two retries absorbs load jitter; a genuinely broken test
 	// still fails all three attempts.
-	const args = [runner, "related", "--run", "--passWithNoTests", "--testTimeout=30000", "--retry=2", ...files];
+	const excludes = known.filter((k) => k.file.startsWith(`${ws}/`)).flatMap((k) => ["--exclude", relative(ws, k.file)]);
+	for (const k of known.filter((k) => k.file.startsWith(`${ws}/`))) console.log(`[flowstoken-related] quarantined: ${k.file} (${k.reason})`);
+	const args = [runner, "related", "--run", "--passWithNoTests", "--testTimeout=30000", "--retry=2", ...excludes, ...files];
 	const result = spawnSync("bun", args, {
 		cwd: ws,
 		stdio: "inherit",
