@@ -70,10 +70,14 @@ jobs:
       - name: Tag the release commit
         run: |
           TAG="${{ steps.v.outputs.tag }}"
-          if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null; then
-            test "$(git ls-remote --tags origin "refs/tags/${TAG}" | cut -f1)" = "${GITHUB_SHA}" \
-              || { echo "::error::${TAG} exists on another commit"; exit 1; }
-          else
+          REMOTE="$(git ls-remote --tags origin "refs/tags/${TAG}" | cut -f1)"
+          if [ -n "$REMOTE" ] && [ "$REMOTE" != "${GITHUB_SHA}" ]; then
+            # Left over from an attempt that never published (published releases were refused above).
+            echo "::warning::moving unpublished tag ${TAG} from ${REMOTE} to ${GITHUB_SHA}"
+            git push origin ":refs/tags/${TAG}"
+            REMOTE=""
+          fi
+          if [ -z "$REMOTE" ]; then
             git tag "${TAG}" "${GITHUB_SHA}"
             # GITHUB_TOKEN pushes do not trigger workflows, so the upstream tag-push release does not fire.
             git push origin "refs/tags/${TAG}"
