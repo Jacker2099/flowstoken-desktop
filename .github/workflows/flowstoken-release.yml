@@ -55,6 +55,13 @@ jobs:
             exit 1
           fi
 
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.7"
+
+      - name: Install dependencies
+        uses: ./.github/actions/install-bun-dependencies
+
       - name: FlowsToken brand guard + release notes
         run: |
           node --test branding/flowstoken/tests/*.test.mjs
@@ -97,13 +104,6 @@ jobs:
           gh run download "${{ steps.build.outputs.run_id }}" -R "$REPO" -p 'desktop-*' -D dl
           find dl -type f -exec mv -f {} apps/desktop/release/ \;
           ls -la apps/desktop/release
-
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: "1.3.7"
-
-      - name: Install dependencies
-        uses: ./.github/actions/install-bun-dependencies
 
       - name: Merge macOS update metadata
         working-directory: apps/desktop
