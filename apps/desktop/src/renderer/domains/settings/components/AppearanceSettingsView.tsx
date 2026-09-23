@@ -1,9 +1,4 @@
-import { BlazeFlame } from "@shared/components/blaze/BlazeFlame";
-import { PixelHand } from "@shared/components/hand/PixelHand";
 import { PixelMarioBlocks } from "@shared/components/mario/PixelMarioBlocks";
-import { OrbitOrb } from "@shared/components/orb/OrbitOrb";
-import { PixelTorch } from "@shared/components/torch/PixelTorch";
-import { EnergyWell } from "@shared/components/well/EnergyWell";
 import { cn } from "@shared/lib/utils";
 import type { CursorStyle } from "@shared/theme/cursor";
 import {
@@ -12,7 +7,8 @@ import {
 } from "@shared/theme/new-session-texture";
 import type { OrnamentId } from "@shared/theme/ornament";
 import type { ThemeDef } from "@shared/theme/tokens";
-import type { CSSProperties, MouseEvent, ReactNode } from "react";
+import { memo } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { SettingsAiAssist } from "../ai-assist";
 import appearanceMascot from "../assets/appearance-mascot.webp";
 import themeLock from "../assets/theme-lock.webp";
@@ -31,6 +27,7 @@ import type {
 } from "./useAppearanceSettingsModel";
 
 type ThemeMode = AppearanceModeOption["value"];
+type SelectionPoint = { x: number; y: number };
 
 function languageOptionLabel(option: AppearanceLanguageOption): JSX.Element {
 	return (
@@ -49,7 +46,7 @@ function languageOptionLabel(option: AppearanceLanguageOption): JSX.Element {
 	);
 }
 
-function LanguageSelect({
+const LanguageSelect = memo(function LanguageSelect({
 	language,
 	languages,
 	onSelect,
@@ -69,7 +66,7 @@ function LanguageSelect({
 			}))}
 		/>
 	);
-}
+});
 
 function SelectionCheckBadge(): JSX.Element {
 	return (
@@ -86,7 +83,7 @@ function SelectionCheckBadge(): JSX.Element {
 const SELECTION_ACTIVE = "border-primary/50 bg-primary/10";
 const SELECTION_IDLE = "border-border/60 hover:border-primary/40 hover:bg-accent/40";
 
-function ModeCard({
+const ModeCard = memo(function ModeCard({
 	mode,
 	label,
 	icon,
@@ -99,12 +96,12 @@ function ModeCard({
 	icon: string;
 	hint: string;
 	active: boolean;
-	onSelect: (value: ThemeMode, event: MouseEvent<HTMLButtonElement>) => void;
+	onSelect: (value: ThemeMode, point: SelectionPoint) => void;
 }): JSX.Element {
 	return (
 		<button
 			type="button"
-			onClick={(event) => onSelect(mode, event)}
+			onClick={(event) => onSelect(mode, { x: event.clientX, y: event.clientY })}
 			className={cn(
 				"group relative flex items-center gap-2.5 rounded-lg border bg-card px-3 py-2 text-left transition-all",
 				active ? SELECTION_ACTIVE : SELECTION_IDLE,
@@ -118,7 +115,7 @@ function ModeCard({
 			{active && <SelectionCheckBadge />}
 		</button>
 	);
-}
+});
 
 const BLOB_LAYOUT: { left: string; top: string; w: string; h: string; rotate: number }[] = [
 	{ left: "-15%", top: "-20%", w: "75%", h: "75%", rotate: -8 },
@@ -128,21 +125,21 @@ const BLOB_LAYOUT: { left: string; top: string; w: string; h: string; rotate: nu
 	{ left: "25%", top: "20%", w: "55%", h: "60%", rotate: 6 },
 ];
 
-function ThemeCard({
+const ThemeCard = memo(function ThemeCard({
 	theme,
 	active,
 	onSelect,
 }: {
 	theme: ThemeDef;
 	active: boolean;
-	onSelect: (id: string, event: MouseEvent<HTMLButtonElement>) => void;
+	onSelect: (id: string, point: SelectionPoint) => void;
 }): JSX.Element {
 	const palette = theme.dark;
 	const colors = [palette.primary, palette.accent, palette.ring, palette.chart1, palette.chart2];
 	return (
 		<button
 			type="button"
-			onClick={(event) => onSelect(theme.id, event)}
+			onClick={(event) => onSelect(theme.id, { x: event.clientX, y: event.clientY })}
 			className="group flex flex-col items-stretch gap-2 text-left"
 		>
 			<div
@@ -154,7 +151,7 @@ function ThemeCard({
 				style={{ background: palette.background }}
 			>
 				<div className="absolute inset-0 flex items-center justify-center">
-					<div className={cn("relative aspect-square w-[180%]", active && "theme-blob-spin")} style={{ filter: "blur(28px) saturate(115%)" }}>
+					<div className="relative aspect-square w-[180%]" style={{ filter: "blur(28px) saturate(115%)" }}>
 						{BLOB_LAYOUT.map((b, i) => (
 							<div
 								key={`${theme.id}-${i}`}
@@ -168,7 +165,7 @@ function ThemeCard({
 								}}
 							>
 								<div
-									className={cn("h-full w-full rounded-full", active && "theme-blob-ripple")}
+									className="h-full w-full rounded-full"
 									style={{
 										background: colors[i],
 										animationDuration: `${5 + i * 1.3}s`,
@@ -210,24 +207,25 @@ function ThemeCard({
 			</span>
 		</button>
 	);
-}
+});
 
-function UiThemeCard({
+const UiThemeCard = memo(function UiThemeCard({
 	active,
 	disabled,
 	hint,
+	id,
 	label,
 	onSelect,
 	preview,
 	unavailable,
 }: AppearanceUiThemeOption & {
-	onSelect: () => void;
+	onSelect: (id: string) => void;
 }): JSX.Element {
 	return (
 		<button
 			type="button"
 			disabled={disabled}
-			onClick={onSelect}
+			onClick={() => onSelect(id)}
 			className={cn(
 				"group relative rounded-xl border bg-card text-left transition-all",
 				active ? SELECTION_ACTIVE : SELECTION_IDLE,
@@ -251,7 +249,7 @@ function UiThemeCard({
 			{active && !unavailable && <SelectionCheckBadge />}
 		</button>
 	);
-}
+});
 
 /** 迷你窗口示意图：经典=侧栏贴边仅右侧分隔线；悬浮=侧栏四周留白带圆角边框。 */
 function SidebarStylePreview({ style }: { style: SidebarStyle }): JSX.Element {
@@ -274,7 +272,7 @@ function SidebarStylePreview({ style }: { style: SidebarStyle }): JSX.Element {
 	);
 }
 
-function SidebarStyleCard({
+const SidebarStyleCard = memo(function SidebarStyleCard({
 	active,
 	hint,
 	id,
@@ -300,9 +298,9 @@ function SidebarStyleCard({
 			{active && <SelectionCheckBadge />}
 		</button>
 	);
-}
+});
 
-function CursorStyleCard({
+const CursorStyleCard = memo(function CursorStyleCard({
 	active,
 	hint,
 	icon,
@@ -337,7 +335,7 @@ function CursorStyleCard({
 			{active && <SelectionCheckBadge />}
 		</button>
 	);
-}
+});
 
 /**
  * 装饰件预览：一枚 1:1 的方格，装饰件居中摆着，别的什么都不画。
@@ -356,28 +354,10 @@ function OrnamentPreview({ id, preview }: { id: OrnamentId; preview?: string }):
 					draggable={false}
 					src={preview}
 				/>
-			) : id === "orbit" ? (
-				// 星轨是实时着色器，没有静帧可放：方格里直接跑一枚球，所见即所得。
-				<OrbitOrb size={76} className="pointer-events-none" />
-			) : id === "torch" ? (
-				// 火把同理，整枚是 CSS 画的。3D 投影的重心比元素盒高 6px（按 unit 折算），
-				// 不补这一下，居中的火把看着会偏上。
-				<PixelTorch unit={18} lit animate className="pointer-events-none translate-y-[6px]" />
 			) : id === "mario" ? (
-				// 马里奥的砖块同样是画出来的；预览里直接把蘑菇顶出来，一眼看得出这块能顶。
+				// 马里奥的砖块是画出来的，没有静帧；预览里直接把蘑菇顶出来，一眼看得出这块能顶。
 				// 顶出来的蘑菇整个探到砖块上方，方格里按砖块居中会偏上，往下补半个蘑菇的高度。
 				<PixelMarioBlocks unit={2.25} popped className="pointer-events-none translate-y-[19px]" />
-			) : id === "blaze" ? (
-				// 燃烧同样是实时糊出来的。光晕会溢出火团本身，方格里按 76 摆就顶到边了，
-				// 收到 64 给四周留出漫开的余地。
-				<BlazeFlame animate size={64} className="pointer-events-none" />
-			) : id === "hand" ? (
-				// 玩手同样是画出来的；预览里让它敲着，一眼看得出这只手是活的。
-				// 拇指与接触阴影都探到元素盒底下去了，按盒子居中会偏下，往上提回半个拇指的高度。
-				<PixelHand unit={40} tapping animate className="pointer-events-none -translate-y-[6px]" />
-			) : id === "well" ? (
-				// 能源井同样是实时动着的。素材竖长（94:136），宽给到 64 折出来约 93 高，方格四周还留得下余量。
-				<EnergyWell animate size={64} className="pointer-events-none" />
 			) : (
 				// 「无」：用虚线圈标出这块空着的位置，而不是留一片看不出所以然的空白。
 				// border 那档灰在浅色下几乎糊进卡片底色里，改用 muted-foreground 并加粗到 2px，
@@ -443,11 +423,12 @@ function DecorCard({
  * 都由实现决定，另画一份迟早会和页面对不上。
  */
 /**
- * 流光按整页尺寸算，模糊半径 7em 塞进这枚方格只剩一团糊。
- * 预览里把模糊按比例缩小、格距同步收紧，点阵才不至于只剩两三行。
+ * 流光按整页尺寸算，原尺寸的色斑塞进这枚方格只剩一团均匀的光。
+ * 预览里把光晕半径和色斑尺度按比例缩小、格距同步收紧，点阵才不至于只剩两三行。
  */
 const AURORA_PREVIEW_VARS = {
-	"--ns-aurora-blur": "2.2em",
+	"--ns-aurora-radius": "60px",
+	"--ns-aurora-field-scale": "0.12",
 	"--ns-aurora-cell": "5px",
 	"--ns-aurora-dot": "1.4px",
 } as CSSProperties;
@@ -470,7 +451,7 @@ function TexturePreview({ id }: { id: NewSessionTextureId }): JSX.Element {
 	);
 }
 
-function OrnamentCard({
+const OrnamentCard = memo(function OrnamentCard({
 	active,
 	hint,
 	id,
@@ -485,9 +466,9 @@ function OrnamentCard({
 			<OrnamentPreview id={id} preview={preview} />
 		</DecorCard>
 	);
-}
+});
 
-function TextureCard({
+const TextureCard = memo(function TextureCard({
 	active,
 	hint,
 	id,
@@ -501,7 +482,7 @@ function TextureCard({
 			<TexturePreview id={id} />
 		</DecorCard>
 	);
-}
+});
 
 export function AppearanceSettingsView({ model }: { model: AppearanceSettingsModel }): JSX.Element {
 	return (
@@ -542,7 +523,7 @@ export function AppearanceSettingsView({ model }: { model: AppearanceSettingsMod
 							icon={mode.icon}
 							hint={mode.hint}
 							active={model.mode === mode.value}
-							onSelect={(value, event) => model.actions.changeMode(value, { x: event.clientX, y: event.clientY })}
+							onSelect={model.actions.changeMode}
 						/>
 					))}
 				</div>
@@ -553,7 +534,7 @@ export function AppearanceSettingsView({ model }: { model: AppearanceSettingsMod
 					<SettingHeading title={model.labels.sections.uiTheme} section={SETTINGS_SECTION["appearance-ui-theme"]} className="mb-3" />
 					<div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-3">
 						{model.uiThemes.map((theme) => (
-							<UiThemeCard key={theme.id} {...theme} onSelect={() => model.actions.selectUiTheme(theme.id)} />
+							<UiThemeCard key={theme.id} {...theme} onSelect={model.actions.selectUiTheme} />
 						))}
 					</div>
 				</div>
@@ -568,7 +549,7 @@ export function AppearanceSettingsView({ model }: { model: AppearanceSettingsMod
 								key={theme.id}
 								theme={theme}
 								active={model.themeName === theme.id}
-								onSelect={(id, event) => model.actions.changeThemeName(id, { x: event.clientX, y: event.clientY })}
+								onSelect={model.actions.changeThemeName}
 							/>
 						))}
 					</div>

@@ -23,15 +23,19 @@ import {
 	CODING_AGENT_BACKGROUND_TASKS_OBSERVATION,
 	CODING_AGENT_BACKGROUND_TASKS_READ,
 	CODING_AGENT_NEXT_PROMPT_SUGGESTIONS,
+	CODING_AGENT_PERMISSION_MODE_SET,
+	CODING_AGENT_PLAN_MODE_STATE_READ,
 	CODING_AGENT_SESSION_PROFILE_STATE_READ,
 	CODING_AGENT_SESSION_TITLE_GENERATE,
 	CODING_AGENT_SUBAGENT_INTERRUPT,
 	CODING_AGENT_SUBAGENTS_OBSERVATION,
 	CODING_AGENT_SUBAGENTS_READ,
 	CODING_AGENT_TODO_CLEAR,
+	isCodingAgentPermissionMode,
 } from "@vetta/coding-agent/session-extensions";
 import type { SessionEvent, SessionExecutionMode, SettingsPatch } from "@vetta/runtime-core";
 import { sessionExtensionObservation } from "@vetta/runtime-core/session-extensions";
+import { assertProjectSupportsExecutionMode } from "@vetta/runtime-desktop";
 import { isMcpJsonValue, type McpJsonObject } from "@vetta/runtime-mcp";
 import { BrowserWindow, ipcMain, type WebContents } from "electron";
 import type { DesktopMcpAppResourceRead, DesktopMcpAppToolCall } from "../../shared/mcp-app.js";
@@ -52,10 +56,12 @@ import {
 	reconcileIdleInteractiveSessions,
 } from "../conversations/idle-session-residency.js";
 import { getDesktopMcpElicitationBroker } from "../conversations/mcp-elicitation-broker.js";
+import { getDesktopPlanReviewBroker } from "../conversations/plan-review-broker.js";
 import { purgeProjectSessions } from "../conversations/project-session-purge.js";
 import { parsePromptRequest } from "../conversations/prompt-request-schema.js";
 import type { DesktopCodingAgentSessionConfig } from "../conversations/resolve-session-config.js";
 import { getDesktopSandboxAuthorizationBroker } from "../conversations/sandbox-authorization-broker.js";
+import { selectSessionHistoryPreview } from "../conversations/session-history-preview.js";
 import { isConversationSubCwd, readSessionCwdFromHeader } from "../conversations/session-paths.js";
 import { listRuntimeSessionProjects, listSessionHistory } from "../conversations/session-query-service.js";
 import { slimSessionEventForIpc } from "../conversations/slim-session-event-for-ipc.js";
@@ -79,6 +85,7 @@ import {
 } from "../plugins/system-prompt-operations.js";
 import { getSharedRuntime } from "../runtime.js";
 import { assertSandboxAvailableForMode } from "../sandbox/capability.js";
+import { getDesktopSchedulerServiceIfReady } from "../scheduler/scheduler-service.js";
 import {
 	DEFAULT_CONVERSATION_CWD,
 	DEFAULT_CONVERSATION_SESSION_DIR,
@@ -199,6 +206,12 @@ const CHANNELS = {
 	QUESTION_LIST_PENDING: "vetta:session:question-list-pending",
 	QUESTION_RESOLVED: "vetta:session:question-resolved",
 	QUESTION_RESPONSE: "vetta:session:question-response",
+	PLAN_MODE_GET_STATE: "vetta:session:plan-mode-get-state",
+	PLAN_MODE_SET_PERMISSION_MODE: "vetta:session:plan-mode-set-permission-mode",
+	PLAN_REVIEW_REQUEST: "vetta:session:plan-review-request",
+	PLAN_REVIEW_LIST_PENDING: "vetta:session:plan-review-list-pending",
+	PLAN_REVIEW_RESOLVED: "vetta:session:plan-review-resolved",
+	PLAN_REVIEW_RESPONSE: "vetta:session:plan-review-response",
 	MCP_ELICITATION_REQUEST: "vetta:session:mcp-elicitation-request",
 	MCP_ELICITATION_LIST_PENDING: "vetta:session:mcp-elicitation-list-pending",
 	MCP_ELICITATION_RESOLVED: "vetta:session:mcp-elicitation-resolved",
@@ -366,6 +379,13 @@ function normalizeMcpAppResourceRead(value: unknown): DesktopMcpAppResourceRead 
 
 function assertMcpAppSender(sender: WebContents, expected: WebContents): void {
 	if (sender !== expected || sender.isDestroyed()) throw new Error("Untrusted MCP App IPC sender");
+}
+
+/** 会话被删除后通知自动化：解绑并暂停相关任务、清理执行记录（ADR-0127）。失败不影响删除本身。 */
+function notifyAutomationSessionsDeleted(isDeleted: (sessionPath: string) => boolean): void {
+	void getDesktopSchedulerServiceIfReady()
+		?.handleSessionsDeleted(isDeleted)
+		.catch((error) => sessionLog.error("failed to update automations after session deletion", error));
 }
 
 export function registerSessionIpc(webContents: WebContents): () => void {
@@ -550,6 +570,28 @@ export function registerSessionIpc(webContents: WebContents): () => void {
 		} catch {
 			// Renderer may be between render-process-gone and reload; snapshot sync will recover.
 		}
+	});
+
+	// exit_plan_mode 后端：审批的挂起与应答由 broker 拥有，这里只把它接到本窗口。
+	// 计划等待审批与「有问题待回答」对用户是同一件事——会话在等你，复用同一个待办标记与通知。
+	const planReviewBroker = getDesktopPlanReviewBroker();
+	const unregisterPlanReviewPresenter = planReviewBroker.setPresenter({
+		present: (request) => {
+			if (webContents.isDestroyed()) {
+				planReviewBroker.respond(request.requestId, undefined);
+				return;
+			}
+			webContents.send(CHANNELS.PLAN_REVIEW_REQUEST, request);
+			const sessionPath = runtime.getSessionPath(request.sessionId);
+			const cwd = sessionCwdMap.get(request.sessionId);
+			if (sessionPath) setPendingQuestion(sessionPath, true);
+			if (sessionPath && cwd) void notify({ type: "agent-question-pending", sessionPath, cwd });
+		},
+		resolved: (event) => {
+			const sessionPath = runtime.getSessionPath(event.sessionId);
+			if (sessionPath) setPendingQuestion(sessionPath, false);
+			if (!webContents.isDestroyed()) webContents.send(CHANNELS.PLAN_REVIEW_RESOLVED, event);
+		},
 	});
 
 	const unregisterMcpElicitationHandler = mcpElicitationBroker.setInteractiveHandler((request, signal) => {
@@ -1032,6 +1074,9 @@ export function registerSessionIpc(webContents: WebContents): () => void {
 	ipcMain.handle(CHANNELS.SET_EXECUTION_MODE, async (_event, sessionId: unknown, mode: unknown) => {
 		assertNonEmptyString(sessionId, "sessionId");
 		assertExecutionMode(mode);
+		const sessionPath = runtime.getSessionPath(sessionId);
+		const sessionCwd = sessionPath ? await readSessionCwdFromHeader(sessionPath) : undefined;
+		assertProjectSupportsExecutionMode(sessionCwd, mode as SessionExecutionMode);
 		await assertSandboxAvailableForMode(mode as SessionExecutionMode, resolveDefaultExecutionMode);
 		await runtime.setExecutionMode(sessionId, mode as SessionExecutionMode);
 	});
@@ -1087,7 +1132,6 @@ export function registerSessionIpc(webContents: WebContents): () => void {
 			label: m.label,
 			description: m.description,
 			icon: m.icon,
-			narration: m.narration,
 		}));
 	});
 
@@ -1180,6 +1224,7 @@ export function registerSessionIpc(webContents: WebContents): () => void {
 		// 连带回收子目录里的产物。读 header 先取 cwd，再 delete，最后 rm 子目录。
 		const cwdFromHeader = await readSessionCwdFromHeader(sessionPath);
 		await runtime.deleteSession(sessionPath);
+		notifyAutomationSessionsDeleted((path) => path === sessionPath);
 		if (cwdFromHeader && isConversationSubCwd(cwdFromHeader)) {
 			await rm(resolve(cwdFromHeader), { recursive: true, force: true }).catch((err) => {
 				sessionLog.error("failed to remove conversation sub cwd", cwdFromHeader, err);
@@ -1189,15 +1234,21 @@ export function registerSessionIpc(webContents: WebContents): () => void {
 
 	ipcMain.handle(CHANNELS.DELETE_ALL_FOR_CWD, async (_event, cwd: unknown) => {
 		assertNonEmptyString(cwd, "cwd");
-		return purgeProjectSessions(cwd, {
+		const purged = new Set<string>();
+		const result = await purgeProjectSessions(cwd, {
 			listSessions: (target) => listSessionHistory(target),
-			deleteSession: (sessionPath) => runtime.deleteSession(sessionPath),
+			deleteSession: async (sessionPath) => {
+				await runtime.deleteSession(sessionPath);
+				purged.add(sessionPath);
+			},
 			// 分片目录是新会话的落点；`<项目>/.vetta/sessions` 是存量兼容位置，随项目目录
 			// 一起消失，这里不重复处理（见 composition.resolveDesktopRuntimeSessionRoots）。
 			resolveSessionDirs: (target) => [codingAgentSessionShardPath(target)],
 			removeDirectory: (dir) => rm(dir, { recursive: true, force: true }),
 			logError: (message, ...args) => sessionLog.error(message, ...args),
 		});
+		notifyAutomationSessionsDeleted((path) => purged.has(path));
+		return result;
 	});
 
 	ipcMain.handle(CHANNELS.RENAME, async (_event, sessionPath: unknown, name: unknown) => {
@@ -1318,6 +1369,7 @@ export function registerSessionIpc(webContents: WebContents): () => void {
 			throw err;
 		}
 		await mkdir(targetSessionDir, { recursive: true });
+		notifyAutomationSessionsDeleted((path) => resolve(path).startsWith(sessionDirWithSep));
 	});
 
 	ipcMain.handle(CHANNELS.CLEAR_DEFAULT_ARTIFACTS, async (_event, scope: unknown) => {
@@ -1385,6 +1437,21 @@ export function registerSessionIpc(webContents: WebContents): () => void {
 		const resolve = questionMap.get(requestId);
 		if (!resolve) return;
 		resolve(normalizeQuestionResult(result));
+	});
+
+	ipcMain.handle(CHANNELS.PLAN_REVIEW_LIST_PENDING, () => planReviewBroker.listPending());
+	ipcMain.handle(CHANNELS.PLAN_REVIEW_RESPONSE, (_event, requestId: unknown, result: unknown) => {
+		assertNonEmptyString(requestId, "requestId");
+		planReviewBroker.respond(requestId, result);
+	});
+	ipcMain.handle(CHANNELS.PLAN_MODE_GET_STATE, (_event, sessionId: unknown) => {
+		assertNonEmptyString(sessionId, "sessionId");
+		return runtime.invokeSessionExtensionSync(sessionId, CODING_AGENT_PLAN_MODE_STATE_READ, undefined);
+	});
+	ipcMain.handle(CHANNELS.PLAN_MODE_SET_PERMISSION_MODE, (_event, sessionId: unknown, permissionMode: unknown) => {
+		assertNonEmptyString(sessionId, "sessionId");
+		if (!isCodingAgentPermissionMode(permissionMode)) throw new Error("Invalid permission mode");
+		return runtime.invokeSessionExtensionSync(sessionId, CODING_AGENT_PERMISSION_MODE_SET, { permissionMode });
 	});
 
 	ipcMain.handle(CHANNELS.MCP_ELICITATION_RESPONSE, (_event, requestId: unknown, result: unknown) => {
@@ -1640,6 +1707,7 @@ export function registerSessionIpc(webContents: WebContents): () => void {
 			resolve(CANCELLED_QUESTION);
 		}
 		questionMap.clear();
+		planReviewBroker.cancelAll();
 		for (const resolve of mcpElicitationMap.values()) resolve({ action: "cancel" });
 		mcpElicitationMap.clear();
 		for (const resolve of sandboxGrantMap.values()) {
@@ -1676,9 +1744,19 @@ export function registerSessionIpc(webContents: WebContents): () => void {
 	const viewerSubs = new Map<string, ViewerSub>();
 	let viewerSeq = 0;
 
-	ipcMain.handle(CHANNELS.VIEWER_OPEN, async (_event, path: unknown) => {
+	ipcMain.handle(CHANNELS.VIEWER_OPEN, async (_event, path: unknown, options?: unknown) => {
 		assertNonEmptyString(path, "path");
-		return runtime.readSessionHistoryFromFile(resolve(path));
+		const snapshot = runtime.readSessionHistoryFromFile(resolve(path));
+		if (options === undefined) return snapshot;
+		if (!options || typeof options !== "object" || Array.isArray(options)) {
+			throw new TypeError("options must be an object");
+		}
+		const tailTurns = (options as { tailTurns?: unknown }).tailTurns;
+		if (tailTurns === undefined) return snapshot;
+		if (!Number.isInteger(tailTurns) || (tailTurns as number) < 1 || (tailTurns as number) > 10) {
+			throw new TypeError("options.tailTurns must be an integer between 1 and 10");
+		}
+		return { history: selectSessionHistoryPreview(snapshot.history, tailTurns as number) };
 	});
 
 	ipcMain.handle(CHANNELS.VIEWER_SUBSCRIBE, async (_event, path: unknown) => {
@@ -1747,6 +1825,7 @@ export function registerSessionIpc(webContents: WebContents): () => void {
 			resolve(CANCELLED_QUESTION);
 		}
 		questionMap.clear();
+		planReviewBroker.cancelAll();
 		for (const resolve of mcpElicitationMap.values()) resolve({ action: "cancel" });
 		mcpElicitationMap.clear();
 		for (const resolve of sandboxGrantMap.values()) {
@@ -1766,6 +1845,7 @@ export function registerSessionIpc(webContents: WebContents): () => void {
 		}
 		pluginContinuationMap.clear();
 		unregisterInteractiveQuestionHandler();
+		unregisterPlanReviewPresenter();
 		unregisterQuestionResolved();
 		unregisterMcpElicitationHandler();
 		unregisterMcpElicitationResolved();

@@ -35,6 +35,8 @@ describe("conversation controls", () => {
 			finishExport: vi.fn(),
 			openExport: vi.fn(),
 			togglePanel: vi.fn(),
+			toggleBottomPanel: vi.fn(),
+			openTerminal: vi.fn(),
 			togglePin: vi.fn(async () => {}),
 		};
 		render(
@@ -47,6 +49,11 @@ describe("conversation controls", () => {
 						exportTitle: "Export",
 						panelOpen: false,
 						panelTitle: "Panel",
+						bottomPanelOpen: false,
+						bottomPanelTitle: "Bottom panel",
+						terminalAvailable: true,
+						terminalFocused: false,
+						terminalTitle: "Terminal",
 						pinTitle: "Pin",
 						pinned: false,
 					}}
@@ -59,7 +66,9 @@ describe("conversation controls", () => {
 		await user.click(screen.getByRole("button", { name: "Export" }));
 		await user.click(screen.getByRole("button", { name: "Panel" }));
 		await user.click(screen.getByRole("button", { name: "Pin" }));
+		await user.click(screen.getByRole("button", { name: "Terminal" }));
 		expect(actions.openExport).toHaveBeenCalledOnce();
+		expect(actions.openTerminal).toHaveBeenCalledOnce();
 		expect(actions.togglePanel).toHaveBeenCalledOnce();
 		expect(actions.togglePin).toHaveBeenCalledOnce();
 	});

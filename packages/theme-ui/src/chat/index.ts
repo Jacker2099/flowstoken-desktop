@@ -80,9 +80,11 @@ export type { ChatExportHostViewProps } from "./ChatExportHostView";
 export { ChatExportHostView } from "./ChatExportHostView";
 export {
 	ChatHeaderActions,
+	ChatHeaderBottomPanelAction,
 	ChatHeaderExportAction,
 	ChatHeaderPanelAction,
 	ChatHeaderPinAction,
+	ChatHeaderTerminalAction,
 } from "./ChatHeaderActionsView";
 export type { ContextRingViewProps } from "./ContextRingView";
 export { CIRCUMFERENCE as CONTEXT_RING_CIRCUMFERENCE, ContextRingView } from "./ContextRingView";
@@ -389,6 +391,8 @@ export type {
 export { QueueCardView } from "./QueueCardView";
 export type { ReadImageViewProps } from "./ReadImageView";
 export { ReadImageView } from "./ReadImageView";
+export type { RemoteSessionBadgeViewProps } from "./RemoteSessionBadgeView";
+export { RemoteSessionBadgeView } from "./RemoteSessionBadgeView";
 export type {
 	SandboxGrantsBadgeViewLabels,
 	SandboxGrantsBadgeViewProps,
@@ -469,6 +473,7 @@ export {
 	TodoProgressStyles,
 	TodoStatusDot,
 	TodoTimeline,
+	todoLabelSheenClassName,
 	todoLabelSheenStyle,
 } from "./TodoProgress";
 export type { TodoStatusBarLabels, TodoStatusBarViewProps } from "./TodoStatusBarView";

@@ -7,6 +7,7 @@ export {
 export {
 	CODING_AGENT_ASK_USER_QUESTION_EXTENSION_ID,
 	CODING_AGENT_ASK_USER_QUESTION_FUNCTION,
+	CODING_AGENT_UNATTENDED_TURN_METADATA_KEY,
 	type CodingAgentQuestionAnswer,
 	type CodingAgentQuestionFunctionRequest,
 	type CodingAgentQuestionItem,
@@ -14,3 +15,9 @@ export {
 	type CodingAgentQuestionRequest,
 	type CodingAgentQuestionResult,
 } from "../features/ask-user-question/contracts.js";
+export {
+	CODING_AGENT_PLAN_MODE_EXTENSION_ID,
+	CODING_AGENT_PLAN_REVIEW_FUNCTION,
+	type CodingAgentPlanReviewRequest,
+	type CodingAgentPlanReviewResult,
+} from "../features/plan-mode/contracts.js";

@@ -15,32 +15,44 @@ import type { SidebarConversationInfo } from "../../../../services/sidebar-conve
 const DefaultSessionRow = memo(function DefaultSessionRow({
 	item,
 	contextMenuEnabled,
+	moreLabel,
 	onOpenContextMenu,
 	onRename,
 	onRenameDone,
 	onSelect,
+	onToggleGroup,
 }: {
 	item: DefaultSessionListItemView;
 	contextMenuEnabled: boolean;
+	moreLabel: string;
 	onOpenContextMenu: (event: React.MouseEvent, session: SidebarConversationInfo) => void;
 	onRename: (session: SidebarConversationInfo, name: string) => void;
 	onRenameDone: () => void;
 	onSelect: (session: SidebarConversationInfo) => void;
+	onToggleGroup: (taskId: string) => void;
 }): JSX.Element {
-	const { session } = item;
+	const { session, groupTaskId } = item;
 	const handleContextMenu = useCallback(
 		(event: React.MouseEvent) => onOpenContextMenu(event, session),
 		[onOpenContextMenu, session],
 	);
 	const handleRename = useCallback((name: string) => onRename(session, name), [onRename, session]);
-	const handleSelect = useCallback(() => onSelect(session), [onSelect, session]);
+	// 自动化会话组组头：点击展开/收起历次运行，不直接打开某一次。
+	const handleSelect = useCallback(
+		() => (groupTaskId ? onToggleGroup(groupTaskId) : onSelect(session)),
+		[groupTaskId, onSelect, onToggleGroup, session],
+	);
 
 	return (
 		<DefaultSessionRowView
 			active={item.active}
-			contextMenuEnabled={contextMenuEnabled}
+			contextMenuEnabled={contextMenuEnabled && !groupTaskId}
+			groupCount={item.groupCount}
+			groupExpanded={item.groupExpanded}
+			nested={item.nested}
 			iconClassName={item.iconClassName}
 			label={item.label}
+			moreLabel={moreLabel}
 			pinned={item.pinned}
 			renaming={item.renaming}
 			running={item.running}
@@ -93,10 +105,12 @@ export const DefaultSessionList = memo(function DefaultSessionList(
 					key={item.key}
 					item={item}
 					contextMenuEnabled={model.contextMenuEnabled}
+					moreLabel={model.labels.more}
 					onOpenContextMenu={model.actions.openContextMenu}
 					onRename={model.actions.rename}
 					onRenameDone={model.actions.renameDone}
 					onSelect={model.actions.select}
+					onToggleGroup={model.actions.toggleGroup}
 				/>
 			)}
 		/>
