@@ -128,13 +128,11 @@ function parseSource(value: unknown): MarketplaceSource | null {
 
 function createDefaultSources(now: Date): MarketplaceSource[] {
 	const configuredRepository = process.env.VETTA_OPEN_MARKETPLACE_REPOSITORY?.trim();
-	// FlowsToken / hardened forks: explicit disable must NOT fall back to Vetta official marketplace
-	// (supply-chain). Set VETTA_DISABLE_BUILTIN_MARKETPLACE=1, or set the repository env to empty
-	// string after vite inlines it. Unset (undefined) keeps upstream default: official source.
+	// FlowsToken / hardened forks: an explicit VETTA_DISABLE_BUILTIN_MARKETPLACE=1 (baked into FlowsToken
+	// builds) must NOT fall back to the Vetta official marketplace (supply-chain). Without the flag the
+	// upstream contract holds: an unset or blank repository means "not configured" -> official source.
 	const disableBuiltin =
-		process.env.VETTA_DISABLE_BUILTIN_MARKETPLACE === "1" ||
-		process.env.VETTA_DISABLE_BUILTIN_MARKETPLACE === "true" ||
-		process.env.VETTA_OPEN_MARKETPLACE_REPOSITORY === "";
+		process.env.VETTA_DISABLE_BUILTIN_MARKETPLACE === "1" || process.env.VETTA_DISABLE_BUILTIN_MARKETPLACE === "true";
 	if (disableBuiltin) {
 		return [];
 	}
