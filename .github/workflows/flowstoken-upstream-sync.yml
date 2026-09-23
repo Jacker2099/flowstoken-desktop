@@ -142,19 +142,39 @@ jobs:
         if: steps.detect.outputs.skip != 'true'
         run: command -v rg >/dev/null || { sudo apt-get update && sudo apt-get install --yes ripgrep; }
 
-      - name: Checks — brand guard, release notes, lint/types/guards, tests
+      - name: Checks — upstream release gates + FlowsToken brand guard and related tests
         id: checks
         if: steps.detect.outputs.skip != 'true'
         run: |
+          # Gates = what upstream's own desktop-release requires before it ships (check, quality, packaging
+          # contracts) + the FlowsToken brand guard + every unit test that depends on a FlowsToken-changed
+          # file. Upstream's full affected-unit-test job is not a gate: upstream releases while it is red.
           set -o pipefail
-          node --test branding/flowstoken/tests/*.test.mjs 2>&1 | tee -a checks.log
-          node scripts/release/release-notes.mjs --check 2>&1 | tee -a checks.log
-          # Same gates as upstream CI: lint + types + guards, quality suites, packaging contracts, and the
-          # unit tests of every workspace the upstream merge touched (test:changed builds their deps first).
-          bun run check 2>&1 | tail -40 | tee -a checks.log
-          bun run test:quality 2>&1 | tail -40 | tee -a checks.log
-          (cd apps/desktop && bun run test:packaging) 2>&1 | tail -40 | tee -a checks.log
-          bun run test:changed --base "${{ steps.merge.outputs.pre_merge }}" 2>&1 | tail -60 | tee -a checks.log
+          run() {
+            echo "::group::$1"; shift
+            set +e; "$@" 2>&1 | tee -a checks-full.log; local rc=${PIPESTATUS[0]}; set -e
+            echo "::endgroup::"
+            if [ "$rc" -ne 0 ]; then echo "FAILED: $*" | tee -a checks-failed.log; exit "$rc"; fi
+          }
+          run "brand guard" node --test branding/flowstoken/tests/brand-guard.test.mjs branding/flowstoken/tests/resolve-upstream-conflicts.test.mjs
+          run "release notes" node scripts/release/release-notes.mjs --check
+          run "check (lint/types/guards)" bun run check
+          run "quality tests" bun run test:quality
+          run "desktop packaging contract" bun run verify:desktop:contracts
+          run "desktop packaging helpers" bun run test:desktop:packaging
+          run "FlowsToken-related unit tests" node scripts/flowstoken/test-flowstoken-related.mjs "upstream/${{ steps.detect.outputs.tag }}"
+
+      - name: Upload check logs
+        if: always() && steps.detect.outputs.skip != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: upstream-sync-checks
+          path: |
+            checks-full.log
+            checks-failed.log
+            resolve.log
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Commit release bump and push main
         if: steps.detect.outputs.skip != 'true'
@@ -180,7 +200,7 @@ jobs:
           REASON="${{ steps.merge.outputs.reason }}"; [ -n "$REASON" ] || REASON="checks failed"
           gh label create upstream-sync --color D93F0B --description "Automatic upstream sync needs attention" >/dev/null 2>&1 || true
           BODY="$(printf 'Open Vetta %s could not be synced automatically: **%s**. Nothing was released.\n\nRun: %s\nBranch: %s\n\n```\n%s\n```\n' \
-            "$TAG" "$REASON" "$RUN" "$BRANCH" "$( { echo "${{ steps.merge.outputs.detail }}"; tail -60 checks.log 2>/dev/null; } | tail -80)")"
+            "$TAG" "$REASON" "$RUN" "$BRANCH" "$( { echo "${{ steps.merge.outputs.detail }}"; cat checks-failed.log 2>/dev/null; grep -E "FAIL |✖|× |error TS|error:" checks-full.log 2>/dev/null | head -40; } | tail -80)")"
           EXISTING="$(gh issue list --label upstream-sync --state open --search "${TAG} in:title" --json number --jq '.[0].number // empty')"
           if [ -n "$EXISTING" ]; then gh issue comment "$EXISTING" --body "$BODY"; else
             gh issue create --title "upstream sync ${TAG} needs attention" --label upstream-sync --body "$BODY"; fi
