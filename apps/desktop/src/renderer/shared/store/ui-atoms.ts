@@ -67,6 +67,7 @@ export type SettingsTab =
 	| "knowledge"
 	| "pet"
 	| "remote"
+	| "sshHosts"
 	| "flowstoken";
 
 // ─── Theme ───

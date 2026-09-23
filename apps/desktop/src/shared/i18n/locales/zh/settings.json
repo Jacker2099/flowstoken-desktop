@@ -247,7 +247,25 @@
   "language": "语言",
   "proxy": {
     "title": "代理",
-    "placeholder": "示例：http://127.0.0.1:7890"
+    "placeholder": "示例：http://127.0.0.1:7890",
+    "sectionTitle": "网络代理",
+    "enableTitle": "启用应用代理",
+    "enableDescription": "开启后，模型请求、本地命令与下载默认经该代理出网；本机地址（localhost / 127.0.0.1）始终直连。",
+    "protocolTitle": "代理类型",
+    "hostTitle": "代理地址",
+    "hostPlaceholder": "例如 127.0.0.1",
+    "portTitle": "端口",
+    "usernameTitle": "用户名",
+    "usernamePlaceholder": "选填",
+    "passwordTitle": "密码",
+    "passwordPlaceholder": "选填",
+    "passwordStoredPlaceholder": "已保存，留空则不修改",
+    "providersTitle": "按服务商",
+    "providersDescription": "默认全部走代理。国内服务商或本地模型可以在这里单独关掉，避免绕远。",
+    "noProviders": "还没有配置服务商。",
+    "invalidConfig": "代理地址或端口无效，模型请求会直接失败而不会改走直连。请填写有效的地址和端口。",
+    "providerLocal": "上游在本机或局域网，这一跳不出网，始终直连。它自己如何出网由该服务自行配置。",
+    "providerFollowsGlobal": "该服务商由厂商 SDK 自己发请求，够不到应用内的传输设置，只能跟随全局代理，无法单独排除。"
   },
   "workspace": {
     "title": "工作区",
@@ -328,6 +346,10 @@
     },
     "configurations": {
       "coding": {
+        "compaction": {
+          "title": "上下文压缩",
+          "description": "控制对话使用多少上下文后自动压缩，以及压缩后保留多少最近对话。手动压缩不受开关影响。"
+        },
         "images": {
           "title": "图片处理",
           "description": "配置图片规范化、安全限制、压缩和模型请求预算。"
@@ -341,6 +363,22 @@
       }
     },
     "fields": {
+      "enabled": {
+        "title": "自动压缩",
+        "description": "在上下文接近模型上限时自动整理长对话；关闭后仍可手动压缩。"
+      },
+      "reserveTokens": {
+        "title": "剩余空间阈值（tokens）",
+        "description": "剩余可用上下文少于这个数值，且已用上下文达到压缩阈值时，自动压缩。"
+      },
+      "contextThresholdPercent": {
+        "title": "上下文压缩阈值（%）",
+        "description": "已用上下文达到这个比例，且剩余空间也低于上面的 token 阈值时，自动压缩。"
+      },
+      "keepRecentTokens": {
+        "title": "压缩后保留的最近对话（tokens）",
+        "description": "每次压缩时，最近约这么多 token 的对话保留原文；更早的内容整理成摘要。数值越大，保留的近期细节越多。"
+      },
       "autoResize": {
         "title": "自动缩放",
         "description": "在图片超出限制时自动缩放和压缩。"
@@ -1130,6 +1168,7 @@
   "section_remote-pairing": "手机配对",
   "section_remote-permissions": "控制权限",
   "section_general-basics": "基础",
+  "section_general-network": "网络代理",
   "section_general-app": "应用",
   "section_general-developer": "开发者",
   "section_appearance-mode": "外观模式",
@@ -1147,18 +1186,8 @@
   "ornamentNoneHint": "空着这块位置，页面更清爽。",
   "ornamentViviTitle": "Vivi",
   "ornamentViviHint": "FlowsToken 的白鼬 Vivi，会不时眨眼、挥手、从输入框上爬过。",
-  "ornamentOrbitTitle": "星轨",
-  "ornamentOrbitHint": "一枚实时演算的着色器球，表面的丝缕会缓慢流转。",
-  "ornamentTorchTitle": "火把",
-  "ornamentTorchHint": "一根像素火把，火光会轻轻跳动；点一下可以熄灭或重新点着。",
   "ornamentMarioTitle": "马里奥",
   "ornamentMarioHint": "一排像素砖块，顶一下中间的问号砖块会蹦出蘑菇。",
-  "ornamentBlazeTitle": "燃烧",
-  "ornamentBlazeHint": "一团烧在暖色光晕里的火，火苗不停翻卷、颜色随之流转。",
-  "ornamentHandTitle": "玩手",
-  "ornamentHandHint": "一只搭在输入框边上的手，四根手指轮流敲着；点一下它会收成拳头歇着。",
-  "ornamentWellTitle": "能源井",
-  "ornamentWellHint": "一座悬在半空的能量井，井口蓄着一汪水，粒子顺着光锥往上飘。",
   "section_appearance-texture": "纹理",
   "textureHint": "新会话页整页背后的底衬",
   "textureNoneTitle": "无",
@@ -1166,7 +1195,7 @@
   "textureGridTitle": "网格",
   "textureGridHint": "一层淡淡的方格纹，越靠边越淡，页面中间浮着一团主色光晕。",
   "textureAuroraTitle": "流光",
-  "textureAuroraHint": "页面正中一团半调网点的光晕，光斑在点阵后缓慢流过并不断换色，向四周淡开。",
+  "textureAuroraHint": "页面正中一团半调网点的光晕，几色光斑透过点阵交叠，向四周淡开。",
   "textureRippleTitle": "涟漪",
   "textureRippleHint": "与网格同一套排版，纹路换成一层细细的同心圆环。",
   "newSessionDecorTitle": "新会话页装饰",
@@ -1330,7 +1359,7 @@
       "knowledge": "例如：开启知识库加工，间隔 10 分钟…",
       "knowledgeBase": "例如：新建一个知识库，并把本地文件夹导进去…",
       "batchTasks": "例如：新建一个批量项目，对多个文件夹分别执行…",
-      "automation": "例如：每天早上 9 点自动跑一段整理工作…",
+      "automation": "例如：工作日早上 9 点在 openvetta 项目里跑一次晨报，失败时发飞书通知…",
       "im": "例如：开启 Claw 并帮我配置飞书…",
       "webhook": "例如：新增一个任务完成时推送的渠道…",
       "appearance": "例如：切到深色模式，并把指针换成白鼬…",
@@ -1360,7 +1389,7 @@
       "knowledge": "我想配置知识库。请先了解当前加工与相关设置，再引导我完成配置。",
       "knowledgeBase": "我想管理知识库。请先了解当前有哪些库与加工状态，再引导我完成操作。",
       "batchTasks": "我想创建或管理批量任务。请先了解当前项目与任务状态，再引导我完成操作。",
-      "automation": "我想创建或管理定时任务。请先了解当前有哪些任务，再引导我完成操作。",
+      "automation": "我想创建或管理自动化。请先查看现有的自动化和可用的项目，再帮我配置运行在哪个项目、每次新建会话还是同一个会话、重复频率和通知。",
       "im": "我想配置 Claw（即时消息桥接）。请先了解当前状态与渠道，再引导我完成配置。",
       "webhook": "我想配置消息推送。请先了解当前渠道，再引导我完成配置。",
       "appearance": "我想调整外观。请先了解当前主题与相关设置，再引导我完成配置。",
@@ -1397,9 +1426,10 @@
         "status": "看看当前批量任务跑到哪了"
       },
       "automation": {
-        "create": "新建一个每天定时执行的任务",
-        "enable": "启用或暂停某个定时任务",
-        "list": "看看现在有哪些自动化任务"
+        "create": "每个工作日 9 点在某个项目里新开会话跑晨报",
+        "interval": "每隔 30 分钟在同一个会话里检查一次构建",
+        "notify": "给某个自动化加上失败时的 webhook 通知",
+        "list": "看看哪些自动化暂停了、为什么"
       },
       "im": {
         "enable": "开启 Claw 消息桥接",
@@ -1571,6 +1601,8 @@
   "shortcutNewSessionDesc": "在当前项目下创建新的对话会话",
   "shortcutSteerMessageLabel": "优先发送消息",
   "shortcutSteerMessageDesc": "在当前模型调用或工具执行结束后优先处理输入框消息",
+  "shortcutTogglePlanModeLabel": "切换计划模式",
+  "shortcutTogglePlanModeDesc": "在输入框中开启或退出计划模式：先出计划，批准后才执行",
   "shortcutOpenProjectLabel": "打开项目",
   "shortcutOpenProjectDesc": "选择并打开一个项目文件夹",
   "shortcutOpenSettingsLabel": "打开设置",
@@ -2122,6 +2154,44 @@
   "feishuUnbindApp": "解绑应用",
   "feishuQrExpired": "二维码已过期，请重新扫码",
   "pleaseBindFeishu": "请先扫码接入飞书机器人",
+  "tabSshHosts": "SSH 主机",
+  "section_ssh-hosts-list": "主机列表",
+  "sshHostsDescription": "登记可以用来跑项目的远程主机。登记后即可在「添加项目」里选择该主机上的目录，Agent 的命令与文件读写都会发生在那台机器上。",
+  "sshHostsEmpty": "还没有登记任何主机",
+  "sshHostsEmptyHint": "如果你平时用 ssh 连服务器，可以直接从 ~/.ssh/config 导入已有的别名；也可以手动添加一台。",
+  "sshAddHost": "添加主机",
+  "sshEditHost": "编辑",
+  "sshSaveHost": "保存主机",
+  "sshRemove": "删除主机",
+  "sshRemoveTitle": "删除这台主机？",
+  "sshRemoveConfirm": "删除后「{{name}}」将从列表中移除。远端机器上的文件不受影响；如果还有项目放在这台主机上，需要先移除那些项目。",
+  "sshFieldTarget": "连接目标",
+  "sshFieldTargetHint": "填 ~/.ssh/config 里的别名（推荐），或 user@host。只要你在终端里 ssh 它能连上，这里就能连上。",
+  "sshFieldLabel": "显示名称",
+  "sshFieldLabelHint": "留空则使用连接目标。",
+  "sshFieldPort": "端口",
+  "sshFieldIdentityFile": "私钥文件",
+  "sshFieldIdentityFileHint": "留空则交给 ssh-agent 与 OpenSSH 的默认身份。",
+  "sshTest": "测试连接",
+  "sshTesting": "连接中",
+  "sshTestOk": "连接成功（{{platform}}）",
+  "sshTestFailed": "无法连接。已填写的配置已保存，检查连接目标和端口后可以再试一次。",
+  "sshTestDetails": "技术详情",
+  "sshStatusConnected": "已连接",
+  "sshStatusUnverifiable": "连接不上",
+  "sshStatusUnknown": "未连接",
+  "sshImportFromConfig": "从 ssh config 导入",
+  "sshImportNone": "没有发现可导入的新别名。已登记的主机不会被覆盖。",
+  "sshImportDone": "已导入 {{count}} 台主机。",
+  "sshPromptConfirmTitle": "确认这台主机的身份",
+  "sshPromptSecretTitle": "需要凭据才能连接",
+  "sshPromptHost": "主机：{{host}}",
+  "sshPromptSecretLabel": "口令",
+  "sshPromptCodeLabel": "验证码",
+  "sshPromptRemember": "记住它（加密保存在本机，下次自动填）",
+  "sshPromptSubmit": "继续连接",
+  "sshPromptAccept": "确认并连接",
+  "sshPromptReject": "取消连接",
   "tabFlowstoken": "FlowsToken 账户",
   "section_flowstoken-account": "FlowsToken 账户"
 }

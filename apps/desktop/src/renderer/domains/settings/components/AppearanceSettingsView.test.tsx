@@ -8,6 +8,15 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { AppearanceSettingsModel } from "./useAppearanceSettingsModel";
 
+const { renderMarioPreview } = vi.hoisted(() => ({ renderMarioPreview: vi.fn() }));
+
+vi.mock("@shared/components/mario/PixelMarioBlocks", () => ({
+	PixelMarioBlocks: () => {
+		renderMarioPreview();
+		return <div data-testid="mario-preview" />;
+	},
+}));
+
 vi.mock("react-i18next", () => ({
 	useTranslation: () => ({ t: (key: string) => key, i18n: { exists: () => true } }),
 }));
@@ -108,5 +117,19 @@ describe("AppearanceSettingsView 的新会话页装饰区域", () => {
 
 		expect(grid.querySelector('[class*="mdi--check"]')).not.toBeNull();
 		expect(none.querySelector('[class*="mdi--check"]')).toBeNull();
+	});
+
+	it("切换外观模式时不会重新渲染无关的装饰预览", () => {
+		const initial = model({
+			ornamentId: "mario",
+			ornamentOptions: [{ active: true, hint: "marioHint", id: "mario", label: "马里奥" }],
+		});
+		renderMarioPreview.mockClear();
+		const view = render(<AppearanceSettingsView model={initial} />);
+		expect(renderMarioPreview).toHaveBeenCalledTimes(1);
+
+		view.rerender(<AppearanceSettingsView model={{ ...initial, mode: "light" }} />);
+
+		expect(renderMarioPreview).toHaveBeenCalledTimes(1);
 	});
 });

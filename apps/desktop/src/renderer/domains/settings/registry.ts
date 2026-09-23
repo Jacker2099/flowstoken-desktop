@@ -17,6 +17,7 @@ export type SettingsTabLabelKey =
 	| "tabPet"
 	| "tabPermissions"
 	| "tabRemote"
+	| "tabSshHosts"
 	| "tabFlowstoken";
 
 export interface SettingsTabRegistration {
@@ -53,6 +54,12 @@ export const SETTINGS_TABS: readonly SettingsTabRegistration[] = [
 	{ key: "appearance", label: "外观", labelKey: "tabAppearance", icon: "icon-[mdi--palette-outline]" },
 	{ key: "context", label: "Agent配置", labelKey: "tabContext", icon: "icon-[mdi--robot-outline]" },
 	{ key: "models", label: "模型配置", labelKey: "tabModels", icon: "icon-[mdi--brain]" },
+	{
+		key: "sshHosts",
+		label: "SSH 主机",
+		labelKey: "tabSshHosts",
+		icon: "icon-[solar--server-linear]",
+	},
 	// MCP 管理已迁至侧栏「扩展 → 连接器」
 	{ key: "im", label: "Claw", labelKey: "tabIm", icon: "icon-[mdi--message-text-outline]" },
 	{ key: "webhook", label: "消息推送", labelKey: "tabWebhook", icon: "icon-[mdi--webhook]" },
@@ -86,10 +93,12 @@ export const SETTINGS_TABS: readonly SettingsTabRegistration[] = [
 
 export const SETTINGS_SECTIONS = [
 	{ tab: "general", id: "general-basics", title: "基础", titleKey: "section_general-basics" },
+	{ tab: "general", id: "general-network", title: "网络代理", titleKey: "section_general-network" },
 	{ tab: "general", id: "general-app", title: "应用", titleKey: "section_general-app" },
 	{ tab: "general", id: "general-developer", title: "开发者", titleKey: "section_general-developer" },
 	{ tab: "remote", id: "remote-pairing", title: "手机配对", titleKey: "section_remote-pairing" },
 	{ tab: "remote", id: "remote-permissions", title: "控制权限", titleKey: "section_remote-permissions" },
+	{ tab: "sshHosts", id: "ssh-hosts-list", title: "主机列表", titleKey: "section_ssh-hosts-list" },
 	{ tab: "appearance", id: "appearance-mode", title: "外观模式", titleKey: "section_appearance-mode" },
 	{ tab: "appearance", id: "appearance-ui-theme", title: "界面主题", titleKey: "section_appearance-ui-theme" },
 	{ tab: "appearance", id: "appearance-cursor", title: "鼠标指针", titleKey: "section_appearance-cursor" },
