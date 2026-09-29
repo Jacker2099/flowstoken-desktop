@@ -197,6 +197,8 @@ export function useModelSelectorModel({
 				multiplierLabel: multiplierLabelFor,
 				cloudOnly: t("modelSelect.cloudOnly"),
 				defaultBadge: t("modelSelect.defaultBadge"),
+				newBadge: t("modelSelect.newBadge"),
+				allVendors: t("modelSelect.allVendors"),
 				levelLabel,
 				modelHeader: t("modelSelect.modelHeader"),
 				noResults: t("modelSelect.noResults"),

@@ -60,3 +60,6 @@ export interface FlowstokenEnsureKeysResult {
 	created: string[];
 	reused: string[];
 }
+
+/** Per FlowsToken provider id, per model id: vendor subheader and NEW badge for the model picker. */
+export type FlowstokenModelMeta = Record<string, Record<string, { vendor: string; isNew: boolean }>>;

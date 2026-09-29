@@ -68,4 +68,8 @@ export interface DesktopFlowstokenApi {
 	refresh: () => Promise<FlowstokenAccountSnapshot>;
 	openExternal: (url: string) => Promise<void>;
 	onAccountChanged: (listener: (snapshot: FlowstokenAccountSnapshot) => void) => () => void;
+	getModelMeta: () => Promise<FlowstokenModelMeta>;
 }
+
+/** Per FlowsToken provider id, per model id: vendor subheader and NEW badge for the model picker. */
+export type FlowstokenModelMeta = Record<string, Record<string, { vendor: string; isNew: boolean }>>;

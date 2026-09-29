@@ -965,6 +965,8 @@
 		"unset": "Not set",
 		"defaultBadge": "Default",
 		"visionBadge": "vision",
+		"newBadge": "NEW",
+		"allVendors": "All vendors",
 		"cloudOnly": "Cloud",
 		"reasoningHeader": "Reasoning",
 		"modelHeader": "Model",

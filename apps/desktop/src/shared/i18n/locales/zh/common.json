@@ -965,6 +965,8 @@
     "unset": "未设置",
     "defaultBadge": "默认",
     "visionBadge": "vision",
+    "newBadge": "NEW",
+    "allVendors": "全部厂商",
     "cloudOnly": "云端",
     "reasoningHeader": "推理",
     "modelHeader": "模型",

@@ -1,17 +1,14 @@
-import { net } from "electron";
 import { getDesktopModelSettingsService } from "../models/model-settings-host.js";
 import {
 	FLOWSTOKEN_CONSOLE_URL,
-	FLOWSTOKEN_DEFAULT_GROUP_MODELS,
 	FLOWSTOKEN_GROUPS,
-	FLOWSTOKEN_OFFICIAL_GROUP_MODELS,
 	FLOWSTOKEN_OPENAI_BASE_URL,
 	FLOWSTOKEN_QUOTA_PER_USD,
 	FLOWSTOKEN_SITE_URL,
-	FLOWSTOKEN_SMART_GROUP_MODELS,
 	FLOWSTOKEN_TOPUP_URL,
 	type FlowstokenGroupId,
 } from "./constants.js";
+import { fallbackGroupModels, fetchGroupCatalog, GROUP_MODELS_MAX_AGE_MS } from "./group-catalog.js";
 import {
 	clearFlowstokenSession,
 	getFlowstokenSession,
@@ -19,6 +16,7 @@ import {
 	loginWithPasswordAndTurnstile,
 	probeExistingSession,
 } from "./login-window.js";
+import type { OrderedGroupModel } from "./model-order.js";
 import {
 	createToken,
 	FlowstokenApiError,
@@ -143,6 +141,7 @@ export async function getAccountSnapshot(options?: {
 
 	const groups = await groupStates();
 	triggerBackgroundSyncIfUnwired(user, groups);
+	triggerBackgroundModelRefreshIfStale(groups);
 
 	return {
 		loggedIn: true,
@@ -159,12 +158,16 @@ export async function getAccountSnapshot(options?: {
 	};
 }
 
+function toProviderModels(models: readonly OrderedGroupModel[]) {
+	return models.map((model) => ({ id: model.id, name: model.name, api: "openai-completions" as const }));
+}
+
 async function wireAllProviders(
 	items: Array<{
 		providerId: string;
 		labelZh: string;
 		apiKey: string;
-		modelIds: readonly string[];
+		models: readonly OrderedGroupModel[];
 	}>,
 ): Promise<void> {
 	const service = getDesktopModelSettingsService();
@@ -181,10 +184,7 @@ async function wireAllProviders(
 			api: "openai-completions",
 			baseUrl: FLOWSTOKEN_OPENAI_BASE_URL,
 			apiKey: item.apiKey,
-			models:
-				item.modelIds.length > 0
-					? item.modelIds.map((id) => ({ id, name: id, api: "openai-completions" }))
-					: (existing?.models ?? []),
+			models: item.models.length > 0 ? toProviderModels(item.models) : (existing?.models ?? []),
 			modelsSyncedAt: new Date().toISOString(),
 		};
 	}
@@ -198,46 +198,44 @@ async function wireAllProviders(
 	});
 }
 
-async function fetchGroupModels(): Promise<Record<FlowstokenGroupId, readonly string[]>> {
-	try {
-		const controller = new AbortController();
-		const timer = setTimeout(() => controller.abort(), 6000);
-		const resp = await net.fetch("https://www.flowstoken.com/api/pricing", {
-			signal: controller.signal,
-		});
-		clearTimeout(timer);
-		if (resp.ok) {
-			const json = (await resp.json()) as { data?: Array<{ model_name?: string; enable_groups?: string[] }> };
-			if (Array.isArray(json.data) && json.data.length > 0) {
-				const map: Record<FlowstokenGroupId, string[]> = {
-					default: [],
-					smart: [],
-					vip: [],
+let modelRefreshPromise: Promise<void> | null = null;
+
+/**
+ * Keys are wired once, but the site adds and retires models: refresh the model lists of already wired groups when
+ * they are older than GROUP_MODELS_MAX_AGE_MS. Keys, provider settings and the default model stay untouched.
+ */
+function triggerBackgroundModelRefreshIfStale(groups: FlowstokenGroupKeyState[]): void {
+	if (modelRefreshPromise || groups.length === 0 || !groups.every((g) => g.wired)) return;
+	modelRefreshPromise = (async () => {
+		try {
+			const service = getDesktopModelSettingsService();
+			const config = await service.getConfig();
+			const now = Date.now();
+			const stale = FLOWSTOKEN_GROUPS.some((group) => {
+				const syncedAt = Date.parse(config.providers[group.providerId]?.modelsSyncedAt ?? "");
+				return !Number.isFinite(syncedAt) || now - syncedAt > GROUP_MODELS_MAX_AGE_MS;
+			});
+			if (!stale) return;
+			const catalog = await fetchGroupCatalog(now);
+			if (!catalog) return;
+			const latest = await service.getConfig();
+			const providers = { ...latest.providers };
+			for (const group of FLOWSTOKEN_GROUPS) {
+				const existing = providers[group.providerId];
+				if (!existing?.apiKey || catalog[group.id].length === 0) continue;
+				providers[group.providerId] = {
+					...existing,
+					models: toProviderModels(catalog[group.id]),
+					modelsSyncedAt: new Date(now).toISOString(),
 				};
-				for (const item of json.data) {
-					const name = item.model_name?.trim();
-					const groups = Array.isArray(item.enable_groups) ? item.enable_groups : [];
-					if (!name) continue;
-					if (groups.includes("default")) map.default.push(name);
-					if (groups.includes("smart")) map.smart.push(name);
-					if (groups.includes("vip")) map.vip.push(name);
-				}
-				if (!map.smart.includes("Bestoo-Auto")) {
-					map.smart.unshift("Bestoo-Auto");
-				}
-				if (map.default.length > 0 && map.vip.length > 0) {
-					return map;
-				}
 			}
+			await service.replaceConfig({ ...latest, providers });
+		} catch (e) {
+			console.warn("[FlowsToken] Background model list refresh failed:", e);
+		} finally {
+			modelRefreshPromise = null;
 		}
-	} catch {
-		// Non-blocking, fallback to static definitions
-	}
-	return {
-		default: FLOWSTOKEN_DEFAULT_GROUP_MODELS,
-		smart: FLOWSTOKEN_SMART_GROUP_MODELS,
-		vip: FLOWSTOKEN_OFFICIAL_GROUP_MODELS,
-	};
+	})();
 }
 
 export async function ensureGroupKeysAndProviders(groupIds?: FlowstokenGroupId[]): Promise<FlowstokenEnsureKeysResult> {
@@ -247,12 +245,12 @@ export async function ensureGroupKeysAndProviders(groupIds?: FlowstokenGroupId[]
 		await fetchSelf(getFlowstokenSession());
 		const targets = FLOWSTOKEN_GROUPS.filter((g) => !groupIds || groupIds.includes(g.id));
 		let tokens = await listTokens(getFlowstokenSession());
-		const liveGroupModels = await fetchGroupModels();
+		const catalog = await fetchGroupCatalog();
 		const wireBatch: Array<{
 			providerId: string;
 			labelZh: string;
 			apiKey: string;
-			modelIds: readonly string[];
+			models: readonly OrderedGroupModel[];
 		}> = [];
 
 		for (const group of targets) {
@@ -267,12 +265,11 @@ export async function ensureGroupKeysAndProviders(groupIds?: FlowstokenGroupId[]
 			}
 			if (!managed) throw new FlowstokenApiError(`无法准备「${group.labelZh}」令牌`);
 			const key = await revealTokenKey(getFlowstokenSession(), managed.id);
-			const modelsToWire = liveGroupModels[group.id]?.length > 0 ? liveGroupModels[group.id] : group.defaultModels;
 			wireBatch.push({
 				providerId: group.providerId,
 				labelZh: group.labelZh,
 				apiKey: key,
-				modelIds: modelsToWire,
+				models: catalog?.[group.id]?.length ? catalog[group.id] : fallbackGroupModels(group.id),
 			});
 		}
 

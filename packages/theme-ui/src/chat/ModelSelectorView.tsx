@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from "motion/react";
 import type { ChangeEvent, JSX, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
 	cn,
 	DropdownMenu,
@@ -37,6 +37,10 @@ export interface ModelSelectorOptionView {
 	/** 来自远程目录（云端）；分组头会打上 `labels.cloudOnly` 徽章。 */
 	readonly remote?: boolean;
 	readonly supportsImage?: boolean;
+	/** 模型厂商。宿主已按厂商排好序；有值时列表在厂商变化处插入小标题，并提供厂商筛选。 */
+	readonly vendor?: string;
+	/** 近期发布，显示 `labels.newBadge`。 */
+	readonly isNew?: boolean;
 }
 
 export interface ModelSelectorLabels {
@@ -50,6 +54,10 @@ export interface ModelSelectorLabels {
 	cloudOnly: string;
 	visionBadge: string;
 	defaultBadge: string;
+	/** 近期发布模型的徽标文案；未提供则不显示。 */
+	newBadge?: string;
+	/** 厂商筛选里「全部」的文案。 */
+	allVendors?: string;
 	levelLabel: (value: string) => string;
 	/**
 	 * 计费倍率标（如「2×」「免费」）。返回空/undefined 则不渲染——倍率含义与文案属于
@@ -152,20 +160,9 @@ export function ModelSelectorView({
 			currentGroups = groups.filter((g) => g.provider === "flowstoken-official");
 		}
 
-		if (activeTab === "flowstoken-official" && vendorFilter !== "all") {
+		if (vendorFilter !== "all") {
 			currentGroups = currentGroups
-				.map((g) => {
-					const models = g.models.filter((m) => {
-						const id = m.modelId.toLowerCase();
-						if (vendorFilter === "anthropic") return id.includes("claude") || id.startsWith("anthropic/");
-						if (vendorFilter === "openai") return id.includes("gpt") || id.startsWith("openai/") || id.includes("o1") || id.includes("o3") || id.includes("o4");
-						if (vendorFilter === "deepseek") return id.includes("deepseek");
-						if (vendorFilter === "google") return id.includes("gemini") || id.startsWith("google/") || id.includes("gemma");
-						if (vendorFilter === "domestic") return id.includes("kimi") || id.includes("minimax") || id.includes("glm") || id.includes("qwen") || id.includes("grok") || id.includes("moonshot") || id.includes("zai") || id.includes("alibaba") || id.includes("step");
-						return true;
-					});
-					return { ...g, models };
-				})
+				.map((g) => ({ ...g, models: g.models.filter((m) => m.vendor === vendorFilter) }))
 				.filter((g) => g.models.length > 0);
 		}
 
@@ -185,6 +182,21 @@ export function ModelSelectorView({
 			return models.length > 0 ? [{ ...group, models }] : [];
 		});
 	}, [groups, activeTab, vendorFilter, searchQuery]);
+
+	/** 当前分组里出现的厂商（按宿主给的顺序），多于一家才显示筛选。 */
+	const vendorChips = useMemo(() => {
+		if (activeTab !== "flowstoken-default" && activeTab !== "flowstoken-official") return [];
+		const seen: string[] = [];
+		for (const group of groups) {
+			const inTab =
+				activeTab === "flowstoken-official"
+					? group.provider === "flowstoken-official"
+					: group.provider === "flowstoken-default" || group.provider === "flowstoken-normal";
+			if (!inTab) continue;
+			for (const model of group.models) if (model.vendor && !seen.includes(model.vendor)) seen.push(model.vendor);
+		}
+		return seen.length > 1 ? seen : [];
+	}, [groups, activeTab]);
 
 	const handleOpenChange = useCallback(
 		(nextOpen: boolean) => {
@@ -392,31 +404,27 @@ export function ModelSelectorView({
 										</div>
 									)}
 
-									{/* 官方组厂商快捷筛选 Chips */}
-									{activeTab === "flowstoken-official" && (
+									{/* 普通组 / 官方组厂商筛选 */}
+									{vendorChips.length > 0 && (
 										<div className="shrink-0 flex items-center gap-1 overflow-x-auto px-1.5 pt-1.5 pb-0.5 text-[10px] no-scrollbar">
-											{[
-												{ id: "all", label: "全部厂商" },
-												{ id: "anthropic", label: "Claude" },
-												{ id: "openai", label: "OpenAI" },
-												{ id: "deepseek", label: "DeepSeek" },
-												{ id: "google", label: "Google" },
-												{ id: "domestic", label: "国内原厂" },
-											].map((chip) => (
-												<button
-													key={chip.id}
-													type="button"
-													onClick={() => setVendorFilter(chip.id)}
-													className={cn(
-														"shrink-0 rounded-full px-2 py-0.5 text-[10px] transition-colors",
-														vendorFilter === chip.id
-															? "bg-primary/20 font-semibold text-primary"
-															: "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground",
-													)}
-												>
-													{chip.label}
-												</button>
-											))}
+											{[{ id: "all", label: labels.allVendors ?? "全部厂商" }, ...vendorChips.map((v) => ({ id: v, label: v }))].map(
+												(chip) => (
+													<button
+														key={chip.id}
+														type="button"
+														aria-pressed={vendorFilter === chip.id}
+														onClick={() => setVendorFilter(chip.id)}
+														className={cn(
+															"shrink-0 rounded-full px-2 py-0.5 text-[10px] transition-colors",
+															vendorFilter === chip.id
+																? "bg-primary/20 font-semibold text-primary"
+																: "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground",
+														)}
+													>
+														{chip.label}
+													</button>
+												),
+											)}
 										</div>
 									)}
 
@@ -555,9 +563,14 @@ export function ModelSelectorView({
 													</span>
 												)}
 											</div>
-											{group.models.map((model) => (
+											{group.models.map((model, index) => (
+												<Fragment key={model.key}>
+												{model.vendor && model.vendor !== group.models[index - 1]?.vendor && (
+													<div className="px-2 pb-0.5 pt-1.5 text-[10px] font-semibold text-muted-foreground/70">
+														{model.vendor}
+													</div>
+												)}
 												<DropdownMenuItem
-													key={model.key}
 													data-model-key={model.key}
 													aria-current={model.key === selectedModel ? "true" : undefined}
 													className={cn(
@@ -568,6 +581,11 @@ export function ModelSelectorView({
 													onSelect={() => handleModelSelect(model.key)}
 												>
 													<span className="min-w-0 flex-1 truncate">{model.displayName}</span>
+													{model.isNew && labels.newBadge && (
+														<span className="shrink-0 rounded-full bg-primary/10 px-1 text-[9px] font-semibold text-primary">
+															{labels.newBadge}
+														</span>
+													)}
 													<ModelMultiplier label={labels.multiplierLabel?.(model)} />
 													{model.supportsImage && (
 														<span
@@ -585,6 +603,7 @@ export function ModelSelectorView({
 														<span className="icon-[solar--check-circle-linear] h-3 w-3 shrink-0" />
 													)}
 												</DropdownMenuItem>
+												</Fragment>
 											))}
 										</div>
 										))}

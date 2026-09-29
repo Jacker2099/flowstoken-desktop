@@ -15,7 +15,7 @@ import {
 } from "@vetta-org/ui";
 import { AnimatePresence, motion } from "motion/react";
 import type { ChangeEvent, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { MultiplierTag } from "./MultiplierTag";
 import { resolveReasoning } from "./resolveReasoning";
@@ -445,15 +445,25 @@ export function ModelSelect({
 														</span>
 													)}
 												</div>
-												{group.models.map((m) => (
+												{group.models.map((m, index) => (
+													<Fragment key={m.key}>
+													{m.vendor && m.vendor !== group.models[index - 1]?.vendor && (
+														<div className="px-3 pb-0.5 pt-1.5 text-[10px] font-semibold text-muted-foreground/70">
+															{m.vendor}
+														</div>
+													)}
 													<DropdownMenuItem
-														key={m.key}
 														data-model-key={m.key}
 														aria-current={m.key === value ? "true" : undefined}
 														className={cn("rounded-md", m.key === value && "bg-accent text-accent-foreground")}
 														onSelect={() => handleModelSelect(m.key)}
 													>
 														<span className="min-w-0 flex-1 truncate">{m.displayName}</span>
+														{m.isNew && (
+															<span className="shrink-0 rounded-full bg-primary/10 px-1.5 py-0.5 text-[9px] font-semibold text-primary">
+																{t("modelSelect.newBadge")}
+															</span>
+														)}
 														<MultiplierTag multiplier={m.multiplier} />
 														{m.supportsImage && (
 															<span className="shrink-0 rounded-full bg-primary/15 px-1.5 py-0.5 text-[9px] font-medium text-primary">
@@ -477,6 +487,7 @@ export function ModelSelect({
 															<span className="icon-[solar--check-circle-linear] h-3.5 w-3.5 shrink-0" />
 														)}
 													</DropdownMenuItem>
+													</Fragment>
 												))}
 											</div>
 										))}

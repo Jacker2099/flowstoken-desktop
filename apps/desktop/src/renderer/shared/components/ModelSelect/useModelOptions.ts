@@ -1,5 +1,10 @@
 import type { ModelsConfigData } from "@preload/api";
-import { localModelsConfigAtom, remoteProvidersAtom } from "@shared/store/atoms";
+import {
+	flowstokenModelMetaAtom,
+	localModelsConfigAtom,
+	remoteProvidersAtom,
+	revalidateFlowstokenModelMeta,
+} from "@shared/store/atoms";
 import { modelCatalog } from "@shared/store/model-catalog";
 import { useAtomValue } from "jotai";
 import { useEffect, useMemo } from "react";
@@ -26,6 +31,10 @@ export interface ModelOption {
 	defaultReasoningLevel?: string;
 	/** Per-model billing multipliers relative to the credit base (undefined for local BYOK) */
 	multiplier?: { input: number; output: number; cacheRead: number; cacheWrite: number };
+	/** FlowsToken group models: model vendor (shown as a subheader; models arrive ordered by vendor) */
+	vendor?: string;
+	/** FlowsToken group models: released within the last 30 days */
+	isNew?: boolean;
 }
 
 function flattenModels(config: ModelsConfigData, remote?: boolean): ModelOption[] {
@@ -77,13 +86,21 @@ export interface UseModelOptionsResult {
 export function useModelOptions(): UseModelOptionsResult {
 	const remoteProviders = useAtomValue(remoteProvidersAtom);
 	const config = useAtomValue(localModelsConfigAtom);
+	const flowstokenMeta = useAtomValue(flowstokenModelMetaAtom);
 
 	// 挂载即校验一次；TTL 内命中缓存不会真的打接口，所以多个选择器同时挂载也只有一次请求。
 	useEffect(() => {
 		void modelCatalog.revalidate();
+		void revalidateFlowstokenModelMeta();
 	}, []);
 
-	const localModels = useMemo(() => (config ? flattenModels(config) : []), [config]);
+	const localModels = useMemo(() => {
+		if (!config) return [];
+		return flattenModels(config).map((option) => {
+			const meta = flowstokenMeta[option.provider]?.[option.modelId];
+			return meta ? { ...option, vendor: meta.vendor || undefined, isNew: meta.isNew } : option;
+		});
+	}, [config, flowstokenMeta]);
 	const remoteModels = useMemo(
 		() =>
 			Object.keys(remoteProviders).length > 0

@@ -1,4 +1,4 @@
-import type { ModelsConfigData } from "@preload/api";
+import type { FlowstokenModelMeta, ModelsConfigData } from "@preload/api";
 import { atom } from "jotai";
 
 /**
@@ -13,3 +13,6 @@ export const localModelsConfigAtom = atom<ModelsConfigData | null>(null);
 
 /** 服务端下发的远程 provider catalog（Vetta Go 等）。 */
 export const remoteProvidersAtom = atom<Record<string, unknown>>({});
+
+/** FlowsToken 分组模型的厂商与 NEW 标记（按 providerId → modelId），用于模型选择器分厂商显示。 */
+export const flowstokenModelMetaAtom = atom<FlowstokenModelMeta>({});

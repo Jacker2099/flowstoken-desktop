@@ -3,7 +3,8 @@ import { getDefaultStore } from "jotai";
 import { localModelsConfigAtom, remoteProvidersAtom } from "./model-catalog-atoms";
 import { createModelCatalogSync, type ModelCatalogSync } from "./model-catalog-sync";
 
-export { localModelsConfigAtom } from "./model-catalog-atoms";
+export { revalidateFlowstokenModelMeta } from "./flowstoken-model-meta";
+export { flowstokenModelMetaAtom, localModelsConfigAtom } from "./model-catalog-atoms";
 
 /**
  * 应用级模型目录同步器：本地 models.json + 远程 provider catalog。
