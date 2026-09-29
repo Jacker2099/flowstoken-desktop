@@ -3,8 +3,9 @@ name: flowstoken-release
 # Builds and publishes a FlowsToken Desktop release for the version in apps/desktop/package.json.
 #
 # The upstream `desktop-release` workflow does the packaging (quality + all platforms + packaged smoke
-# checks) through a non-publishing workflow_dispatch, which also allows unsigned macOS builds while the
-# Apple Developer ID is pending. This workflow then publishes the GitHub Release that serves as the
+# checks) through a non-publishing workflow_dispatch. macOS builds are signed with the FlowsToken Developer ID
+# and notarized there (MACOS_CERTIFICATE_* / APPLE_* secrets); the dispatch itself would still accept an
+# unsigned build, so the collect step below refuses to publish one. This workflow then publishes the GitHub Release that serves as the
 # artifact store: old clients (<= 0.5.61) update from it, and the FlowsToken server mirrors it into
 # https://www.flowstoken.com/downloads/desktop, the feed every build from 0.6.0 checks.
 #
@@ -133,6 +134,12 @@ jobs:
             gh run download "${{ steps.build.outputs.run_id }}" -R "$REPO" -n "release-build-${platform}" -D "ckpt/${platform}"
             mkdir -p "ckpt/${platform}/x" && tar -xf "ckpt/${platform}/release-build.tar" -C "ckpt/${platform}/x"
             src="ckpt/${platform}/x/release"
+            # 1 = the build ran with signing credentials; with them a signing or notarization failure fails the
+            # build before its checkpoint exists, so only a signed and notarized macOS build carries a 1.
+            case "$platform" in
+              macos-*) [ "$(cat "$src/require-mac-signature.txt" 2>/dev/null)" = "1" ] || {
+                echo "::error::${platform} build is not signed and notarized; check the MACOS_CERTIFICATE_* / APPLE_* secrets"; exit 1; } ;;
+            esac
             # Both macOS builds emit latest-mac.yml; name them per arch for merge:updates:mac.
             case "$platform" in
               macos-arm64) mv "$src/latest-mac.yml" "$src/latest-mac-arm64.yml" ;;

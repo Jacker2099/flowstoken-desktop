@@ -61,4 +61,4 @@ cd apps/desktop && bun run dist:opensource
 
 ## 自动发版
 
-见 `UPSTREAM.md`「Automatic sync」：每日自动合并上游正式版 → 检查全过自动发版 → 服务器 10 分钟内镜像上线。自有功能改动：改完 bump `apps/desktop/package.json` 版本、写发布说明、推 main，然后手动运行 `flowstoken-release` 工作流。macOS 目前未做 Developer ID 签名与公证，Mac 客户端能检测到更新但可能无法原地安装（需从官网下载）；签名办好后配置 `MACOS_CERTIFICATE_*` / `APPLE_*` secrets 即可。
+见 `UPSTREAM.md`「Automatic sync」：每日自动合并上游正式版 → 检查全过自动发版 → 服务器 10 分钟内镜像上线。自有功能改动：改完 bump `apps/desktop/package.json` 版本、写发布说明、推 main，然后手动运行 `flowstoken-release` 工作流。自 0.6.2 起 macOS 包使用 Developer ID（MIN WANG, Team 36G5T56368）签名并经 Apple 公证，凭据在仓库 secrets `MACOS_CERTIFICATE_P12_BASE64` / `MACOS_CERTIFICATE_PASSWORD` / `APPLE_API_KEY_P8_BASE64` / `APPLE_API_KEY_ID` / `APPLE_API_ISSUER` / `APPLE_TEAM_ID`；`flowstoken-release` 拒绝发布未签名的 Mac 包。≤0.6.1 的未签名 Mac 客户端无法原地安装签名版，需从官网手动下载一次，之后自动更新恢复正常。证书 2031-09-17 到期；更换证书或 API 密钥时只需更新上述 secrets。
