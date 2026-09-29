@@ -84,7 +84,7 @@ jobs:
             REMOTE=""
           fi
           if [ -z "$REMOTE" ]; then
-            git tag "${TAG}" "${GITHUB_SHA}"
+            git tag -f "${TAG}" "${GITHUB_SHA}"  # checkout may already hold the stale local tag
             # GITHUB_TOKEN pushes do not trigger workflows, so the upstream tag-push release does not fire.
             git push origin "refs/tags/${TAG}"
           fi
