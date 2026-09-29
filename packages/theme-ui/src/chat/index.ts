@@ -298,9 +298,13 @@ export {
 	MessageVisualOutgoingBubble,
 } from "./MessageVisualView";
 export type {
+	ModelSelectorHighlight,
 	ModelSelectorLabels,
 	ModelSelectorOptionView,
 	ModelSelectorProviderGroup,
+	ModelSelectorTab,
+	ModelSelectorTriggerBadge,
+	ModelSelectorVendorChip,
 	ModelSelectorViewProps,
 } from "./ModelSelectorView";
 export { ModelSelectorView } from "./ModelSelectorView";

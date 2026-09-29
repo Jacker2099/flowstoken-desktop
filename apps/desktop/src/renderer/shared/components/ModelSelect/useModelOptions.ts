@@ -1,9 +1,12 @@
 import type { ModelsConfigData } from "@preload/api";
+import { i18n } from "@shared/i18n";
 import {
-	flowstokenModelMetaAtom,
+	catalogGroupForProvider,
+	catalogModelEntry,
+	flowstokenCatalogAtom,
 	localModelsConfigAtom,
 	remoteProvidersAtom,
-	revalidateFlowstokenModelMeta,
+	revalidateFlowstokenCatalog,
 } from "@shared/store/atoms";
 import { modelCatalog } from "@shared/store/model-catalog";
 import { useAtomValue } from "jotai";
@@ -23,6 +26,8 @@ export interface ModelOption {
 	supportsImage?: boolean;
 	/** API type ("openai-completions" / "openai-responses" / ...), for reasoning preset fallback */
 	api?: string;
+	/** Secondary line: the model id, shown when it differs from the display name */
+	subtitle?: string;
 	/** Whether the model is reasoning-capable */
 	reasoning?: boolean;
 	/** Configured reasoning levels; empty/undefined falls back to the api-type preset */
@@ -31,9 +36,15 @@ export interface ModelOption {
 	defaultReasoningLevel?: string;
 	/** Per-model billing multipliers relative to the credit base (undefined for local BYOK) */
 	multiplier?: { input: number; output: number; cacheRead: number; cacheWrite: number };
-	/** FlowsToken group models: model vendor (shown as a subheader; models arrive ordered by vendor) */
+	/** FlowsToken catalog models: vendor display name (section header) */
 	vendor?: string;
-	/** FlowsToken group models: released within the last 30 days */
+	/** FlowsToken catalog models: stable vendor id for section targeting */
+	vendorId?: string;
+	/** FlowsToken catalog models: vendor logo URL */
+	vendorIcon?: string;
+	/** FlowsToken catalog models: monochrome logo (invert in dark mode) */
+	vendorMono?: boolean;
+	/** FlowsToken catalog models: released within the catalog's new window */
 	isNew?: boolean;
 }
 
@@ -86,21 +97,34 @@ export interface UseModelOptionsResult {
 export function useModelOptions(): UseModelOptionsResult {
 	const remoteProviders = useAtomValue(remoteProvidersAtom);
 	const config = useAtomValue(localModelsConfigAtom);
-	const flowstokenMeta = useAtomValue(flowstokenModelMetaAtom);
+	const flowstokenCatalog = useAtomValue(flowstokenCatalogAtom);
 
 	// 挂载即校验一次；TTL 内命中缓存不会真的打接口，所以多个选择器同时挂载也只有一次请求。
 	useEffect(() => {
 		void modelCatalog.revalidate();
-		void revalidateFlowstokenModelMeta();
+		void revalidateFlowstokenCatalog();
 	}, []);
 
 	const localModels = useMemo(() => {
 		if (!config) return [];
 		return flattenModels(config).map((option) => {
-			const meta = flowstokenMeta[option.provider]?.[option.modelId];
-			return meta ? { ...option, vendor: meta.vendor || undefined, isNew: meta.isNew } : option;
+			const entry = catalogModelEntry(flowstokenCatalog, option.provider, option.modelId);
+			if (!entry) return option;
+			const displayName = entry.name || option.displayName;
+			return {
+				...option,
+				displayName,
+				subtitle: displayName !== option.modelId ? option.modelId : undefined,
+				vendor: entry.vendorName || undefined,
+				vendorId: entry.vendorId,
+				vendorIcon: entry.vendorIcon,
+				vendorMono: entry.vendorMono,
+				isNew: entry.isNew,
+				tags: entry.tags.length > 0 ? entry.tags.slice(0, 2) : option.tags,
+				supportsImage: entry.vision || option.supportsImage,
+			};
 		});
-	}, [config, flowstokenMeta]);
+	}, [config, flowstokenCatalog]);
 	const remoteModels = useMemo(
 		() =>
 			Object.keys(remoteProviders).length > 0
@@ -143,9 +167,12 @@ export function useModelOptions(): UseModelOptionsResult {
 	};
 
 	const labelFor = (provider: string): string => {
-		if (provider === "flowstoken-smart") return "FlowsToken 智能组";
-		if (provider === "flowstoken-default" || provider === "flowstoken-normal") return "FlowsToken 普通组";
-		if (provider === "flowstoken-official") return "FlowsToken 官方组";
+		const group = catalogGroupForProvider(flowstokenCatalog, provider);
+		if (group) return `FlowsToken ${group.title}`;
+		if (provider === "flowstoken-smart") return i18n.t("common:modelSelect.groupSmart");
+		if (provider === "flowstoken-default" || provider === "flowstoken-normal")
+			return i18n.t("common:modelSelect.groupDefault");
+		if (provider === "flowstoken-official") return i18n.t("common:modelSelect.groupOfficial");
 		const local = config?.providers[provider] as { displayName?: string } | undefined;
 		const remote = (remoteProviders as Record<string, { displayName?: string }>)[provider];
 		if (local?.displayName) return local.displayName;

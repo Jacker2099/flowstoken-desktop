@@ -90,22 +90,36 @@ describe("ModelSelectorView", () => {
 		await waitFor(() => expect(document.activeElement).toBe(trigger));
 	});
 
-	it("shows FlowsToken official models by vendor with NEW badges and filters by vendor", async () => {
+	it("renders catalog tabs, vendor quick bar, sticky vendor sections and NEW badges", async () => {
 		const user = userEvent.setup();
 		const onModelSelect = vi.fn();
-		const official = (modelId: string, vendor: string, isNew = false) => ({
+		const official = (
+			modelId: string,
+			vendorId: string,
+			vendor: string,
+			vendorIcon?: string,
+			isNew = false,
+		) => ({
 			key: `flowstoken-official/${modelId}`,
 			provider: "flowstoken-official",
 			modelId,
-			displayName: modelId.slice(modelId.indexOf("/") + 1),
+			displayName: `Name ${modelId}`,
+			subtitle: modelId,
 			vendor,
+			vendorId,
+			vendorIcon,
 			isNew,
 		});
 		const models = [
-			official("anthropic/claude-opus-5.5", "Anthropic", true),
-			official("anthropic/claude-sonnet-4.6", "Anthropic"),
-			official("openai/gpt-6-sol", "OpenAI", true),
-			official("xai/grok-4.7", "xAI"),
+			official("anthropic/claude-opus-5.5", "anthropic", "Anthropic", "https://img.test/claude.svg", true),
+			official("anthropic/claude-sonnet-4.6", "anthropic", "Anthropic", "https://img.test/claude.svg"),
+			official("openai/gpt-6-sol", "openai", "OpenAI", "https://img.test/openai.svg", true),
+			official("xai/grok-4.7", "xai", "xAI"),
+		];
+		const tabs = [
+			{ id: "smart", label: "Smart", icon: "icon-x", providers: ["flowstoken-smart"] },
+			{ id: "vip", label: "Official", icon: "icon-y", providers: ["flowstoken-official"] },
+			{ id: "all", label: "All", providers: [] },
 		];
 		render(
 			<ModelSelectorView
@@ -115,32 +129,81 @@ describe("ModelSelectorView", () => {
 				groups={[
 					{
 						provider: "flowstoken-smart",
-						label: "FlowsToken 智能组",
-						models: [{ key: "flowstoken-smart/Bestoo-Auto", provider: "flowstoken-smart", modelId: "Bestoo-Auto", displayName: "Bestoo-Auto" }],
+						label: "Smart",
+						models: [
+							{
+								key: "flowstoken-smart/Bestoo-Auto",
+								provider: "flowstoken-smart",
+								modelId: "Bestoo-Auto",
+								displayName: "Bestoo-Auto",
+							},
+						],
 					},
-					{ provider: "flowstoken-official", label: "FlowsToken 官方组", models },
+					{ provider: "flowstoken-official", label: "Official", models },
 				]}
-				labels={{ ...labels, newBadge: "NEW", allVendors: "All vendors" }}
+				labels={{
+					...labels,
+					newBadge: "NEW",
+					allVendors: "All vendors",
+					recommendationSelected: "Selected",
+					recommendationAction: "Click to use",
+				}}
+				tabs={tabs}
+				initialTab="smart"
+				highlight={{
+					tabId: "smart",
+					title: "Bestoo-Auto smart routing",
+					badge: "Recommended",
+					description: "Picks the best model",
+					modelKey: "flowstoken-smart/Bestoo-Auto",
+				}}
+				vendorBarByTab={{
+					vip: [
+						{ id: "anthropic", name: "Anthropic", iconUrl: "https://img.test/claude.svg", count: 2 },
+						{ id: "openai", name: "OpenAI", iconUrl: "https://img.test/openai.svg", mono: true, count: 1 },
+						{ id: "xai", name: "xAI", count: 1 },
+					],
+				}}
 				onModelSelect={onModelSelect}
 				onReasoningSelect={vi.fn()}
 			/>,
 		);
 
+		// Opens on the smart tab with the catalog-driven recommendation card.
 		await user.click(screen.getByRole("button", { name: /claude-sonnet-4\.6/ }));
-		const items = await screen.findAllByRole("menuitem");
-		expect(items.map((item) => item.textContent)).toEqual([
-			expect.stringContaining("claude-opus-5.5"),
-			expect.stringContaining("claude-sonnet-4.6"),
-			expect.stringContaining("gpt-6-sol"),
-			expect.stringContaining("grok-4.7"),
-		]);
-		expect(screen.getAllByText("NEW")).toHaveLength(2);
-		// vendor subheaders appear once per vendor, in the host's order
-		const list = items[0].parentElement?.parentElement as HTMLElement;
-		expect(list.textContent?.indexOf("Anthropic")).toBeLessThan(list.textContent?.indexOf("OpenAI") ?? -1);
+		expect(await screen.findByText("Bestoo-Auto smart routing")).toBeTruthy();
+		expect(screen.getByText("Recommended")).toBeTruthy();
+		expect(screen.getByText("Click to use")).toBeTruthy();
+		await user.click(screen.getByText("Bestoo-Auto smart routing"));
+		expect(onModelSelect).toHaveBeenCalledWith("flowstoken-smart/Bestoo-Auto");
 
-		await user.click(screen.getByRole("button", { name: "xAI" }));
-		expect(screen.queryByRole("menuitem", { name: /claude-opus-5\.5/ })).toBeNull();
+		// Official tab: vendor chips in catalog order, logo imgs and initial fallback.
+		await user.click(screen.getByRole("button", { name: "Official" }));
+		const chips = screen
+			.getAllByRole("button")
+			.filter((b) => b.getAttribute("aria-pressed") !== null)
+			.map((b) => b.textContent);
+		expect(chips.slice(0, 3)).toEqual(["All vendors", "Anthropic", "OpenAI"]);
+		expect(chips[3]).toContain("xAI");
+		const anthropicImg = screen.getByRole("button", { name: /Anthropic/ }).querySelector("img");
+		expect(anthropicImg?.getAttribute("src")).toBe("https://img.test/claude.svg");
+		expect(screen.getByRole("button", { name: /xAI/ }).querySelector("img")).toBeNull();
+		const xaiChip = screen.getByRole("button", { name: /xAI/ });
+		expect(xaiChip.querySelector("img")).toBeNull();
+		expect(xaiChip.querySelector(".rounded-full")).toBeTruthy();
+
+		// Chip click scrolls to the matching vendor section without filtering rows.
+		await user.click(screen.getByRole("button", { name: /^OpenAI/ }));
+		expect(HTMLElement.prototype.scrollIntoView).toHaveBeenCalled();
+		const section = document.querySelector('[data-vendor-id="openai"]');
+		expect(section?.textContent).toContain("OpenAI");
+		expect(screen.getAllByRole("menuitem")).toHaveLength(4);
+
+		// Rows show catalog display name plus the id subtitle and NEW badges.
+		expect(screen.getByText("Name anthropic/claude-opus-5.5")).toBeTruthy();
+		expect(screen.getByText("anthropic/claude-opus-5.5")).toBeTruthy();
+		expect(screen.getAllByText("NEW")).toHaveLength(2);
+
 		await user.click(screen.getByRole("menuitem", { name: /grok-4\.7/ }));
 		expect(onModelSelect).toHaveBeenCalledWith("flowstoken-official/xai/grok-4.7");
 	});

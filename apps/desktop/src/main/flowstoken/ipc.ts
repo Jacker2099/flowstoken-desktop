@@ -9,7 +9,7 @@ import {
 	setSnapshotBroadcastListener,
 } from "./account-service.js";
 import type { FlowstokenGroupId } from "./constants.js";
-import { getGroupModelMeta } from "./group-catalog.js";
+import { getCatalog } from "./group-catalog.js";
 import type { FlowstokenAccountSnapshot } from "./types.js";
 
 const CHANNELS = {
@@ -21,7 +21,7 @@ const CHANNELS = {
 	REFRESH: "flowstoken:account:refresh",
 	OPEN_EXTERNAL: "flowstoken:account:open-external",
 	ACCOUNT_CHANGED: "flowstoken:account:changed",
-	MODEL_META: "flowstoken:models:meta",
+	GET_CATALOG: "flowstoken:catalog:get",
 } as const;
 
 function broadcastAccountSnapshot(snapshot: FlowstokenAccountSnapshot): void {
@@ -35,7 +35,7 @@ function broadcastAccountSnapshot(snapshot: FlowstokenAccountSnapshot): void {
 export function registerFlowstokenAccountIpc(): () => void {
 	setSnapshotBroadcastListener(broadcastAccountSnapshot);
 	ipcMain.handle(CHANNELS.GET_SNAPSHOT, async () => getAccountSnapshot({ includeUsage: true }));
-	ipcMain.handle(CHANNELS.MODEL_META, async () => getGroupModelMeta());
+	ipcMain.handle(CHANNELS.GET_CATALOG, async () => getCatalog());
 	ipcMain.handle(CHANNELS.LOGIN_BROWSER, async () => {
 		const result = await loginWithBrowser();
 		if (result.snapshot) broadcastAccountSnapshot(result.snapshot);

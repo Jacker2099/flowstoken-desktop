@@ -54,6 +54,9 @@ bun run check:quick   # or the project’s current quick check
 
 1. `apps/desktop/src/main/abilities/open-marketplace/marketplace-source-store.ts` — empty / disabled marketplace must **not** fall back to Vetta official GitHub marketplace (supply-chain).
 2. `apps/desktop/scripts/prepare-pack.js` — optional `VETTA_PRODUCT_NAME` / `VETTA_APP_ID` env overrides for packaging brand.
+3. `packages/theme-ui/src/chat/ModelSelectorView.tsx` — optional props `tabs` / `initialTab` / `vendorBarByTab` / `highlight` / `triggerBadge` and option fields `subtitle` / `vendorId` / `vendorIcon` / `vendorMono` (FlowsToken catalog-driven picker; absent props degrade to the plain upstream list).
+4. `apps/desktop/src/renderer/shared/components/ModelSelect/ModelSelect.tsx` — same props-driven tab/vendor-segment rendering via `useFlowstokenPicker` (`domains/flowstoken/`).
+5. `apps/desktop/src/renderer/domains/conversation/hooks/useModelSelectorModel.ts` — feeds the picker props above into `ModelSelectorView`.
 
 Do not enable `VETTA_CLOUD_ENABLED=true` (Vetta Serv). FlowsToken uses its own API.
 

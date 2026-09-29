@@ -13,6 +13,7 @@ import { fmtMultiplier } from "@vetta-org/theme-ui/shared";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useCallback, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
+import { useFlowstokenPicker } from "../../flowstoken/useFlowstokenPicker";
 
 export interface ModelSelectorModel {
 	empty: boolean;
@@ -67,6 +68,7 @@ export function useModelSelectorModel({
 	const activeSession = useAtomValue(activeSessionAtom);
 	const setModelSupportsImages = useSetAtom(modelSupportsImagesAtom);
 	const { options, grouped, defaultKey, iconFor, labelFor } = useModelOptions();
+	const picker = useFlowstokenPicker(options, grouped, selectedModel);
 
 	const catalogOption = useMemo(() => options.find((m) => m.key === selectedModel) ?? null, [options, selectedModel]);
 	// 有 key 但 catalog 未就绪时仍展示 modelId，避免闪「选择模型」。
@@ -194,6 +196,8 @@ export function useModelSelectorModel({
 			})),
 			labels: {
 				clearSearch: t("modelSelect.clearSearch"),
+				recommendationAction: t("modelSelect.recommendationAction"),
+				recommendationSelected: t("modelSelect.recommendationSelected"),
 				multiplierLabel: multiplierLabelFor,
 				cloudOnly: t("modelSelect.cloudOnly"),
 				defaultBadge: t("modelSelect.defaultBadge"),
@@ -214,6 +218,11 @@ export function useModelSelectorModel({
 			onReasoningSelect: handleReasoningSelect,
 			selectedModel: selectedModel ?? undefined,
 			selectedOption,
+			tabs: picker.enabled ? picker.tabs : undefined,
+			initialTab: picker.initialTab,
+			vendorBarByTab: picker.vendorBarByTab,
+			highlight: picker.highlight ?? undefined,
+			triggerBadge: picker.groupBadge ?? undefined,
 		},
 	};
 }

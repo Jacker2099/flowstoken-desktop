@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from "motion/react";
 import type { ChangeEvent, JSX, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
 	cn,
 	DropdownMenu,
@@ -32,13 +32,21 @@ export interface ModelSelectorOptionView {
 	readonly provider: string;
 	readonly modelId: string;
 	readonly displayName: string;
+	/** 副文本（如模型 ID）：仅在宿主给出时以灰色等宽小号显示。 */
+	readonly subtitle?: string;
 	/** 参与搜索匹配的附加标签。 */
 	readonly tags?: readonly string[];
 	/** 来自远程目录（云端）；分组头会打上 `labels.cloudOnly` 徽章。 */
 	readonly remote?: boolean;
 	readonly supportsImage?: boolean;
-	/** 模型厂商。宿主已按厂商排好序；有值时列表在厂商变化处插入小标题，并提供厂商筛选。 */
+	/** 模型厂商显示名。宿主已按厂商排好序；有值时在厂商变化处插入分区头。 */
 	readonly vendor?: string;
+	/** 厂商稳定 id；分区头带 `data-vendor-id` 供快捷条滚动定位。 */
+	readonly vendorId?: string;
+	/** 厂商 logo URL。 */
+	readonly vendorIcon?: string;
+	/** 单色 logo，暗色下反色显示。 */
+	readonly vendorMono?: boolean;
 	/** 近期发布，显示 `labels.newBadge`。 */
 	readonly isNew?: boolean;
 }
@@ -56,8 +64,12 @@ export interface ModelSelectorLabels {
 	defaultBadge: string;
 	/** 近期发布模型的徽标文案；未提供则不显示。 */
 	newBadge?: string;
-	/** 厂商筛选里「全部」的文案。 */
+	/** 厂商快捷条里「回到顶部」chip 的文案。 */
 	allVendors?: string;
+	/** 推荐卡上「已选用当前模型」的文案。 */
+	recommendationSelected?: string;
+	/** 推荐卡上「点击选用」的文案。 */
+	recommendationAction?: string;
 	levelLabel: (value: string) => string;
 	/**
 	 * 计费倍率标（如「2×」「免费」）。返回空/undefined 则不渲染——倍率含义与文案属于
@@ -73,6 +85,42 @@ export interface ModelSelectorProviderGroup {
 	models: readonly ModelSelectorOptionView[];
 }
 
+/** 分组标签页（如「智能 / 普通 / 官方 / 全部」）。宿主给定时才渲染分段控件。 */
+export interface ModelSelectorTab {
+	id: string;
+	label: string;
+	/** solar icon class，如 `icon-[solar--bolt-linear]`；空则不画图标。 */
+	icon?: string;
+	/** 属于该 tab 的 provider id；空数组表示展示全部 provider。 */
+	providers: readonly string[];
+}
+
+/** 厂商快捷条 chip：点击滚动到对应 `data-vendor-id` 分区，不做筛选。 */
+export interface ModelSelectorVendorChip {
+	id: string;
+	name: string;
+	iconUrl?: string;
+	mono?: boolean;
+	count?: number;
+}
+
+/** 推荐卡（如智能组的推荐模型）：宿主给文案，视图只负责渲染。 */
+export interface ModelSelectorHighlight {
+	/** 只在 activeTab === tabId 时显示。 */
+	tabId: string;
+	title: string;
+	badge?: string;
+	description?: string;
+	/** 点击卡片要选中的模型 key；也用于「已选用」判定。 */
+	modelKey?: string;
+}
+
+/** 触发按钮上的小徽标（如分组名）。 */
+export interface ModelSelectorTriggerBadge {
+	text: string;
+	tone: "primary" | "blue" | "amber";
+}
+
 export interface ModelSelectorViewProps {
 	selectedModel?: string;
 	selectedOption: ModelSelectorOptionView | null;
@@ -81,6 +129,16 @@ export interface ModelSelectorViewProps {
 	groups: readonly ModelSelectorProviderGroup[];
 	defaultKey?: string;
 	labels: ModelSelectorLabels;
+	/** 分组标签页；缺省不渲染 tab 栏（平铺所有 provider 组）。 */
+	tabs?: readonly ModelSelectorTab[];
+	/** 打开菜单时默认激活的 tab id。 */
+	initialTab?: string;
+	/** 每个 tab 的厂商快捷条（顺序由宿主决定）。 */
+	vendorBarByTab?: Readonly<Record<string, readonly ModelSelectorVendorChip[]>>;
+	/** 推荐卡；仅在对应 tab 且未搜索时显示。 */
+	highlight?: ModelSelectorHighlight;
+	/** 触发按钮上的分组徽标。 */
+	triggerBadge?: ModelSelectorTriggerBadge;
 	className?: string;
 	classNames?: {
 		trigger?: string;
@@ -113,6 +171,11 @@ export function ModelSelectorView({
 	groups,
 	defaultKey,
 	labels,
+	tabs,
+	initialTab,
+	vendorBarByTab,
+	highlight,
+	triggerBadge,
 	className,
 	classNames,
 	onModelSelect,
@@ -122,48 +185,27 @@ export function ModelSelectorView({
 	const [open, setOpen] = useState(false);
 	const [reasoningOpen, setReasoningOpen] = useState(false);
 	const [searchQuery, setSearchQuery] = useState("");
+	const [activeVendor, setActiveVendor] = useState<string | null>(null);
 	const searchInputRef = useRef<HTMLInputElement>(null);
 	const modelListRef = useRef<HTMLDivElement>(null);
 
-	const hasFlowstokenGroups = useMemo(() => {
-		return groups.some((g) => g.provider.startsWith("flowstoken-"));
-	}, [groups]);
-
-	const [activeTab, setActiveTab] = useState<string>("all");
-	const [vendorFilter, setVendorFilter] = useState<string>("all");
+	const [activeTab, setActiveTab] = useState<string>(initialTab ?? tabs?.[0]?.id ?? "all");
 
 	useEffect(() => {
 		if (!open) return;
-		if (selectedOption?.provider?.startsWith("flowstoken-")) {
-			if (selectedOption.provider === "flowstoken-smart") {
-				setActiveTab("flowstoken-smart");
-			} else if (selectedOption.provider === "flowstoken-default" || selectedOption.provider === "flowstoken-normal") {
-				setActiveTab("flowstoken-default");
-			} else if (selectedOption.provider === "flowstoken-official") {
-				setActiveTab("flowstoken-official");
-			}
-		} else if (hasFlowstokenGroups) {
-			setActiveTab("flowstoken-smart");
-		} else {
-			setActiveTab("all");
-		}
-		setVendorFilter("all");
-	}, [open, selectedOption, hasFlowstokenGroups]);
+		setActiveTab(initialTab ?? tabs?.[0]?.id ?? "all");
+		setActiveVendor(null);
+	}, [open, initialTab, tabs]);
+
+	const activeTabProviders = useMemo(
+		() => (tabs ? (tabs.find((tab) => tab.id === activeTab)?.providers ?? []) : []),
+		[tabs, activeTab],
+	);
 
 	const filteredGroups = useMemo(() => {
 		let currentGroups = groups;
-		if (activeTab === "flowstoken-smart") {
-			currentGroups = groups.filter((g) => g.provider === "flowstoken-smart");
-		} else if (activeTab === "flowstoken-default") {
-			currentGroups = groups.filter((g) => g.provider === "flowstoken-default" || g.provider === "flowstoken-normal");
-		} else if (activeTab === "flowstoken-official") {
-			currentGroups = groups.filter((g) => g.provider === "flowstoken-official");
-		}
-
-		if (vendorFilter !== "all") {
-			currentGroups = currentGroups
-				.map((g) => ({ ...g, models: g.models.filter((m) => m.vendor === vendorFilter) }))
-				.filter((g) => g.models.length > 0);
+		if (tabs && activeTab !== "all" && activeTabProviders.length > 0) {
+			currentGroups = groups.filter((g) => activeTabProviders.includes(g.provider));
 		}
 
 		const query = normalizeSearchValue(searchQuery);
@@ -173,30 +215,30 @@ export function ModelSelectorView({
 			const models = group.models.filter((model) =>
 				[
 					model.displayName,
+					model.subtitle,
 					model.modelId,
 					model.provider,
 					group.label,
 					...(model.tags ?? []),
-				].some((value) => normalizeSearchValue(value).includes(query)),
+				].some((value) => value && normalizeSearchValue(value).includes(query)),
 			);
 			return models.length > 0 ? [{ ...group, models }] : [];
 		});
-	}, [groups, activeTab, vendorFilter, searchQuery]);
+	}, [groups, tabs, activeTab, activeTabProviders, searchQuery]);
 
-	/** 当前分组里出现的厂商（按宿主给的顺序），多于一家才显示筛选。 */
-	const vendorChips = useMemo(() => {
-		if (activeTab !== "flowstoken-default" && activeTab !== "flowstoken-official") return [];
-		const seen: string[] = [];
-		for (const group of groups) {
-			const inTab =
-				activeTab === "flowstoken-official"
-					? group.provider === "flowstoken-official"
-					: group.provider === "flowstoken-default" || group.provider === "flowstoken-normal";
-			if (!inTab) continue;
-			for (const model of group.models) if (model.vendor && !seen.includes(model.vendor)) seen.push(model.vendor);
-		}
-		return seen.length > 1 ? seen : [];
-	}, [groups, activeTab]);
+	/** 当前 tab 的厂商快捷条（顺序由宿主给定）。 */
+	const vendorChips = useMemo(() => vendorBarByTab?.[activeTab] ?? [], [vendorBarByTab, activeTab]);
+
+	const scrollListToTop = useCallback(() => {
+		modelListRef.current?.scrollTo({ top: 0 });
+		setActiveVendor(null);
+	}, []);
+
+	const scrollToVendor = useCallback((vendorId: string) => {
+		const target = modelListRef.current?.querySelector<HTMLElement>(`[data-vendor-id="${vendorId}"]`);
+		target?.scrollIntoView({ block: "start" });
+		setActiveVendor(vendorId);
+	}, []);
 
 	const handleOpenChange = useCallback(
 		(nextOpen: boolean) => {
@@ -256,14 +298,6 @@ export function ModelSelectorView({
 		setSearchQuery("");
 	};
 
-	const groupBadge = useMemo(() => {
-		if (!selectedOption?.provider) return null;
-		if (selectedOption.provider === "flowstoken-smart") return "智能";
-		if (selectedOption.provider === "flowstoken-default" || selectedOption.provider === "flowstoken-normal") return "普通";
-		if (selectedOption.provider === "flowstoken-official") return "官方";
-		return null;
-	}, [selectedOption]);
-
 	return (
 		// 搜索型选择器不需要锁住页面；modal 模式会改写 body 的滚动与 pointer-events，
 		// 在长会话页面触发整棵 DOM 的同步样式重算。
@@ -279,16 +313,16 @@ export function ModelSelectorView({
 						classNames?.trigger,
 					)}
 				>
-					{groupBadge ? (
+					{triggerBadge ? (
 						<span
 							className={cn(
 								"shrink-0 rounded px-1 text-[9px] font-semibold leading-[14px]",
-								groupBadge === "智能" && "bg-primary/20 text-primary font-bold",
-								groupBadge === "普通" && "bg-blue-500/15 text-blue-600 dark:text-blue-400",
-								groupBadge === "官方" && "bg-amber-500/15 text-amber-600 dark:text-amber-400",
+								triggerBadge.tone === "primary" && "bg-primary/20 text-primary font-bold",
+								triggerBadge.tone === "blue" && "bg-blue-500/15 text-blue-600 dark:text-blue-400",
+								triggerBadge.tone === "amber" && "bg-amber-500/15 text-amber-600 dark:text-amber-400",
 							)}
 						>
-							{groupBadge}
+							{triggerBadge.text}
 						</span>
 					) : selectedOption ? (
 						<ProviderIcon
@@ -314,7 +348,7 @@ export function ModelSelectorView({
 						asChild
 						align="start"
 						className={cn(
-							"w-[min(22rem,calc(100vw-2rem))] min-w-[260px] max-w-[22rem] overflow-visible bg-background p-0 shadow-lg",
+							"w-[min(24rem,calc(100vw-2rem))] min-w-[260px] max-w-[24rem] overflow-visible bg-background p-0 shadow-lg",
 							classNames?.content,
 						)}
 						style={{ animation: "none" }}
@@ -333,128 +367,105 @@ export function ModelSelectorView({
 										classNames?.contentInner,
 									)}
 								>
-									{/* FlowsToken 三组切换 Tabs */}
-									{hasFlowstokenGroups && (
+									{/* 分组标签页（宿主提供 tabs 时才渲染） */}
+									{tabs && tabs.length > 0 && (
 										<div className="shrink-0 p-1 border-b border-border/40">
-											<div className="grid grid-cols-4 gap-1 rounded-lg bg-muted/60 p-0.5 text-[11px]">
-												<button
-													type="button"
-													onClick={() => {
-														setActiveTab("flowstoken-smart");
-														setVendorFilter("all");
-													}}
-													className={cn(
-														"flex items-center justify-center gap-1 rounded-md px-1.5 py-1 font-medium transition-all",
-														activeTab === "flowstoken-smart"
-															? "bg-background text-primary shadow-sm font-semibold"
-															: "text-muted-foreground hover:text-foreground",
-													)}
-												>
-													<span className="icon-[solar--magic-stick-3-linear] size-3 shrink-0" />
-													智能组
-												</button>
-												<button
-													type="button"
-													onClick={() => {
-														setActiveTab("flowstoken-default");
-														setVendorFilter("all");
-													}}
-													className={cn(
-														"flex items-center justify-center gap-1 rounded-md px-1.5 py-1 font-medium transition-all",
-														activeTab === "flowstoken-default"
-															? "bg-background text-primary shadow-sm font-semibold"
-															: "text-muted-foreground hover:text-foreground",
-													)}
-												>
-													<span className="icon-[solar--bolt-linear] size-3 shrink-0" />
-													普通组
-												</button>
-												<button
-													type="button"
-													onClick={() => {
-														setActiveTab("flowstoken-official");
-														setVendorFilter("all");
-													}}
-													className={cn(
-														"flex items-center justify-center gap-1 rounded-md px-1.5 py-1 font-medium transition-all",
-														activeTab === "flowstoken-official"
-															? "bg-background text-primary shadow-sm font-semibold"
-															: "text-muted-foreground hover:text-foreground",
-													)}
-												>
-													<span className="icon-[solar--crown-linear] size-3 shrink-0" />
-													官方组
-												</button>
-												<button
-													type="button"
-													onClick={() => {
-														setActiveTab("all");
-														setVendorFilter("all");
-													}}
-													className={cn(
-														"flex items-center justify-center gap-1 rounded-md px-1.5 py-1 font-medium transition-all",
-														activeTab === "all"
-															? "bg-background text-primary shadow-sm font-semibold"
-															: "text-muted-foreground hover:text-foreground",
-													)}
-												>
-													全部
-												</button>
+											<div
+												className={cn(
+													"grid gap-1 rounded-lg bg-muted/60 p-0.5 text-[11px]",
+													tabs.length === 4 ? "grid-cols-4" : "grid-cols-3",
+												)}
+											>
+												{tabs.map((tab) => (
+													<button
+														key={tab.id}
+														type="button"
+														onClick={() => {
+															setActiveTab(tab.id);
+															setActiveVendor(null);
+															if (tab.id === "all") scrollListToTop();
+														}}
+														className={cn(
+															"flex items-center justify-center gap-1 rounded-md px-1.5 py-1 font-medium transition-all",
+															activeTab === tab.id
+																? "bg-background text-primary shadow-sm font-semibold"
+																: "text-muted-foreground hover:text-foreground",
+														)}
+													>
+														{tab.icon && <span className={cn(tab.icon, "size-3 shrink-0")} />}
+														{tab.label}
+													</button>
+												))}
 											</div>
 										</div>
 									)}
 
-									{/* 普通组 / 官方组厂商筛选 */}
+									{/* 厂商快捷条：点击滚动到对应分区，不做筛选 */}
 									{vendorChips.length > 0 && (
 										<div className="shrink-0 flex items-center gap-1 overflow-x-auto px-1.5 pt-1.5 pb-0.5 text-[10px] no-scrollbar">
-											{[{ id: "all", label: labels.allVendors ?? "全部厂商" }, ...vendorChips.map((v) => ({ id: v, label: v }))].map(
-												(chip) => (
-													<button
-														key={chip.id}
-														type="button"
-														aria-pressed={vendorFilter === chip.id}
-														onClick={() => setVendorFilter(chip.id)}
-														className={cn(
-															"shrink-0 rounded-full px-2 py-0.5 text-[10px] transition-colors",
-															vendorFilter === chip.id
-																? "bg-primary/20 font-semibold text-primary"
-																: "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground",
-														)}
-													>
-														{chip.label}
-													</button>
-												),
-											)}
+											<button
+												type="button"
+												aria-pressed={activeVendor === null}
+												onClick={scrollListToTop}
+												className={cn(
+													"shrink-0 rounded-full px-2 py-0.5 text-[10px] transition-colors",
+													activeVendor === null
+														? "bg-primary/20 font-semibold text-primary"
+														: "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground",
+												)}
+											>
+												{labels.allVendors ?? "All"}
+											</button>
+											{vendorChips.map((chip) => (
+												<button
+													key={chip.id}
+													type="button"
+													aria-pressed={activeVendor === chip.id}
+													onClick={() => scrollToVendor(chip.id)}
+													className={cn(
+														"flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] transition-colors",
+														activeVendor === chip.id
+															? "bg-primary/20 font-semibold text-primary"
+															: "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground",
+													)}
+												>
+													<VendorIcon name={chip.name} iconUrl={chip.iconUrl} mono={chip.mono} className="size-4" />
+													{chip.name}
+												</button>
+											))}
 										</div>
 									)}
 
-									{/* 智能组专属推荐卡片 */}
-									{activeTab === "flowstoken-smart" && !searchQuery && (
+									{/* 推荐卡（宿主提供 highlight，只在对应 tab 显示） */}
+									{highlight && activeTab === highlight.tabId && !searchQuery && (
 										<div className="shrink-0 p-1.5">
 											<div
 												onClick={() => {
-													const smartOption = groups.find((g) => g.provider === "flowstoken-smart")?.models[0];
-													if (smartOption) handleModelSelect(smartOption.key);
+													if (highlight.modelKey) handleModelSelect(highlight.modelKey);
 												}}
 												className="group flex cursor-pointer flex-col gap-1 rounded-lg border border-primary/25 bg-gradient-to-br from-primary/10 via-primary/5 to-transparent p-2.5 transition-all hover:border-primary/50 hover:shadow-sm"
 											>
 												<div className="flex items-center justify-between">
 													<div className="flex items-center gap-1.5 text-xs font-semibold text-primary">
 														<span className="icon-[solar--magic-stick-3-bold] size-3.5 text-primary" />
-														Bestoo-Auto (智能选模)
+														{highlight.title}
 													</div>
-													<span className="rounded-full bg-primary/20 px-1.5 py-0.5 text-[9px] font-semibold text-primary">
-														推荐 · 智能组专享
-													</span>
+													{highlight.badge && (
+														<span className="rounded-full bg-primary/20 px-1.5 py-0.5 text-[9px] font-semibold text-primary">
+															{highlight.badge}
+														</span>
+													)}
 												</div>
-												<p className="text-[11px] leading-relaxed text-muted-foreground">
-													智能组唯一核心模型。自动根据任务难易度调度 Claude Sonnet 4.6、GPT-5.6 Sol、DeepSeek 等顶尖模型，兼顾超高智商与性价比。
-												</p>
+												{highlight.description && (
+													<p className="text-[11px] leading-relaxed text-muted-foreground">
+														{highlight.description}
+													</p>
+												)}
 												<div className="mt-1 flex items-center justify-between text-[10px] text-primary/90 font-medium">
 													<span>
-														{selectedModel === "flowstoken-smart/Bestoo-Auto"
-															? "✓ 当前已选用此模型"
-															: "点击直接选用此模型"}
+														{highlight.modelKey && selectedModel === highlight.modelKey
+															? (labels.recommendationSelected ?? "")
+															: (labels.recommendationAction ?? "")}
 													</span>
 													<span className="icon-[solar--arrow-right-linear] size-3 transition-transform group-hover:translate-x-0.5" />
 												</div>
@@ -563,47 +574,75 @@ export function ModelSelectorView({
 													</span>
 												)}
 											</div>
-											{group.models.map((model, index) => (
-												<Fragment key={model.key}>
-												{model.vendor && model.vendor !== group.models[index - 1]?.vendor && (
-													<div className="px-2 pb-0.5 pt-1.5 text-[10px] font-semibold text-muted-foreground/70">
-														{model.vendor}
-													</div>
-												)}
-												<DropdownMenuItem
-													data-model-key={model.key}
-													aria-current={model.key === selectedModel ? "true" : undefined}
-													className={cn(
-														COMPACT_ITEM_CLASS,
-														model.key === selectedModel && "bg-accent text-accent-foreground",
-														classNames?.item,
+											{vendorSegments(group.models).map((segment) => (
+												<div key={segment.key} className="pt-1 first:pt-0">
+													{segment.vendor && (
+														<div
+															data-vendor-id={segment.vendorId}
+															className="sticky top-0 z-10 flex items-center gap-1.5 bg-background px-2 py-1 text-[10px] font-semibold text-muted-foreground/80"
+														>
+															<VendorIcon
+																name={segment.vendor}
+																iconUrl={segment.vendorIcon}
+																mono={segment.vendorMono}
+																className="size-3.5"
+															/>
+															<span className="min-w-0 truncate">{segment.vendor}</span>
+															<span className="shrink-0 font-normal text-muted-foreground/50">
+																{segment.models.length}
+															</span>
+														</div>
 													)}
-													onSelect={() => handleModelSelect(model.key)}
-												>
-													<span className="min-w-0 flex-1 truncate">{model.displayName}</span>
-													{model.isNew && labels.newBadge && (
-														<span className="shrink-0 rounded-full bg-primary/10 px-1 text-[9px] font-semibold text-primary">
-															{labels.newBadge}
-														</span>
-													)}
-													<ModelMultiplier label={labels.multiplierLabel?.(model)} />
-													{model.supportsImage && (
-														<span
-															aria-label={labels.visionBadge}
-															title={labels.visionBadge}
-															className="icon-[solar--gallery-linear] size-3 shrink-0 text-primary"
-														/>
-													)}
-													{model.key === defaultKey && (
-														<span className="shrink-0 rounded-full bg-primary/15 px-1 text-[9px] font-medium text-primary">
-															{labels.defaultBadge}
-														</span>
-													)}
-													{model.key === selectedModel && (
-														<span className="icon-[solar--check-circle-linear] h-3 w-3 shrink-0" />
-													)}
-												</DropdownMenuItem>
-												</Fragment>
+													{segment.models.map((model) => (
+														<DropdownMenuItem
+															key={model.key}
+															data-model-key={model.key}
+															aria-current={model.key === selectedModel ? "true" : undefined}
+															className={cn(
+																COMPACT_ITEM_CLASS,
+																model.key === selectedModel && "bg-accent text-accent-foreground",
+																classNames?.item,
+															)}
+															onSelect={() => handleModelSelect(model.key)}
+														>
+															<span className="min-w-0 flex-1 truncate font-medium">{model.displayName}</span>
+															{model.subtitle && (
+																<span className="min-w-0 max-w-[40%] truncate font-mono text-[10px] text-muted-foreground/60">
+																	{model.subtitle}
+																</span>
+															)}
+															{model.isNew && labels.newBadge && (
+																<span className="shrink-0 rounded-full bg-primary/10 px-1 text-[9px] font-semibold text-primary">
+																	{labels.newBadge}
+																</span>
+															)}
+															<ModelMultiplier label={labels.multiplierLabel?.(model)} />
+															{model.supportsImage && (
+																<span
+																	aria-label={labels.visionBadge}
+																	title={labels.visionBadge}
+																	className="icon-[solar--gallery-linear] size-3 shrink-0 text-primary"
+																/>
+															)}
+															{model.tags?.slice(0, 2).map((tag) => (
+																<span
+																	key={tag}
+																	className="shrink-0 rounded-full bg-accent px-1 text-[9px] font-medium text-muted-foreground"
+																>
+																	{tag.trim()}
+																</span>
+															))}
+															{model.key === defaultKey && (
+																<span className="shrink-0 rounded-full bg-primary/15 px-1 text-[9px] font-medium text-primary">
+																	{labels.defaultBadge}
+																</span>
+															)}
+															{model.key === selectedModel && (
+																<span className="icon-[solar--check-circle-linear] h-3 w-3 shrink-0" />
+															)}
+														</DropdownMenuItem>
+													))}
+												</div>
 											))}
 										</div>
 										))}
@@ -627,4 +666,71 @@ export function ModelSelectorView({
 
 function ModelMultiplier({ label }: { label?: string }): JSX.Element | null {
 	return label ? <MultiplierTag text={label} /> : null;
+}
+
+interface VendorSegment {
+	key: string;
+	vendor?: string;
+	vendorId?: string;
+	vendorIcon?: string;
+	vendorMono?: boolean;
+	models: readonly ModelSelectorOptionView[];
+}
+
+/** Split a provider's already-sorted models into vendor segments (for sticky section headers). */
+function vendorSegments(models: readonly ModelSelectorOptionView[]): VendorSegment[] {
+	const segments: VendorSegment[] = [];
+	for (const model of models) {
+		const key = model.vendorId ?? model.vendor;
+		const last = segments[segments.length - 1];
+		if (!key || !last || last.key !== key) {
+			segments.push({
+				key: key ?? `plain-${segments.length}`,
+				vendor: model.vendor,
+				vendorId: model.vendorId,
+				vendorIcon: model.vendorIcon,
+				vendorMono: model.vendorMono,
+				models: [model],
+			});
+		} else {
+			segments[segments.length - 1] = { ...last, models: [...last.models, model] };
+		}
+	}
+	return segments;
+}
+
+/** 厂商 logo；无 logo 时退化为首字母圆标。 */
+function VendorIcon({
+	name,
+	iconUrl,
+	mono,
+	className,
+}: {
+	name: string;
+	iconUrl?: string;
+	mono?: boolean;
+	className?: string;
+}): JSX.Element {
+	if (!iconUrl) {
+		return (
+			<span
+				aria-hidden="true"
+				className={cn(
+					"flex shrink-0 items-center justify-center rounded-full bg-muted text-[8px] font-semibold uppercase text-muted-foreground",
+					className,
+				)}
+			>
+				{name.slice(0, 1)}
+			</span>
+		);
+	}
+	return (
+		<img
+			src={iconUrl}
+			alt=""
+			aria-hidden="true"
+			loading="lazy"
+			className={cn("shrink-0 object-contain", mono && "dark:invert", className)}
+		/>
+	);
 }

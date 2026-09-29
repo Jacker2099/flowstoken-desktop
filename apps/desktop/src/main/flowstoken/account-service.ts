@@ -8,7 +8,13 @@ import {
 	FLOWSTOKEN_TOPUP_URL,
 	type FlowstokenGroupId,
 } from "./constants.js";
-import { fallbackGroupModels, fetchGroupCatalog, GROUP_MODELS_MAX_AGE_MS } from "./group-catalog.js";
+import {
+	catalogGroupModels,
+	fallbackGroupModels,
+	fetchCatalog,
+	GROUP_MODELS_MAX_AGE_MS,
+	getCatalog,
+} from "./group-catalog.js";
 import {
 	clearFlowstokenSession,
 	getFlowstokenSession,
@@ -16,7 +22,6 @@ import {
 	loginWithPasswordAndTurnstile,
 	probeExistingSession,
 } from "./login-window.js";
-import type { OrderedGroupModel } from "./model-order.js";
 import {
 	createToken,
 	FlowstokenApiError,
@@ -28,6 +33,7 @@ import {
 } from "./newapi-client.js";
 import type {
 	FlowstokenAccountSnapshot,
+	FlowstokenCatalogModel,
 	FlowstokenEnsureKeysResult,
 	FlowstokenGroupKeyState,
 	FlowstokenLoginResult,
@@ -158,7 +164,7 @@ export async function getAccountSnapshot(options?: {
 	};
 }
 
-function toProviderModels(models: readonly OrderedGroupModel[]) {
+function toProviderModels(models: readonly FlowstokenCatalogModel[]) {
 	return models.map((model) => ({ id: model.id, name: model.name, api: "openai-completions" as const }));
 }
 
@@ -167,8 +173,9 @@ async function wireAllProviders(
 		providerId: string;
 		labelZh: string;
 		apiKey: string;
-		models: readonly OrderedGroupModel[];
+		models: readonly FlowstokenCatalogModel[];
 	}>,
+	smartDefaultModel: string,
 ): Promise<void> {
 	const service = getDesktopModelSettingsService();
 	const config = await service.getConfig();
@@ -193,7 +200,7 @@ async function wireAllProviders(
 		providers: nextProviders,
 		defaultModel:
 			!config.defaultModel || !config.defaultModel.startsWith("flowstoken-")
-				? "flowstoken-smart/Bestoo-Auto"
+				? `flowstoken-smart/${smartDefaultModel}`
 				: config.defaultModel,
 	});
 }
@@ -216,18 +223,30 @@ function triggerBackgroundModelRefreshIfStale(groups: FlowstokenGroupKeyState[])
 				return !Number.isFinite(syncedAt) || now - syncedAt > GROUP_MODELS_MAX_AGE_MS;
 			});
 			if (!stale) return;
-			const catalog = await fetchGroupCatalog(now);
+			const catalog = await fetchCatalog(now);
 			if (!catalog) return;
 			const latest = await service.getConfig();
 			const providers = { ...latest.providers };
 			for (const group of FLOWSTOKEN_GROUPS) {
 				const existing = providers[group.providerId];
-				if (!existing?.apiKey || catalog[group.id].length === 0) continue;
+				const models = catalogGroupModels(catalog, group.id);
+				if (!existing?.apiKey || models.length === 0) continue;
+				const next = toProviderModels(models);
+				// Rewrite when the pricing version moved or the model list itself changed.
+				// `catalogVersion` rides the provider row as an untyped overlay field.
+				const unchanged =
+					(existing as { catalogVersion?: string }).catalogVersion === catalog.pricingVersion &&
+					JSON.stringify(existing.models) === JSON.stringify(next);
+				if (unchanged) {
+					providers[group.providerId] = { ...existing, modelsSyncedAt: new Date(now).toISOString() };
+					continue;
+				}
 				providers[group.providerId] = {
 					...existing,
-					models: toProviderModels(catalog[group.id]),
+					models: next,
 					modelsSyncedAt: new Date(now).toISOString(),
-				};
+					catalogVersion: catalog.pricingVersion,
+				} as typeof existing;
 			}
 			await service.replaceConfig({ ...latest, providers });
 		} catch (e) {
@@ -245,12 +264,13 @@ export async function ensureGroupKeysAndProviders(groupIds?: FlowstokenGroupId[]
 		await fetchSelf(getFlowstokenSession());
 		const targets = FLOWSTOKEN_GROUPS.filter((g) => !groupIds || groupIds.includes(g.id));
 		let tokens = await listTokens(getFlowstokenSession());
-		const catalog = await fetchGroupCatalog();
+		const catalog = await getCatalog();
+		const smartDefault = catalog.groups.find((g) => g.id === "smart")?.defaultModel ?? "Bestoo-Auto";
 		const wireBatch: Array<{
 			providerId: string;
 			labelZh: string;
 			apiKey: string;
-			models: readonly OrderedGroupModel[];
+			models: readonly FlowstokenCatalogModel[];
 		}> = [];
 
 		for (const group of targets) {
@@ -269,12 +289,14 @@ export async function ensureGroupKeysAndProviders(groupIds?: FlowstokenGroupId[]
 				providerId: group.providerId,
 				labelZh: group.labelZh,
 				apiKey: key,
-				models: catalog?.[group.id]?.length ? catalog[group.id] : fallbackGroupModels(group.id),
+				models: catalogGroupModels(catalog, group.id).length
+					? catalogGroupModels(catalog, group.id)
+					: fallbackGroupModels(group.id),
 			});
 		}
 
 		if (wireBatch.length > 0) {
-			await wireAllProviders(wireBatch);
+			await wireAllProviders(wireBatch, smartDefault);
 		}
 
 		return { ok: true, created, reused, snapshot: await getAccountSnapshot() };

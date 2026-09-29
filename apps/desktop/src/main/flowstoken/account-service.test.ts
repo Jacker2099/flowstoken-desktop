@@ -8,7 +8,10 @@ const mocks = vi.hoisted(() => ({
 	listTokens: vi.fn(),
 }));
 
-vi.mock("electron", () => ({ net: { fetch: mocks.fetch } }));
+vi.mock("electron", () => ({
+	net: { fetch: mocks.fetch },
+	app: { getPath: () => "/nonexistent-ft-test-dir" },
+}));
 vi.mock("../models/model-settings-host.js", () => ({
 	getDesktopModelSettingsService: () => ({
 		getConfig: async () => structuredClone(mocks.config),
@@ -46,49 +49,71 @@ vi.mock("./newapi-client.js", () => ({
 const { getAccountSnapshot, ensureGroupKeysAndProviders } = await import("./account-service.js");
 const { resetGroupCatalogCacheForTests } = await import("./group-catalog.js");
 
-const day = 24 * 60 * 60;
-const pricing = {
-	vendors: [
-		{ id: 1, name: "OpenAI" },
-		{ id: 2, name: "Anthropic" },
-		{ id: 3, name: "DeepSeek" },
-	],
-	data: [
-		{
-			model_name: "deepseek-v4.1-flash",
-			vendor_id: 3,
-			model_ratio: 0.1,
-			completion_ratio: 3,
-			enable_groups: ["default"],
-		},
-		{ model_name: "gpt-6-sol", vendor_id: 1, model_ratio: 0.75, completion_ratio: 8, enable_groups: ["default"] },
-		{
-			model_name: "claude-opus-5-5",
-			vendor_id: 2,
-			model_ratio: 2.5,
-			completion_ratio: 5,
-			enable_groups: ["default"],
-		},
-		{ model_name: "openai/gpt-6-sol", vendor_id: 1, model_ratio: 1, completion_ratio: 5, enable_groups: ["vip"] },
-		{
-			model_name: "anthropic/claude-opus-5.5",
-			vendor_id: 2,
-			model_ratio: 2.5,
-			completion_ratio: 5,
-			enable_groups: ["vip"],
-		},
-		{ model_name: "Bestoo-Auto", vendor_id: 9, model_ratio: 2, completion_ratio: 4, enable_groups: ["smart"] },
-	],
-};
+const model = (id: string, name?: string) => ({
+	id,
+	name: name ?? id.slice(id.indexOf("/") + 1),
+	released: null,
+	tags: [],
+	vision: false,
+	image: false,
+});
+const vendor = (id: string, name: string, models: ReturnType<typeof model>[]) => ({
+	id,
+	name,
+	icon: null,
+	mono: false,
+	models,
+});
 
-function respond(released: Record<string, number>) {
-	mocks.fetch.mockImplementation(async (url: string) => ({
+function makeCatalog(pricingVersion: string) {
+	return {
+		schema: 1,
+		generated: 1790000000,
+		pricingVersion,
+		newWindowDays: 30,
+		iconBase: "https://www.flowstoken.com/brand/vendor-icons/",
+		groups: [
+			{
+				id: "smart",
+				providerId: "flowstoken-smart",
+				title: "智能组",
+				subtitle: "",
+				defaultModel: "Bestoo-Auto",
+				vendors: [vendor("bestoo", "Bestoo AI", [model("Bestoo-Auto")])],
+			},
+			{
+				id: "default",
+				providerId: "flowstoken-default",
+				title: "普通组",
+				subtitle: "",
+				vendors: [
+					vendor("anthropic", "Anthropic", [model("claude-opus-5-5", "Claude Opus 5.5")]),
+					vendor("openai", "OpenAI", [model("gpt-6-sol", "GPT-6 Sol")]),
+					vendor("deepseek", "DeepSeek", [model("deepseek-v4.1-flash", "DeepSeek V4.1 Flash")]),
+				],
+			},
+			{
+				id: "vip",
+				providerId: "flowstoken-official",
+				title: "官方组",
+				subtitle: "",
+				vendors: [
+					vendor("anthropic", "Anthropic", [model("anthropic/claude-opus-5.5", "Claude Opus 5.5")]),
+					vendor("openai", "OpenAI", [model("openai/gpt-6-sol", "GPT-6 Sol")]),
+				],
+			},
+		],
+	};
+}
+
+function respond(pricingVersion = "pv-1") {
+	mocks.fetch.mockImplementation(async () => ({
 		ok: true,
-		json: async () => (url.endsWith("/api/pricing") ? pricing : { models: released }),
+		json: async () => makeCatalog(pricingVersion),
 	}));
 }
 
-function wiredProvider(syncedAgoMs: number, models: Array<{ id: string }>) {
+function wiredProvider(syncedAgoMs: number, models: Array<{ id: string; name?: string }>) {
 	return {
 		apiKey: "sk-kept",
 		baseUrl: "https://www.flowstoken.com/v1",
@@ -110,13 +135,8 @@ beforeEach(() => {
 });
 
 describe("FlowsToken group model lists", () => {
-	it("wires groups with models ordered by vendor, display names without routing prefix, smart as default", async () => {
-		const now = Math.floor(Date.now() / 1000);
-		respond({
-			"claude-opus-5-5": now - 3 * day,
-			"anthropic/claude-opus-5.5": now - 3 * day,
-			"gpt-6-sol": now - 60 * day,
-		});
+	it("wires groups with catalog-ordered models, catalog display names and the smart default", async () => {
+		respond();
 		mocks.config = { providers: {}, defaultModel: "" };
 		mocks.listTokens.mockResolvedValue([
 			{ id: 1, name: "FlowsToken-Desktop-default" },
@@ -135,8 +155,8 @@ describe("FlowsToken group model lists", () => {
 			"deepseek-v4.1-flash",
 		]);
 		expect(providers["flowstoken-official"].models).toEqual([
-			{ id: "anthropic/claude-opus-5.5", name: "claude-opus-5.5", api: "openai-completions" },
-			{ id: "openai/gpt-6-sol", name: "gpt-6-sol", api: "openai-completions" },
+			{ id: "anthropic/claude-opus-5.5", name: "Claude Opus 5.5", api: "openai-completions" },
+			{ id: "openai/gpt-6-sol", name: "GPT-6 Sol", api: "openai-completions" },
 		]);
 		expect(providers["flowstoken-smart"].models).toEqual([
 			{ id: "Bestoo-Auto", name: "Bestoo-Auto", api: "openai-completions" },
@@ -145,7 +165,7 @@ describe("FlowsToken group model lists", () => {
 	});
 
 	it("refreshes stale model lists of wired groups in the background, keeping keys", async () => {
-		respond({});
+		respond("pv-2");
 		const stale = 7 * 60 * 60 * 1000;
 		mocks.config = {
 			defaultModel: "flowstoken-official/anthropic/claude-opus-5.5",
@@ -179,7 +199,7 @@ describe("FlowsToken group model lists", () => {
 				"flowstoken-official": wiredProvider(fresh, [{ id: "openai/gpt-4o" }]),
 			},
 		};
-		respond({});
+		respond();
 		await getAccountSnapshot({ includeUsage: false });
 		await flushBackgroundWork();
 		expect(mocks.replaceConfig).not.toHaveBeenCalled();
@@ -190,5 +210,35 @@ describe("FlowsToken group model lists", () => {
 		await flushBackgroundWork();
 		expect(mocks.replaceConfig).not.toHaveBeenCalled();
 		expect(mocks.config.providers["flowstoken-official"].models).toEqual([{ id: "openai/gpt-4o" }]);
+	});
+
+	it("rewrites model lists when the catalog pricingVersion changed", async () => {
+		const stale = 7 * 60 * 60 * 1000;
+		// Same model ids as the catalog serves — only the version moved (names/order may differ server-side).
+		mocks.config = {
+			defaultModel: "flowstoken-smart/Bestoo-Auto",
+			providers: {
+				"flowstoken-default": wiredProvider(stale, [
+					{ id: "claude-opus-5-5", name: "claude-opus-5-5" },
+					{ id: "gpt-6-sol", name: "gpt-6-sol" },
+					{ id: "deepseek-v4.1-flash", name: "deepseek-v4.1-flash" },
+				]),
+				"flowstoken-smart": wiredProvider(stale, [{ id: "Bestoo-Auto", name: "Bestoo-Auto" }]),
+				"flowstoken-official": wiredProvider(stale, [
+					{ id: "anthropic/claude-opus-5.5", name: "claude-opus-5.5" },
+					{ id: "openai/gpt-6-sol", name: "gpt-6-sol" },
+				]),
+			},
+		};
+		respond("pv-9");
+
+		await getAccountSnapshot({ includeUsage: false });
+		await flushBackgroundWork();
+
+		expect(mocks.replaceConfig).toHaveBeenCalledTimes(1);
+		const official = mocks.config.providers["flowstoken-official"];
+		expect(official.catalogVersion).toBe("pv-9");
+		// Catalog display names replace the stale id-derived names.
+		expect((official.models as Array<{ name: string }>).map((m) => m.name)).toEqual(["Claude Opus 5.5", "GPT-6 Sol"]);
 	});
 });

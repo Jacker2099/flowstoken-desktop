@@ -1,5 +1,7 @@
 import { ProviderIcon } from "@vetta-org/theme-ui/shared";
+import { useFlowstokenPicker } from "../../../domains/flowstoken/useFlowstokenPicker";
 import { cn } from "@shared/lib/utils";
+import { revalidateFlowstokenCatalog } from "@shared/store/atoms";
 import { modelCatalog } from "@shared/store/model-catalog";
 import { ThemeSurface } from "@vetta-org/theme-ui/appearance";
 import {
@@ -15,7 +17,7 @@ import {
 } from "@vetta-org/ui";
 import { AnimatePresence, motion } from "motion/react";
 import type { ChangeEvent, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { MultiplierTag } from "./MultiplierTag";
 import { resolveReasoning } from "./resolveReasoning";
@@ -73,6 +75,7 @@ export function ModelSelect({
 }: ModelSelectProps): JSX.Element {
 	const { t } = useTranslation("common");
 	const { options, grouped, defaultKey, iconFor, labelFor } = useModelOptions();
+	const picker = useFlowstokenPicker(options, grouped, value);
 	const [open, setOpen] = useState(false);
 	const [reasoningOpen, setReasoningOpen] = useState(false);
 	const [searchQuery, setSearchQuery] = useState("");
@@ -101,13 +104,7 @@ export function ModelSelect({
 		: undefined;
 	const levelLabel = (v: string) => t(`modelSelect.reasoningLevel.${v}`, { defaultValue: v });
 
-	const groupBadge = useMemo(() => {
-		if (!selectedOption) return null;
-		if (selectedOption.provider === "flowstoken-smart") return "智能";
-		if (selectedOption.provider === "flowstoken-default" || selectedOption.provider === "flowstoken-normal") return "普通";
-		if (selectedOption.provider === "flowstoken-official") return "官方";
-		return null;
-	}, [selectedOption]);
+	const groupBadge = picker.groupBadge;
 
 	const groups = useMemo(
 		() =>
@@ -120,37 +117,37 @@ export function ModelSelect({
 		[grouped, iconFor, labelFor],
 	);
 
-	const hasFlowstokenGroups = useMemo(() => {
-		return groups.some((g) => g.provider.startsWith("flowstoken-"));
-	}, [groups]);
-
-	const [activeTab, setActiveTab] = useState<string>("all");
+	const [activeTab, setActiveTab] = useState<string>(picker.initialTab);
+	const [activeVendor, setActiveVendor] = useState<string | null>(null);
 
 	useEffect(() => {
 		if (!open) return;
-		if (selectedOption?.provider?.startsWith("flowstoken-")) {
-			if (selectedOption.provider === "flowstoken-smart") {
-				setActiveTab("flowstoken-smart");
-			} else if (selectedOption.provider === "flowstoken-default" || selectedOption.provider === "flowstoken-normal") {
-				setActiveTab("flowstoken-default");
-			} else if (selectedOption.provider === "flowstoken-official") {
-				setActiveTab("flowstoken-official");
-			}
-		} else if (hasFlowstokenGroups) {
-			setActiveTab("flowstoken-smart");
-		} else {
-			setActiveTab("all");
-		}
-	}, [open, selectedOption, hasFlowstokenGroups]);
+		setActiveTab(picker.enabled ? picker.initialTab : "all");
+		setActiveVendor(null);
+	}, [open, picker.enabled, picker.initialTab]);
+
+	const activeTabProviders = useMemo(
+		() => picker.tabs.find((tab) => tab.id === activeTab)?.providers ?? [],
+		[picker.tabs, activeTab],
+	);
+
+	const vendorChips = picker.vendorBarByTab[activeTab] ?? [];
+
+	const scrollListToTop = useCallback(() => {
+		modelListRef.current?.scrollTo({ top: 0 });
+		setActiveVendor(null);
+	}, []);
+
+	const scrollToVendor = useCallback((vendorId: string) => {
+		const target = modelListRef.current?.querySelector<HTMLElement>(`[data-vendor-id="${vendorId}"]`);
+		target?.scrollIntoView({ block: "start" });
+		setActiveVendor(vendorId);
+	}, []);
 
 	const filteredGroups = useMemo(() => {
 		let currentGroups = groups;
-		if (activeTab === "flowstoken-smart") {
-			currentGroups = groups.filter((g) => g.provider === "flowstoken-smart");
-		} else if (activeTab === "flowstoken-default") {
-			currentGroups = groups.filter((g) => g.provider === "flowstoken-default" || g.provider === "flowstoken-normal");
-		} else if (activeTab === "flowstoken-official") {
-			currentGroups = groups.filter((g) => g.provider === "flowstoken-official");
+		if (picker.enabled && activeTab !== "all" && activeTabProviders.length > 0) {
+			currentGroups = groups.filter((g) => activeTabProviders.includes(g.provider));
 		}
 
 		const query = normalizeSearchValue(searchQuery);
@@ -158,13 +155,13 @@ export function ModelSelect({
 
 		return currentGroups.flatMap((group) => {
 			const models = group.models.filter((model) =>
-				[model.displayName, model.modelId, model.provider, group.label, ...(model.tags ?? [])].some((text) =>
-					normalizeSearchValue(text).includes(query),
+				[model.displayName, model.subtitle, model.modelId, model.provider, group.label, ...(model.tags ?? [])].some(
+					(text) => text && normalizeSearchValue(text).includes(query),
 				),
 			);
 			return models.length > 0 ? [{ ...group, models }] : [];
 		});
-	}, [groups, activeTab, searchQuery]);
+	}, [groups, activeTab, activeTabProviders, picker.enabled, searchQuery]);
 
 	// Auto-apply the configured default when nothing is selected yet (chat input).
 	useEffect(() => {
@@ -181,7 +178,10 @@ export function ModelSelect({
 	const handleOpenChange = useCallback((nextOpen: boolean) => {
 		setOpen(nextOpen);
 		// 打开时按 TTL 后台重新校验目录：服务端增删模型后，用户看到列表的那一刻就是最新的。
-		if (nextOpen) void modelCatalog.revalidate();
+		if (nextOpen) {
+			void modelCatalog.revalidate();
+			void revalidateFlowstokenCatalog();
+		}
 		if (!nextOpen) {
 			setReasoningOpen(false);
 			setSearchQuery("");
@@ -252,12 +252,12 @@ export function ModelSelect({
 						<span
 							className={cn(
 								"shrink-0 rounded px-1 py-0.5 text-[9px] font-semibold tracking-tight",
-								groupBadge === "智能" && "bg-primary/20 text-primary",
-								groupBadge === "普通" && "bg-blue-500/15 text-blue-600 dark:text-blue-400",
-								groupBadge === "官方" && "bg-amber-500/15 text-amber-600 dark:text-amber-400",
+								groupBadge.tone === "primary" && "bg-primary/20 text-primary",
+								groupBadge.tone === "blue" && "bg-blue-500/15 text-blue-600 dark:text-blue-400",
+								groupBadge.tone === "amber" && "bg-amber-500/15 text-amber-600 dark:text-amber-400",
 							)}
 						>
-							{groupBadge}
+							{groupBadge.text}
 						</span>
 					) : selectedOption ? (
 						<ProviderIcon symbol={iconFor(selectedOption.provider)} className="h-3.5 w-3.5" />
@@ -278,7 +278,7 @@ export function ModelSelect({
 						forceMount
 						asChild
 						align="start"
-						className="w-[min(28rem,calc(100vw-2rem))] min-w-[260px] max-w-[28rem] overflow-visible p-0"
+						className="w-[min(24rem,calc(100vw-2rem))] min-w-[260px] max-w-[24rem] overflow-visible p-0"
 						style={{ animation: "none" }}
 					>
 						<motion.div
@@ -290,62 +290,72 @@ export function ModelSelect({
 							<div className="relative overflow-visible rounded-[inherit]">
 								<ThemeSurface slot="chat.modelSelectorMenu" />
 								<div className="relative z-10 flex max-h-[min(420px,65vh)] flex-col overflow-hidden rounded-[inherit] p-1">
-									{/* FlowsToken 三组切换 Tabs */}
-									{hasFlowstokenGroups && (
+									{/* FlowsToken 分组切换 Tabs（目录下发） */}
+									{picker.enabled && picker.tabs.length > 0 && (
 										<div className="shrink-0 p-1 border-b border-border/40">
-											<div className="grid grid-cols-4 gap-1 rounded-lg bg-muted/60 p-0.5 text-[11px]">
-												<button
-													type="button"
-													onClick={() => setActiveTab("flowstoken-smart")}
-													className={cn(
-														"flex items-center justify-center gap-1 rounded-md px-1.5 py-1 font-medium transition-all",
-														activeTab === "flowstoken-smart"
-															? "bg-background text-primary shadow-sm font-semibold"
-															: "text-muted-foreground hover:text-foreground",
-													)}
-												>
-													<span className="icon-[solar--magic-stick-3-linear] size-3 shrink-0" />
-													智能组
-												</button>
-												<button
-													type="button"
-													onClick={() => setActiveTab("flowstoken-default")}
-													className={cn(
-														"flex items-center justify-center gap-1 rounded-md px-1.5 py-1 font-medium transition-all",
-														activeTab === "flowstoken-default"
-															? "bg-background text-primary shadow-sm font-semibold"
-															: "text-muted-foreground hover:text-foreground",
-													)}
-												>
-													<span className="icon-[solar--bolt-linear] size-3 shrink-0" />
-													普通组
-												</button>
-												<button
-													type="button"
-													onClick={() => setActiveTab("flowstoken-official")}
-													className={cn(
-														"flex items-center justify-center gap-1 rounded-md px-1.5 py-1 font-medium transition-all",
-														activeTab === "flowstoken-official"
-															? "bg-background text-primary shadow-sm font-semibold"
-															: "text-muted-foreground hover:text-foreground",
-													)}
-												>
-													<span className="icon-[solar--crown-linear] size-3 shrink-0" />
-													官方组
-												</button>
-												<button
-													type="button"
-													onClick={() => setActiveTab("all")}
-													className={cn(
-														"flex items-center justify-center gap-1 rounded-md px-1.5 py-1 font-medium transition-all",
-														activeTab === "all"
-															? "bg-background text-primary shadow-sm font-semibold"
-															: "text-muted-foreground hover:text-foreground",
-													)}
-												>
-													全部
-												</button>
+											<div
+												className={cn(
+													"grid gap-1 rounded-lg bg-muted/60 p-0.5 text-[11px]",
+													picker.tabs.length === 4 ? "grid-cols-4" : "grid-cols-3",
+												)}
+											>
+												{picker.tabs.map((tab) => (
+													<button
+														key={tab.id}
+														type="button"
+														onClick={() => {
+															setActiveTab(tab.id);
+															setActiveVendor(null);
+															if (tab.id === "all") scrollListToTop();
+														}}
+														className={cn(
+															"flex items-center justify-center gap-1 rounded-md px-1.5 py-1 font-medium transition-all",
+															activeTab === tab.id
+																? "bg-background text-primary shadow-sm font-semibold"
+																: "text-muted-foreground hover:text-foreground",
+														)}
+													>
+														{tab.icon && <span className={cn(tab.icon, "size-3 shrink-0")} />}
+														{tab.label}
+													</button>
+												))}
 											</div>
+										</div>
+									)}
+
+									{/* 厂商快捷条：点击滚动到对应分区，不做筛选 */}
+									{vendorChips.length > 0 && (
+										<div className="shrink-0 flex items-center gap-1 overflow-x-auto px-1.5 pt-1.5 pb-0.5 text-[10px] no-scrollbar">
+											<button
+												type="button"
+												aria-pressed={activeVendor === null}
+												onClick={scrollListToTop}
+												className={cn(
+													"shrink-0 rounded-full px-2 py-0.5 text-[10px] transition-colors",
+													activeVendor === null
+														? "bg-primary/20 font-semibold text-primary"
+														: "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground",
+												)}
+											>
+												{t("modelSelect.allVendors")}
+											</button>
+											{vendorChips.map((chip) => (
+												<button
+													key={chip.id}
+													type="button"
+													aria-pressed={activeVendor === chip.id}
+													onClick={() => scrollToVendor(chip.id)}
+													className={cn(
+														"flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] transition-colors",
+														activeVendor === chip.id
+															? "bg-primary/20 font-semibold text-primary"
+															: "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground",
+													)}
+												>
+													<VendorIcon name={chip.name} iconUrl={chip.iconUrl} mono={chip.mono} className="size-4" />
+													{chip.name}
+												</button>
+											))}
 										</div>
 									)}
 
@@ -445,20 +455,39 @@ export function ModelSelect({
 														</span>
 													)}
 												</div>
-												{group.models.map((m, index) => (
-													<Fragment key={m.key}>
-													{m.vendor && m.vendor !== group.models[index - 1]?.vendor && (
-														<div className="px-3 pb-0.5 pt-1.5 text-[10px] font-semibold text-muted-foreground/70">
-															{m.vendor}
-														</div>
-													)}
+												{vendorSegments(group.models).map((segment) => (
+													<div key={segment.key} className="pt-1 first:pt-0">
+														{segment.vendor && (
+															<div
+																data-vendor-id={segment.vendorId}
+																className="sticky top-0 z-10 flex items-center gap-1.5 bg-popover px-3 py-1 text-[10px] font-semibold text-muted-foreground/80"
+															>
+																<VendorIcon
+																	name={segment.vendor}
+																	iconUrl={segment.vendorIcon}
+																	mono={segment.vendorMono}
+																	className="size-3.5"
+																/>
+																<span className="min-w-0 truncate">{segment.vendor}</span>
+																<span className="shrink-0 font-normal text-muted-foreground/50">
+																	{segment.models.length}
+																</span>
+															</div>
+														)}
+														{segment.models.map((m) => (
 													<DropdownMenuItem
+														key={m.key}
 														data-model-key={m.key}
 														aria-current={m.key === value ? "true" : undefined}
 														className={cn("rounded-md", m.key === value && "bg-accent text-accent-foreground")}
 														onSelect={() => handleModelSelect(m.key)}
 													>
-														<span className="min-w-0 flex-1 truncate">{m.displayName}</span>
+														<span className="min-w-0 flex-1 truncate font-medium">{m.displayName}</span>
+														{m.subtitle && (
+															<span className="min-w-0 max-w-[40%] truncate font-mono text-[10px] text-muted-foreground/60">
+																{m.subtitle}
+															</span>
+														)}
 														{m.isNew && (
 															<span className="shrink-0 rounded-full bg-primary/10 px-1.5 py-0.5 text-[9px] font-semibold text-primary">
 																{t("modelSelect.newBadge")}
@@ -470,7 +499,7 @@ export function ModelSelect({
 																{t("modelSelect.visionBadge")}
 															</span>
 														)}
-														{m.tags?.map((tag) => (
+														{m.tags?.slice(0, 2).map((tag) => (
 															<span
 																key={tag}
 																className="shrink-0 rounded-full bg-accent px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground"
@@ -487,7 +516,8 @@ export function ModelSelect({
 															<span className="icon-[solar--check-circle-linear] h-3.5 w-3.5 shrink-0" />
 														)}
 													</DropdownMenuItem>
-													</Fragment>
+														))}
+													</div>
 												))}
 											</div>
 										))}
@@ -509,5 +539,72 @@ export function ModelSelect({
 				)}
 			</AnimatePresence>
 		</DropdownMenu>
+	);
+}
+
+interface VendorSegment {
+	key: string;
+	vendor?: string;
+	vendorId?: string;
+	vendorIcon?: string;
+	vendorMono?: boolean;
+	models: ModelOption[];
+}
+
+/** Split a provider's already-sorted models into vendor segments (for sticky section headers). */
+function vendorSegments(models: readonly ModelOption[]): VendorSegment[] {
+	const segments: VendorSegment[] = [];
+	for (const model of models) {
+		const key = model.vendorId ?? model.vendor;
+		const last = segments[segments.length - 1];
+		if (!key || !last || last.key !== key) {
+			segments.push({
+				key: key ?? `plain-${segments.length}`,
+				vendor: model.vendor,
+				vendorId: model.vendorId,
+				vendorIcon: model.vendorIcon,
+				vendorMono: model.vendorMono,
+				models: [model],
+			});
+		} else {
+			last.models.push(model);
+		}
+	}
+	return segments;
+}
+
+/** 厂商 logo；无 logo 时退化为首字母圆标。 */
+function VendorIcon({
+	name,
+	iconUrl,
+	mono,
+	className,
+}: {
+	name: string;
+	iconUrl?: string;
+	mono?: boolean;
+	className?: string;
+}): JSX.Element {
+	if (!iconUrl) {
+		return (
+			<span
+				aria-hidden="true"
+				className={cn(
+					"flex shrink-0 items-center justify-center rounded-full bg-muted text-[8px] font-semibold uppercase text-muted-foreground",
+					className,
+				)}
+			>
+				{name.slice(0, 1)}
+			</span>
+		);
+	}
+	return (
+		<img
+			src={iconUrl}
+			alt=""
+			aria-hidden="true"
+			loading="lazy"
+			className={cn("shrink-0 object-contain", mono && "dark:invert", className)}
+		/>
 	);
 }

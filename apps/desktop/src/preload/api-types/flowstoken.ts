@@ -68,8 +68,42 @@ export interface DesktopFlowstokenApi {
 	refresh: () => Promise<FlowstokenAccountSnapshot>;
 	openExternal: (url: string) => Promise<void>;
 	onAccountChanged: (listener: (snapshot: FlowstokenAccountSnapshot) => void) => () => void;
-	getModelMeta: () => Promise<FlowstokenModelMeta>;
+	getCatalog: () => Promise<FlowstokenCatalog>;
 }
 
-/** Per FlowsToken provider id, per model id: vendor subheader and NEW badge for the model picker. */
-export type FlowstokenModelMeta = Record<string, Record<string, { vendor: string; isNew: boolean }>>;
+/** Mirror of main/flowstoken/types.ts — the server-delivered desktop model catalog (schema 1). */
+export interface FlowstokenCatalogModel {
+	id: string;
+	name: string;
+	released: number | null;
+	tags: string[];
+	vision: boolean;
+	image: boolean;
+}
+
+export interface FlowstokenCatalogVendor {
+	id: string;
+	name: string;
+	icon: string | null;
+	mono: boolean;
+	models: FlowstokenCatalogModel[];
+}
+
+export interface FlowstokenCatalogGroup {
+	id: "smart" | "default" | "vip";
+	providerId: string;
+	title: string;
+	subtitle: string;
+	defaultModel?: string;
+	highlight?: { title: string; badge: string; description: string };
+	vendors: FlowstokenCatalogVendor[];
+}
+
+export interface FlowstokenCatalog {
+	schema: 1;
+	generated: number;
+	pricingVersion: string;
+	newWindowDays: number;
+	iconBase: string;
+	groups: FlowstokenCatalogGroup[];
+}
