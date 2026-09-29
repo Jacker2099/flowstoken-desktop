@@ -1,17 +1,13 @@
 // @vitest-environment jsdom
-import { defaultConversationFilterAtom, tagConversationFilter } from "@shared/store/atoms";
-import { renderHook } from "@testing-library/react";
+import { confirmDialogAtom, type Project } from "@shared/store/atoms";
+import { act, renderHook } from "@testing-library/react";
 import { getDefaultStore } from "jotai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-/**
- * 交互合同：标签档下点「新会话」不能把侧栏踢回「对话」。新会话会继承当前标签
- * （applyActiveTagFilterToNewConversation），档位一跳用户反而丢了自己选的视图。
- */
+const removeProject = vi.fn(async () => {});
 
-const navigateSpy = vi.fn();
 vi.mock("@tanstack/react-router", () => ({
-	useNavigate: () => navigateSpy,
+	useNavigate: () => vi.fn(),
 	useMatches: () => [{ pathname: "/", params: {} }],
 }));
 
@@ -23,9 +19,16 @@ vi.mock("react-i18next", () => ({
 	useTranslation: () => ({ t: (key: string) => key, i18n: { language: "zh" } }),
 }));
 
+const project: Project = {
+	cwd: "C:/work/existing-project",
+	name: "existing-project",
+	sessionCount: 0,
+	type: "normal",
+};
+
 vi.mock("../../../../hooks/useProjects", () => ({
 	useProjects: () => ({
-		projects: [],
+		projects: [project],
 		projectsInitialized: true,
 		sessionsMap: new Map(),
 		sessionLoadingCwds: new Set<string>(),
@@ -35,35 +38,44 @@ vi.mock("../../../../hooks/useProjects", () => ({
 		deleteSession: vi.fn(),
 		renameSession: vi.fn(),
 		archiveProject: vi.fn(),
-		removeProject: vi.fn(),
+		removeProject,
 		loadSessions: vi.fn(),
+		removePinnedSessions: vi.fn(),
 	}),
 }));
+
 vi.mock("../../../../hooks/useTeamSidebarConversations", () => ({
 	useTeamSidebarConversations: () => ({ conversations: [], loading: false }),
 }));
 
 const { useProjectsPanelModel } = await import("./useProjectsPanelModel.js");
 
-describe("useProjectsPanelModel.defaultNewSession", () => {
+describe("useProjectsPanelModel.removeProject", () => {
 	beforeEach(() => {
-		navigateSpy.mockClear();
-		getDefaultStore().set(defaultConversationFilterAtom, "conversation");
+		removeProject.mockClear();
+		getDefaultStore().set(confirmDialogAtom, null);
 	});
 
-	it("标签档下新建会话保持当前标签筛选", () => {
+	it("确认删除项目后只从列表移除，不删除磁盘目录", async () => {
 		const store = getDefaultStore();
-		store.set(defaultConversationFilterAtom, tagConversationFilter("t1"));
 		const { result } = renderHook(() =>
-			useProjectsPanelModel({ filter: "all", onOpenSession: vi.fn() }),
+			useProjectsPanelModel({ filter: "all", onOpenSession: vi.fn(async () => {}) }),
 		);
 
-		result.current.actions.defaultNewSession("/repo/a");
+		act(() => result.current.actions.removeProject(project.cwd));
 
-		expect(store.get(defaultConversationFilterAtom)).toBe(tagConversationFilter("t1"));
-		expect(navigateSpy).toHaveBeenCalledWith({
-			to: "/new-session/$cwd",
-			params: { cwd: encodeURIComponent("/repo/a") },
+		const confirmation = store.get(confirmDialogAtom);
+		expect(confirmation).toMatchObject({
+			title: "sidebar.dialogs.removeTitle",
+			message: "sidebar.dialogs.removeMessage",
+			confirmLabel: "sidebar.dialogs.removeConfirm",
 		});
+		expect(removeProject).not.toHaveBeenCalled();
+
+		await act(async () => {
+			await confirmation?.onConfirm(false);
+		});
+
+		expect(removeProject).toHaveBeenCalledWith(project.cwd);
 	});
 });
