@@ -1,3 +1,4 @@
+import { revalidateFlowstokenCatalog } from "@shared/store/flowstoken-catalog";
 import { modelCatalog } from "@shared/store/model-catalog";
 import { useEffect } from "react";
 
@@ -12,17 +13,21 @@ export function useModelCatalogSync(): void {
 	useEffect(() => {
 		const revalidate = (): void => {
 			void modelCatalog.revalidate();
+			void revalidateFlowstokenCatalog();
 		};
 		const onVisibilityChange = (): void => {
 			if (document.visibilityState === "visible") revalidate();
 		};
 		revalidate();
+		// Keep an always-open app current even without a focus or picker-open event.
+		const timer = window.setInterval(revalidate, 6 * 60 * 60 * 1000);
 		const disposeModelChanged = window.vetta.models.onChanged?.(() => {
 			void modelCatalog.revalidate({ force: true, sources: ["local"] });
 		});
 		window.addEventListener("focus", revalidate);
 		document.addEventListener("visibilitychange", onVisibilityChange);
 		return () => {
+			window.clearInterval(timer);
 			window.removeEventListener("focus", revalidate);
 			document.removeEventListener("visibilitychange", onVisibilityChange);
 			disposeModelChanged?.();

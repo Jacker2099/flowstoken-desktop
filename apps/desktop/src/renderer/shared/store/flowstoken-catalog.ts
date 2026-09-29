@@ -1,6 +1,6 @@
 import type { FlowstokenCatalog, FlowstokenCatalogGroup } from "@preload/api";
 import { getDefaultStore } from "jotai";
-import { flowstokenCatalogAtom } from "./model-catalog-atoms";
+import { flowstokenCatalogAtom, localModelsConfigAtom } from "./model-catalog-atoms";
 
 const TTL_MS = 10 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -18,8 +18,11 @@ export function revalidateFlowstokenCatalog(now: number = Date.now()): Promise<v
 	const getCatalog = window.vetta?.flowstoken?.getCatalog;
 	if (!getCatalog) return Promise.resolve();
 	inflight = getCatalog()
-		.then((catalog) => {
+		.then(async (catalog) => {
 			if (catalog && Array.isArray(catalog.groups) && catalog.groups.length > 0) {
+				// GET_CATALOG has reconciled the runtime providers; keep both renderer sources aligned.
+				const config = await window.vetta.models.get();
+				getDefaultStore().set(localModelsConfigAtom, config);
 				getDefaultStore().set(flowstokenCatalogAtom, catalog);
 				loadedAt = Date.now();
 			}

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, test } from "node:test";
@@ -54,3 +54,103 @@ test("rejects a Mac update with a mismatched hash", async () => {
 		/SHA-512 mismatch/,
 	);
 });
+
+function setAppId(context, appId) {
+	const previous = process.env.VETTA_APP_ID;
+	context.after(() => {
+		if (previous === undefined) delete process.env.VETTA_APP_ID;
+		else process.env.VETTA_APP_ID = previous;
+	});
+	if (appId === undefined) delete process.env.VETTA_APP_ID;
+	else process.env.VETTA_APP_ID = appId;
+}
+
+function createMacCommands({ bundleIdentifier = "com.flowstoken.desktop", failCommand } = {}) {
+	const calls = [];
+	const runCommand = async (command, args) => {
+		calls.push([command, ...args]);
+		if (command === failCommand) throw new Error(`${command} rejected update`);
+		if (command === "ditto") {
+			await mkdir(join(args[3], "FlowsToken.app", "Contents"), { recursive: true });
+		} else if (command === "/usr/libexec/PlistBuddy") {
+			const values = {
+				"Print :CFBundleShortVersionString": "1.2.3",
+				"Print :CFBundleIdentifier": bundleIdentifier,
+			};
+			assert.ok(Object.hasOwn(values, args[1]), `unexpected plist key: ${args[1]}`);
+			return { stdout: `${values[args[1]]}\n` };
+		} else {
+			assert.ok(["codesign", "spctl", "xcrun"].includes(command), `unexpected command: ${command}`);
+		}
+		return { stdout: "" };
+	};
+	return { calls, runCommand };
+}
+
+for (const [appId, bundleIdentifier] of [
+	[undefined, "com.flowstoken.desktop"],
+	["", "com.flowstoken.desktop"],
+	[" \n", "com.flowstoken.desktop"],
+	["com.example.flowstoken-preview", "com.example.flowstoken-preview"],
+	[" com.example.flowstoken-preview ", "com.example.flowstoken-preview"],
+]) {
+	test(`verifies the signed update with VETTA_APP_ID=${JSON.stringify(appId)}`, async (context) => {
+		setAppId(context, appId);
+		const releaseDir = await createFixture();
+		const { calls, runCommand } = createMacCommands({ bundleIdentifier });
+		const result = await verifyMacUpdate({ releaseDir, requireSignature: true, runCommand, platform: "darwin" });
+		assert.equal(result.version, "1.2.3");
+		const extractDir = calls[0][4];
+		const appPath = join(extractDir, "FlowsToken.app");
+		assert.deepEqual(calls.slice(-3), [
+			["codesign", "--verify", "--deep", "--strict", "--verbose=2", appPath],
+			["spctl", "-a", "-vvv", "-t", "exec", appPath],
+			["xcrun", "stapler", "validate", appPath],
+		]);
+		await assert.rejects(stat(extractDir), { code: "ENOENT" });
+	});
+}
+
+test("rejects the old Vetta identifier in a FlowsToken update", async (context) => {
+	setAppId(context, undefined);
+	const releaseDir = await createFixture();
+	const { runCommand } = createMacCommands({ bundleIdentifier: "com.vetta.desktop" });
+	await assert.rejects(
+		verifyMacUpdate({ releaseDir, requireSignature: true, runCommand, platform: "darwin" }),
+		/app identifier com\.vetta\.desktop does not match com\.flowstoken\.desktop/,
+	);
+});
+
+test("rejects an update whose identifier differs from VETTA_APP_ID", async (context) => {
+	setAppId(context, "com.example.flowstoken-preview");
+	const releaseDir = await createFixture();
+	const { runCommand } = createMacCommands();
+	await assert.rejects(
+		verifyMacUpdate({ releaseDir, requireSignature: true, runCommand, platform: "darwin" }),
+		/app identifier com\.flowstoken\.desktop does not match com\.example\.flowstoken-preview/,
+	);
+});
+
+test("rejects malformed VETTA_APP_ID instead of silently using the default", async (context) => {
+	setAppId(context, undefined);
+	const releaseDir = await createFixture();
+	const { calls, runCommand } = createMacCommands();
+	for (const appId of ["com..flowstoken", "com.flow stoken.desktop", "com/flowstoken"]) {
+		process.env.VETTA_APP_ID = appId;
+		await assert.rejects(
+			verifyMacUpdate({ releaseDir, requireSignature: true, runCommand, platform: "darwin" }),
+			/VETTA_APP_ID must be a reverse-DNS bundle identifier/,
+		);
+	}
+	assert.deepEqual(calls, []);
+});
+
+for (const failCommand of ["codesign", "spctl", "xcrun"]) {
+	test(`rejects the signed update when ${failCommand} verification fails`, async (context) => {
+		setAppId(context, undefined);
+		const releaseDir = await createFixture();
+		const { calls, runCommand } = createMacCommands({ failCommand });
+		await assert.rejects(verifyMacUpdate({ releaseDir, requireSignature: true, runCommand, platform: "darwin" }), new RegExp(`${failCommand} rejected update`));
+		await assert.rejects(stat(calls[0][4]), { code: "ENOENT" });
+	});
+}

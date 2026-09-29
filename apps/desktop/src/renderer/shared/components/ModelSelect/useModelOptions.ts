@@ -60,7 +60,7 @@ function flattenModels(config: ModelsConfigData, remote?: boolean): ModelOption[
 				key: `${provider}/${model.id}`,
 				remote,
 				tags: Array.isArray(raw.tags) ? (raw.tags as string[]) : undefined,
-				supportsImage: model.input?.includes("image") ?? false,
+				supportsImage: model.input?.includes("image"),
 				api: model.api ?? providerConfig.api,
 				reasoning: model.reasoning,
 				reasoningLevels: model.reasoningLevels,
@@ -107,22 +107,26 @@ export function useModelOptions(): UseModelOptionsResult {
 
 	const localModels = useMemo(() => {
 		if (!config) return [];
-		return flattenModels(config).map((option) => {
+		return flattenModels(config).flatMap((option) => {
 			const entry = catalogModelEntry(flowstokenCatalog, option.provider, option.modelId);
-			if (!entry) return option;
+			if (!entry) return [option];
+			// Image-generation endpoints are not chat completion models.
+			if (entry.image) return [];
 			const displayName = entry.name || option.displayName;
-			return {
-				...option,
-				displayName,
-				subtitle: displayName !== option.modelId ? option.modelId : undefined,
-				vendor: entry.vendorName || undefined,
-				vendorId: entry.vendorId,
-				vendorIcon: entry.vendorIcon,
-				vendorMono: entry.vendorMono,
-				isNew: entry.isNew,
-				tags: entry.tags.length > 0 ? entry.tags.slice(0, 2) : option.tags,
-				supportsImage: entry.vision || option.supportsImage,
-			};
+			return [
+				{
+					...option,
+					displayName,
+					subtitle: displayName !== option.modelId ? option.modelId : undefined,
+					vendor: entry.vendorName || undefined,
+					vendorId: entry.vendorId,
+					vendorIcon: entry.vendorIcon,
+					vendorMono: entry.vendorMono,
+					isNew: entry.isNew,
+					tags: entry.tags.length > 0 ? entry.tags.slice(0, 2) : option.tags,
+					supportsImage: option.supportsImage ?? entry.vision,
+				},
+			];
 		});
 	}, [config, flowstokenCatalog]);
 	const remoteModels = useMemo(

@@ -2,15 +2,26 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import AdmZip from "adm-zip";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { InstalledSkill } from "../../../preload/api-types/skills";
 import { installOpenMarketplaceAbility } from "./open-marketplace-installer";
 import { readOpenMarketplaceMcpPackage } from "./open-marketplace-mcp";
 import { OpenMarketplaceService } from "./open-marketplace-service";
 
+vi.mock("../../logger", () => ({
+	getAppLogger: () => ({ debug: vi.fn(), error: vi.fn(), warn: vi.fn(), info: vi.fn() }),
+}));
+
 const roots: string[] = [];
+const unexpectedNetworkFetch = vi.fn<typeof fetch>();
+beforeEach(() => {
+	unexpectedNetworkFetch.mockReset().mockRejectedValue(new Error("Unexpected network request in bundle test"));
+	vi.stubGlobal("fetch", unexpectedNetworkFetch);
+});
 afterEach(async () => {
 	await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+	vi.unstubAllGlobals();
+	expect(unexpectedNetworkFetch).not.toHaveBeenCalled();
 });
 
 function archive(version: string, listed = false, broken = false): Buffer {
@@ -84,6 +95,11 @@ it("keeps installed identities and disabled state when top-level entries become 
 		sourceId: "test-source",
 		repository: "https://github.com/example/market",
 		fetchArchive: async () => new Response(new Uint8Array(data)),
+		fetchManifest: async () => {
+			const manifest = new AdmZip(data).getEntry("market/.vetta/marketplace.json");
+			if (!manifest) throw new Error("Missing manifest fixture");
+			return new Response(new Uint8Array(manifest.getData()));
+		},
 		installAbility: async (snapshot, ability, origin) => {
 			if (ability.type !== "skill") throw new Error("Unexpected install type");
 			await installOpenMarketplaceAbility(snapshot, ability, origin, {
@@ -130,6 +146,9 @@ it("keeps installed identities and disabled state when top-level entries become 
 		sourceId: "test-source",
 		repository: "https://github.com/example/market",
 		fetchArchive: async () => {
+			throw new Error("offline");
+		},
+		fetchManifest: async () => {
 			throw new Error("offline");
 		},
 	});

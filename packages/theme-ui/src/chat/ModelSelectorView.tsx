@@ -189,13 +189,20 @@ export function ModelSelectorView({
 	const searchInputRef = useRef<HTMLInputElement>(null);
 	const modelListRef = useRef<HTMLDivElement>(null);
 
-	const [activeTab, setActiveTab] = useState<string>(initialTab ?? tabs?.[0]?.id ?? "all");
+	const preferredTab = tabs?.find((tab) => tab.id === initialTab)?.id ?? tabs?.[0]?.id ?? initialTab ?? "all";
+	const [activeTab, setActiveTab] = useState<string>(preferredTab);
 
 	useEffect(() => {
 		if (!open) return;
-		setActiveTab(initialTab ?? tabs?.[0]?.id ?? "all");
+		setActiveTab(preferredTab);
 		setActiveVendor(null);
-	}, [open, initialTab, tabs]);
+	}, [open, preferredTab]);
+
+	useEffect(() => {
+		if (!open || !tabs?.length || tabs.some((tab) => tab.id === activeTab)) return;
+		setActiveTab(preferredTab);
+		setActiveVendor(null);
+	}, [open, tabs, activeTab, preferredTab]);
 
 	const activeTabProviders = useMemo(
 		() => (tabs ? (tabs.find((tab) => tab.id === activeTab)?.providers ?? []) : []),

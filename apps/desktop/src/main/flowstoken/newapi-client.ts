@@ -71,10 +71,7 @@ function mapUser(data: Record<string, unknown>): FlowstokenUserSnapshot {
 async function sessionFetch(session: Session, url: string, init: RequestInit): Promise<Response> {
 	const headers = new Headers(init.headers);
 	try {
-		let cookies = await session.cookies.get({ url });
-		if (!cookies.length) {
-			cookies = await session.cookies.get({});
-		}
+		const cookies = await session.cookies.get({ url });
 		const cookieStr = cookies.map((c) => `${c.name}=${c.value}`).join("; ");
 		if (cookieStr && !headers.has("Cookie")) {
 			headers.set("Cookie", cookieStr);
@@ -356,8 +353,9 @@ export async function fetchSelfLogs(session: Session, pageSize = 30): Promise<Fl
 export function findManagedToken(tokens: NewApiTokenRow[], groupId: FlowstokenGroupId): NewApiTokenRow | undefined {
 	const meta = FLOWSTOKEN_GROUPS.find((g) => g.id === groupId);
 	if (!meta) return undefined;
+	const usable = tokens.filter((token) => token.group === groupId && token.status === 1);
 	return (
-		tokens.find((t) => t.name === meta.tokenName) ??
-		tokens.find((t) => t.group === groupId && String(t.name).includes("FlowsToken-Desktop"))
+		usable.find((token) => token.name === meta.tokenName) ??
+		usable.find((token) => String(token.name).includes("FlowsToken-Desktop"))
 	);
 }

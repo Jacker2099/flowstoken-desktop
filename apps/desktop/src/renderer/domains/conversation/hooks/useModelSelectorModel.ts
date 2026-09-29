@@ -7,6 +7,7 @@ import {
 	SELECTED_MODEL_STORAGE_KEY,
 	selectedModelAtom,
 } from "@shared/store/atoms";
+import { revalidateFlowstokenCatalog } from "@shared/store/flowstoken-catalog";
 import { modelCatalog } from "@shared/store/model-catalog";
 import type { ModelSelectorViewProps } from "@vetta-org/theme-ui/chat";
 import { fmtMultiplier } from "@vetta-org/theme-ui/shared";
@@ -170,7 +171,10 @@ export function useModelSelectorModel({
 
 	// 打开模型菜单时按 TTL 后台重校验目录，服务端增删模型无需重启即可看到。
 	const handleOpenChange = useCallback((open: boolean) => {
-		if (open) void modelCatalog.revalidate();
+		if (open) {
+			void modelCatalog.revalidate();
+			void revalidateFlowstokenCatalog();
+		}
 	}, []);
 
 	const handleReasoningSelect = useCallback(

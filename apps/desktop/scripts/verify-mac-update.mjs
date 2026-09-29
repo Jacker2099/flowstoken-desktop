@@ -12,7 +12,14 @@ import { parse } from "yaml";
 const execFileAsync = promisify(execFile);
 const packageDir = resolve(import.meta.dirname, "..");
 const defaultReleaseDir = join(packageDir, "release");
-const expectedBundleIdentifier = "com.vetta.desktop";
+
+function getExpectedBundleIdentifier() {
+	const appId = process.env.VETTA_APP_ID?.trim() || "com.flowstoken.desktop";
+	if (!/^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/.test(appId)) {
+		throw new Error("[verify-mac-update] VETTA_APP_ID must be a reverse-DNS bundle identifier");
+	}
+	return appId;
+}
 
 function getArtifactFileName(value) {
 	if (typeof value !== "string" || value.length === 0) {
@@ -100,8 +107,8 @@ async function findTopLevelApp(extractDir) {
 	return join(extractDir, appEntries[0].name);
 }
 
-async function readPlistValue(infoPlistPath, key) {
-	const { stdout } = await execFileAsync("/usr/libexec/PlistBuddy", [
+async function readPlistValue(infoPlistPath, key, runCommand) {
+	const { stdout } = await runCommand("/usr/libexec/PlistBuddy", [
 		"-c",
 		`Print :${key}`,
 		infoPlistPath,
@@ -109,18 +116,18 @@ async function readPlistValue(infoPlistPath, key) {
 	return stdout.trim();
 }
 
-async function verifySignedZip(zipPath, expectedVersion) {
-	if (process.platform !== "darwin") {
+async function verifySignedZip(zipPath, expectedVersion, expectedBundleIdentifier, runCommand, platform) {
+	if (platform !== "darwin") {
 		throw new Error("[verify-mac-update] signed Mac verification must run on macOS");
 	}
 	const extractDir = await mkdtemp(join(tmpdir(), "vetta-mac-update-"));
 	try {
-		await execFileAsync("ditto", ["-x", "-k", zipPath, extractDir]);
+		await runCommand("ditto", ["-x", "-k", zipPath, extractDir]);
 		const appPath = await findTopLevelApp(extractDir);
 		const infoPlistPath = join(appPath, "Contents", "Info.plist");
 		const [bundleVersion, bundleIdentifier] = await Promise.all([
-			readPlistValue(infoPlistPath, "CFBundleShortVersionString"),
-			readPlistValue(infoPlistPath, "CFBundleIdentifier"),
+			readPlistValue(infoPlistPath, "CFBundleShortVersionString", runCommand),
+			readPlistValue(infoPlistPath, "CFBundleIdentifier", runCommand),
 		]);
 		if (bundleVersion !== expectedVersion) {
 			throw new Error(
@@ -132,15 +139,20 @@ async function verifySignedZip(zipPath, expectedVersion) {
 				`[verify-mac-update] app identifier ${bundleIdentifier} does not match ${expectedBundleIdentifier}`,
 			);
 		}
-		await execFileAsync("codesign", ["--verify", "--deep", "--strict", "--verbose=2", appPath]);
-		await execFileAsync("spctl", ["-a", "-vvv", "-t", "exec", appPath]);
-		await execFileAsync("xcrun", ["stapler", "validate", appPath]);
+		await runCommand("codesign", ["--verify", "--deep", "--strict", "--verbose=2", appPath]);
+		await runCommand("spctl", ["-a", "-vvv", "-t", "exec", appPath]);
+		await runCommand("xcrun", ["stapler", "validate", appPath]);
 	} finally {
 		await rm(extractDir, { recursive: true, force: true });
 	}
 }
 
-export async function verifyMacUpdate({ releaseDir = defaultReleaseDir, requireSignature } = {}) {
+export async function verifyMacUpdate({
+	releaseDir = defaultReleaseDir,
+	requireSignature,
+	runCommand = execFileAsync,
+	platform = process.platform,
+} = {}) {
 	const metadataPath = join(releaseDir, "latest-mac.yml");
 	const document = parse(await readFile(metadataPath, "utf8"));
 	if (!document || typeof document !== "object" || !/^\d+\.\d+\.\d+$/.test(document.version)) {
@@ -158,7 +170,10 @@ export async function verifyMacUpdate({ releaseDir = defaultReleaseDir, requireS
 	const shouldVerifySignature =
 		requireSignature ?? process.env.VETTA_REQUIRE_MAC_SIGNATURE === "1";
 	if (shouldVerifySignature) {
-		for (const artifact of zipArtifacts) await verifySignedZip(artifact.filePath, document.version);
+		const expectedBundleIdentifier = getExpectedBundleIdentifier();
+		for (const artifact of zipArtifacts) {
+			await verifySignedZip(artifact.filePath, document.version, expectedBundleIdentifier, runCommand, platform);
+		}
 		console.info(`[verify-mac-update] signed and notarized Mac update verified: ${document.version}`);
 	} else {
 		console.info(

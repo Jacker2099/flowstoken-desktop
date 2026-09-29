@@ -22,7 +22,7 @@ on:
         type: string
         required: false
       force:
-        description: "Re-run even if this upstream tag was already synced"
+        description: "Retry an unpublished synced version; published versions are never rebuilt"
         type: boolean
         default: false
 
@@ -54,15 +54,17 @@ jobs:
 
       - name: Detect a new upstream release
         id: detect
+        env:
+          INPUT_UPSTREAM_TAG: ${{ inputs.upstream_tag }}
         run: |
-          TAG="${{ inputs.upstream_tag }}"
-          [ -n "$TAG" ] || TAG="$(gh api "repos/${UPSTREAM_REPO}/releases/latest" --jq .tag_name)"
-          SYNCED="$(cat "$MARKER" 2>/dev/null || echo none)"
-          echo "upstream=${TAG} synced=${SYNCED}"
-          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-          if [ "$TAG" = "$SYNCED" ] && [ "${{ inputs.force }}" != "true" ]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-          fi
+          export CURRENT_SHA="$(git rev-parse HEAD)"
+          node scripts/flowstoken/upstream-release-plan.mjs
+
+      - name: Require the workflow-capable sync token before merging
+        if: steps.detect.outputs.skip != 'true'
+        env:
+          FT_SYNC_TOKEN: ${{ secrets.FT_SYNC_TOKEN }}
+        run: test -n "$FT_SYNC_TOKEN" || { echo "::error::FT_SYNC_TOKEN with repository Contents and Workflows write is required"; exit 1; }
 
       - uses: actions/setup-node@v4
         if: steps.detect.outputs.skip != 'true'
@@ -72,7 +74,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         if: steps.detect.outputs.skip != 'true'
         with:
-          bun-version: "1.3.7"
+          bun-version-file: package.json
 
       - name: Merge upstream (FlowsToken-preserving rules)
         id: merge
@@ -94,7 +96,6 @@ jobs:
             cat resolve.log
             {
               echo "reason=unresolved merge conflicts"
-              echo 'detail<<EOF'; cat resolve.log; echo EOF
             } >> "$GITHUB_OUTPUT"
             git merge --abort
             exit 1
@@ -156,7 +157,7 @@ jobs:
             echo "::endgroup::"
             if [ "$rc" -ne 0 ]; then echo "FAILED: $*" | tee -a checks-failed.log; exit "$rc"; fi
           }
-          run "brand guard" node --test branding/flowstoken/tests/brand-guard.test.mjs branding/flowstoken/tests/resolve-upstream-conflicts.test.mjs
+          run "brand guard" node --test branding/flowstoken/tests/*.test.mjs
           run "release notes" node scripts/release/release-notes.mjs --check
           run "check (lint/types/guards)" bun run check
           run "quality tests" bun run test:quality
@@ -177,32 +178,40 @@ jobs:
           retention-days: 14
 
       - name: Commit release bump and push main
+        id: push
         if: steps.detect.outputs.skip != 'true'
         run: |
           git add bun.lock 2>/dev/null || true
           git commit -q -m "chore(desktop): release ${{ steps.bump.outputs.version }} with upstream ${{ steps.detect.outputs.tag }}"
           git push origin HEAD:main
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Ship it
-        if: steps.detect.outputs.skip != 'true'
-        run: gh workflow run flowstoken-release.yml -R "${{ github.repository }}" --ref main -f reason="upstream ${{ steps.detect.outputs.tag }}"
+        if: steps.detect.outputs.skip != 'true' || steps.detect.outputs.resume_release == 'true'
+        env:
+          RELEASE_SHA: ${{ steps.push.outputs.sha || steps.detect.outputs.sha }}
+          UPSTREAM_TAG: ${{ steps.detect.outputs.tag }}
+        run: gh workflow run flowstoken-release.yml -R "$GITHUB_REPOSITORY" --ref main -f expected_sha="$RELEASE_SHA" -f reason="upstream $UPSTREAM_TAG"
 
       - name: Record the failed attempt
-        if: failure() && steps.detect.outputs.skip != 'true'
+        env:
+          UPSTREAM_TAG: ${{ steps.detect.outputs.tag }}
+          MERGE_REASON: ${{ steps.merge.outputs.reason }}
+        if: failure() && (steps.detect.outputs.skip != 'true' || steps.detect.outputs.resume_release == 'true')
         run: |
-          TAG="${{ steps.detect.outputs.tag }}"
+          TAG="${UPSTREAM_TAG:-unknown}"
           RUN="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          BRANCH="upstream-sync/${TAG}"
-          if [ "${{ steps.merge.outputs.reason }}" = "" ] && git rev-parse -q --verify HEAD >/dev/null; then
-            git add -A >/dev/null 2>&1; git commit -q -m "wip: upstream ${TAG} sync (checks failed)" >/dev/null 2>&1 || true
-            git push -f origin "HEAD:refs/heads/${BRANCH}" >/dev/null 2>&1 || true
+          BRANCH="upstream-sync/${TAG}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          if [ "$MERGE_REASON" = "" ] && git rev-parse -q --verify HEAD >/dev/null; then
+            git add -u >/dev/null 2>&1; git commit -q -m "wip: upstream ${TAG} sync (checks failed)" >/dev/null 2>&1 || true
+            git push origin "HEAD:refs/heads/${BRANCH}" >/dev/null 2>&1 || true
           fi
-          REASON="${{ steps.merge.outputs.reason }}"; [ -n "$REASON" ] || REASON="checks failed"
+          REASON="$MERGE_REASON"; [ -n "$REASON" ] || REASON="checks failed"
           # Issues may be disabled on the repository; the FlowsToken server watches failed runs and reports them
           # to Telegram either way, so an issue is a convenience, not the alert path.
           gh label create upstream-sync --color D93F0B --description "Automatic upstream sync needs attention" >/dev/null 2>&1 || true
           BODY="$(printf 'Open Vetta %s could not be synced automatically: **%s**. Nothing was released.\n\nRun: %s\nBranch: %s\n\n```\n%s\n```\n' \
-            "$TAG" "$REASON" "$RUN" "$BRANCH" "$( { echo "${{ steps.merge.outputs.detail }}"; cat checks-failed.log 2>/dev/null; grep -E "FAIL |✖|× |error TS|error:" checks-full.log 2>/dev/null | head -40; } | tail -80)")"
+            "$TAG" "$REASON" "$RUN" "$BRANCH" "$( { cat resolve.log 2>/dev/null; cat checks-failed.log 2>/dev/null; grep -E "FAIL |✖|× |error TS|error:" checks-full.log 2>/dev/null | head -40; } | tail -80)")"
           EXISTING="$(gh issue list --label upstream-sync --state open --search "${TAG} in:title" --json number --jq '.[0].number // empty' 2>/dev/null || true)"
           if [ -n "$EXISTING" ]; then gh issue comment "$EXISTING" --body "$BODY" || true; else
             gh issue create --title "upstream sync ${TAG} needs attention" --label upstream-sync --body "$BODY" \

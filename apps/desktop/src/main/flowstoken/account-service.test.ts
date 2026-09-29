@@ -46,7 +46,9 @@ vi.mock("./newapi-client.js", () => ({
 	revealTokenKey: async (_s: unknown, id: number) => `sk-${id}`,
 }));
 
-const { getAccountSnapshot, ensureGroupKeysAndProviders } = await import("./account-service.js");
+const { getAccountSnapshot, ensureGroupKeysAndProviders, getCatalogAndRefreshProviders } = await import(
+	"./account-service.js"
+);
 const { resetGroupCatalogCacheForTests } = await import("./group-catalog.js");
 
 const model = (id: string, name?: string) => ({
@@ -155,11 +157,11 @@ describe("FlowsToken group model lists", () => {
 			"deepseek-v4.1-flash",
 		]);
 		expect(providers["flowstoken-official"].models).toEqual([
-			{ id: "anthropic/claude-opus-5.5", name: "Claude Opus 5.5", api: "openai-completions" },
-			{ id: "openai/gpt-6-sol", name: "GPT-6 Sol", api: "openai-completions" },
+			{ id: "anthropic/claude-opus-5.5", name: "Claude Opus 5.5", api: "openai-completions", input: ["text"] },
+			{ id: "openai/gpt-6-sol", name: "GPT-6 Sol", api: "openai-completions", input: ["text"] },
 		]);
 		expect(providers["flowstoken-smart"].models).toEqual([
-			{ id: "Bestoo-Auto", name: "Bestoo-Auto", api: "openai-completions" },
+			{ id: "Bestoo-Auto", name: "Bestoo-Auto", api: "openai-completions", input: ["text"] },
 		]);
 		expect(providers["flowstoken-official"].apiKey).toBe("sk-3");
 	});
@@ -240,5 +242,75 @@ describe("FlowsToken group model lists", () => {
 		expect(official.catalogVersion).toBe("pv-9");
 		// Catalog display names replace the stale id-derived names.
 		expect((official.models as Array<{ name: string }>).map((m) => m.name)).toEqual(["Claude Opus 5.5", "GPT-6 Sol"]);
+	});
+});
+
+describe("picker-driven catalog refresh", () => {
+	it("updates a fresh wired provider from new server data without touching account tokens or custom tuning", async () => {
+		const catalog = makeCatalog("pv-menu");
+		catalog.groups[1].vendors[0].models[0].vision = true;
+		mocks.fetch.mockResolvedValue({ ok: true, json: async () => catalog });
+		mocks.config = {
+			defaultModel: "custom/model",
+			providers: {
+				"flowstoken-default": {
+					...wiredProvider(1_000, []),
+					models: [
+						{ id: "claude-opus-5-5", contextWindow: 250_000, reasoning: true, reasoningLevels: ["low", "high"] },
+					],
+					useProxy: false,
+				},
+				custom: { apiKey: "keep-custom", models: [{ id: "model", input: ["text"] }] },
+			},
+		};
+		const result = await getCatalogAndRefreshProviders();
+		expect(result.pricingVersion).toBe("pv-menu");
+		const provider = mocks.config.providers["flowstoken-default"];
+		expect(provider.apiKey).toBe("sk-kept");
+		expect(provider.useProxy).toBe(false);
+		expect((provider.models as Array<Record<string, unknown>>)[0]).toMatchObject({
+			id: "claude-opus-5-5",
+			name: "Claude Opus 5.5",
+			input: ["text", "image"],
+			contextWindow: 250_000,
+			reasoning: true,
+			reasoningLevels: ["low", "high"],
+		});
+		expect(mocks.config.providers.custom).toEqual({
+			apiKey: "keep-custom",
+			models: [{ id: "model", input: ["text"] }],
+		});
+		expect(mocks.config.defaultModel).toBe("custom/model");
+		expect(mocks.fetchSelf).not.toHaveBeenCalled();
+		expect(mocks.listTokens).not.toHaveBeenCalled();
+		expect(mocks.config.providers["flowstoken-smart"]).toBeUndefined();
+		await getCatalogAndRefreshProviders();
+		expect(mocks.replaceConfig).toHaveBeenCalledTimes(1);
+	});
+
+	it("preserves an explicit input override and keeps existing providers when offline without a catalog", async () => {
+		mocks.config = {
+			defaultModel: "flowstoken-default/claude-opus-5-5",
+			providers: {
+				"flowstoken-default": {
+					...wiredProvider(1_000, []),
+					models: [{ id: "claude-opus-5-5", input: ["text"] }],
+				},
+			},
+		};
+		const catalog = makeCatalog("pv-vision");
+		catalog.groups[1].vendors[0].models[0].vision = true;
+		mocks.fetch.mockResolvedValue({ ok: true, json: async () => catalog });
+		await getCatalogAndRefreshProviders();
+		expect((mocks.config.providers["flowstoken-default"].models as Array<Record<string, unknown>>)[0].input).toEqual([
+			"text",
+		]);
+		const before = structuredClone(mocks.config);
+		resetGroupCatalogCacheForTests();
+		mocks.fetch.mockRejectedValue(new Error("offline"));
+		mocks.replaceConfig.mockClear();
+		expect((await getCatalogAndRefreshProviders()).pricingVersion).toBe("");
+		expect(mocks.config).toEqual(before);
+		expect(mocks.replaceConfig).not.toHaveBeenCalled();
 	});
 });

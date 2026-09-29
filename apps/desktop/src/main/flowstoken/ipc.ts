@@ -2,6 +2,7 @@ import { BrowserWindow, ipcMain, shell } from "electron";
 import {
 	ensureGroupKeysAndProviders,
 	getAccountSnapshot,
+	getCatalogAndRefreshProviders,
 	loginWithBrowser,
 	loginWithCredentials,
 	logoutAccount,
@@ -9,7 +10,6 @@ import {
 	setSnapshotBroadcastListener,
 } from "./account-service.js";
 import type { FlowstokenGroupId } from "./constants.js";
-import { getCatalog } from "./group-catalog.js";
 import type { FlowstokenAccountSnapshot } from "./types.js";
 
 const CHANNELS = {
@@ -35,7 +35,7 @@ function broadcastAccountSnapshot(snapshot: FlowstokenAccountSnapshot): void {
 export function registerFlowstokenAccountIpc(): () => void {
 	setSnapshotBroadcastListener(broadcastAccountSnapshot);
 	ipcMain.handle(CHANNELS.GET_SNAPSHOT, async () => getAccountSnapshot({ includeUsage: true }));
-	ipcMain.handle(CHANNELS.GET_CATALOG, async () => getCatalog());
+	ipcMain.handle(CHANNELS.GET_CATALOG, async () => getCatalogAndRefreshProviders());
 	ipcMain.handle(CHANNELS.LOGIN_BROWSER, async () => {
 		const result = await loginWithBrowser();
 		if (result.snapshot) broadcastAccountSnapshot(result.snapshot);

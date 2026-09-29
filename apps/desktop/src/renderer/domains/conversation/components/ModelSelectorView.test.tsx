@@ -208,3 +208,38 @@ describe("ModelSelectorView", () => {
 		expect(onModelSelect).toHaveBeenCalledWith("flowstoken-official/xai/grok-4.7");
 	});
 });
+
+
+it("preserves the tab being browsed during catalog refresh and follows explicit selection or removed tabs", async () => {
+	const user = userEvent.setup();
+	const smart = { key: "smart/auto", provider: "smart", modelId: "auto", displayName: "Auto" };
+	const official = { key: "official/claude", provider: "official", modelId: "claude", displayName: "Claude" };
+	const props: ModelSelectorViewProps = {
+		selectedModel: smart.key, selectedOption: smart, menuLevels: [], labels,
+		groups: [{ provider: "smart", label: "Smart provider", models: [smart] },
+			{ provider: "official", label: "Official provider", models: [official] }],
+		tabs: [{ id: "smart", label: "Smart", providers: ["smart"] },
+			{ id: "vip", label: "Official", providers: ["official"] },
+			{ id: "all", label: "All", providers: [] }],
+		initialTab: "smart", onModelSelect: vi.fn(), onReasoningSelect: vi.fn(),
+	};
+	const { rerender } = render(<ModelSelectorView {...props} />);
+	await user.click(screen.getByRole("button", { name: "Auto" }));
+	await user.click(await screen.findByRole("button", { name: "Official" }));
+	expect(screen.getByRole("menuitem", { name: "Claude" })).toBeTruthy();
+
+	// Fetching a fresh catalog recreates its arrays without changing the selected model.
+	rerender(<ModelSelectorView {...props} tabs={props.tabs?.map((tab) => ({ ...tab }))}
+		groups={props.groups.map((group) => ({ ...group, models: [...group.models] }))} />);
+	expect(screen.getByRole("menuitem", { name: "Claude" })).toBeTruthy();
+	expect(screen.queryByRole("menuitem", { name: "Auto" })).toBeNull();
+
+	// An explicit selection still selects the corresponding tab, as before.
+	rerender(<ModelSelectorView {...props} selectedModel={official.key} selectedOption={official} initialTab="vip" />);
+	rerender(<ModelSelectorView {...props} />);
+	await waitFor(() => expect(screen.getByRole("menuitem", { name: "Auto" })).toBeTruthy());
+
+	await user.click(screen.getByRole("button", { name: "Official" }));
+	rerender(<ModelSelectorView {...props} tabs={props.tabs?.filter((tab) => tab.id !== "vip")} />);
+	await waitFor(() => expect(screen.getByRole("menuitem", { name: "Auto" })).toBeTruthy());
+});

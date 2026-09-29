@@ -1,4 +1,5 @@
 import { getDesktopModelSettingsService } from "../models/model-settings-host.js";
+import type { ModelDefinition } from "../models/model-settings-service.js";
 import {
 	FLOWSTOKEN_CONSOLE_URL,
 	FLOWSTOKEN_GROUPS,
@@ -10,6 +11,7 @@ import {
 } from "./constants.js";
 import {
 	catalogGroupModels,
+	fallbackCatalog,
 	fallbackGroupModels,
 	fetchCatalog,
 	GROUP_MODELS_MAX_AGE_MS,
@@ -33,6 +35,7 @@ import {
 } from "./newapi-client.js";
 import type {
 	FlowstokenAccountSnapshot,
+	FlowstokenCatalog,
 	FlowstokenCatalogModel,
 	FlowstokenEnsureKeysResult,
 	FlowstokenGroupKeyState,
@@ -164,8 +167,18 @@ export async function getAccountSnapshot(options?: {
 	};
 }
 
-function toProviderModels(models: readonly FlowstokenCatalogModel[]) {
-	return models.map((model) => ({ id: model.id, name: model.name, api: "openai-completions" as const }));
+function toProviderModels(models: readonly FlowstokenCatalogModel[], existing: readonly ModelDefinition[] = []) {
+	const byId = new Map(existing.map((model) => [model.id, model]));
+	return models.map((model) => {
+		const previous = byId.get(model.id);
+		return {
+			...previous,
+			id: model.id,
+			name: model.name,
+			api: previous?.api ?? "openai-completions",
+			input: previous?.input ?? (model.vision ? ["text", "image"] : ["text"]),
+		};
+	});
 }
 
 async function wireAllProviders(
@@ -191,7 +204,7 @@ async function wireAllProviders(
 			api: "openai-completions",
 			baseUrl: FLOWSTOKEN_OPENAI_BASE_URL,
 			apiKey: item.apiKey,
-			models: item.models.length > 0 ? toProviderModels(item.models) : (existing?.models ?? []),
+			models: item.models.length > 0 ? toProviderModels(item.models, existing?.models) : (existing?.models ?? []),
 			modelsSyncedAt: new Date().toISOString(),
 		};
 	}
@@ -207,54 +220,65 @@ async function wireAllProviders(
 
 let modelRefreshPromise: Promise<void> | null = null;
 
-/**
- * Keys are wired once, but the site adds and retires models: refresh the model lists of already wired groups when
- * they are older than GROUP_MODELS_MAX_AGE_MS. Keys, provider settings and the default model stay untouched.
- */
+/** Reconcile only already wired groups; preserve credentials, defaults and per-model tuning. */
+async function syncCatalogProviders(catalog: FlowstokenCatalog): Promise<void> {
+	const previous = modelRefreshPromise;
+	const current = (async () => {
+		await previous?.catch(() => {});
+		const service = getDesktopModelSettingsService();
+		const latest = await service.getConfig();
+		const providers = { ...latest.providers };
+		const now = Date.now();
+		let changed = false;
+		for (const group of FLOWSTOKEN_GROUPS) {
+			const existing = providers[group.providerId];
+			const models = catalogGroupModels(catalog, group.id);
+			if (!existing?.apiKey || models.length === 0) continue;
+			const next = toProviderModels(models, existing.models);
+			const syncedAt = Date.parse(existing.modelsSyncedAt ?? "");
+			if (
+				(existing as { catalogVersion?: string }).catalogVersion === catalog.pricingVersion &&
+				JSON.stringify(existing.models) === JSON.stringify(next) &&
+				Number.isFinite(syncedAt) &&
+				now - syncedAt <= GROUP_MODELS_MAX_AGE_MS
+			)
+				continue;
+			providers[group.providerId] = {
+				...existing,
+				models: next,
+				modelsSyncedAt: new Date(now).toISOString(),
+				catalogVersion: catalog.pricingVersion,
+			} as typeof existing;
+			changed = true;
+		}
+		if (changed) await service.replaceConfig({ ...latest, providers });
+	})();
+	modelRefreshPromise = current;
+	try {
+		await current;
+	} finally {
+		if (modelRefreshPromise === current) modelRefreshPromise = null;
+	}
+}
+
+/** Opening a picker refreshes the runtime list before returning its display metadata. */
+export async function getCatalogAndRefreshProviders(): Promise<FlowstokenCatalog> {
+	const catalog = await fetchCatalog();
+	if (!catalog) return fallbackCatalog();
+	await syncCatalogProviders(catalog);
+	return catalog;
+}
+
 function triggerBackgroundModelRefreshIfStale(groups: FlowstokenGroupKeyState[]): void {
 	if (modelRefreshPromise || groups.length === 0 || !groups.every((g) => g.wired)) return;
-	modelRefreshPromise = (async () => {
-		try {
-			const service = getDesktopModelSettingsService();
-			const config = await service.getConfig();
-			const now = Date.now();
-			const stale = FLOWSTOKEN_GROUPS.some((group) => {
-				const syncedAt = Date.parse(config.providers[group.providerId]?.modelsSyncedAt ?? "");
-				return !Number.isFinite(syncedAt) || now - syncedAt > GROUP_MODELS_MAX_AGE_MS;
-			});
-			if (!stale) return;
-			const catalog = await fetchCatalog(now);
-			if (!catalog) return;
-			const latest = await service.getConfig();
-			const providers = { ...latest.providers };
-			for (const group of FLOWSTOKEN_GROUPS) {
-				const existing = providers[group.providerId];
-				const models = catalogGroupModels(catalog, group.id);
-				if (!existing?.apiKey || models.length === 0) continue;
-				const next = toProviderModels(models);
-				// Rewrite when the pricing version moved or the model list itself changed.
-				// `catalogVersion` rides the provider row as an untyped overlay field.
-				const unchanged =
-					(existing as { catalogVersion?: string }).catalogVersion === catalog.pricingVersion &&
-					JSON.stringify(existing.models) === JSON.stringify(next);
-				if (unchanged) {
-					providers[group.providerId] = { ...existing, modelsSyncedAt: new Date(now).toISOString() };
-					continue;
-				}
-				providers[group.providerId] = {
-					...existing,
-					models: next,
-					modelsSyncedAt: new Date(now).toISOString(),
-					catalogVersion: catalog.pricingVersion,
-				} as typeof existing;
-			}
-			await service.replaceConfig({ ...latest, providers });
-		} catch (e) {
-			console.warn("[FlowsToken] Background model list refresh failed:", e);
-		} finally {
-			modelRefreshPromise = null;
-		}
-	})();
+	void (async () => {
+		const config = await getDesktopModelSettingsService().getConfig();
+		const stale = FLOWSTOKEN_GROUPS.some((group) => {
+			const syncedAt = Date.parse(config.providers[group.providerId]?.modelsSyncedAt ?? "");
+			return !Number.isFinite(syncedAt) || Date.now() - syncedAt > GROUP_MODELS_MAX_AGE_MS;
+		});
+		if (stale) await getCatalogAndRefreshProviders();
+	})().catch((error) => console.warn("[FlowsToken] Background model list refresh failed:", error));
 }
 
 export async function ensureGroupKeysAndProviders(groupIds?: FlowstokenGroupId[]): Promise<FlowstokenEnsureKeysResult> {

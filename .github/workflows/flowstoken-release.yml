@@ -18,8 +18,12 @@ on:
         description: "Why this release (shown in the run name)"
         type: string
         required: false
+      expected_sha:
+        description: "Optional exact commit required by upstream sync"
+        type: string
+        required: false
       reuse_build_run:
-        description: "Retry only: publish from an existing desktop-release run (must have built the commit the version tag points to)"
+        description: "Retry only: publish from an existing desktop-release run (must have built this workflow commit and passed its macOS gate)"
         type: string
         required: false
 
@@ -34,9 +38,37 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release:
+  validate-related:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - name: Install dependencies
+        uses: ./.github/actions/install-bun-dependencies
+      - name: Verify FlowsToken-related client tests
+        run: |
+          UPSTREAM_TAG="$(tr -d '\r\n' < branding/flowstoken/UPSTREAM_SYNCED)"
+          [[ "$UPSTREAM_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Invalid upstream marker" >&2; exit 1; }
+          git fetch --no-tags https://github.com/openvetta/open-vetta.git "refs/tags/${UPSTREAM_TAG}:refs/tags/upstream/${UPSTREAM_TAG}"
+          node scripts/flowstoken/test-flowstoken-related.mjs "upstream/${UPSTREAM_TAG}"
+
+  build:
+    needs: validate-related
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      tag: ${{ steps.v.outputs.tag }}
+      run_id: ${{ steps.build.outputs.run_id }}
+      attempt: ${{ steps.build.outputs.build_attempt }}
     env:
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
@@ -51,18 +83,18 @@ jobs:
 
       - name: Resolve version
         id: v
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
         run: |
+          test -z "$EXPECTED_SHA" || test "$EXPECTED_SHA" = "$GITHUB_SHA" || { echo "::error::main changed after upstream sync; refusing a different commit"; exit 1; }
           VERSION="$(node -p "require('./apps/desktop/package.json').version")"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
-          if gh release view "v${VERSION}" -R "$REPO" --json isDraft --jq .isDraft 2>/dev/null | grep -q false; then
-            echo "::error::Release v${VERSION} is already published; bump apps/desktop/package.json first."
-            exit 1
-          fi
+          node scripts/flowstoken/publish-release.mjs --check --repo "$REPO" --version "$VERSION"
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: "1.3.7"
+          bun-version-file: package.json
 
       - name: Install dependencies
         uses: ./.github/actions/install-bun-dependencies
@@ -78,10 +110,8 @@ jobs:
           TAG="${{ steps.v.outputs.tag }}"
           REMOTE="$(git ls-remote --tags origin "refs/tags/${TAG}" | cut -f1)"
           if [ -n "$REMOTE" ] && [ "$REMOTE" != "${GITHUB_SHA}" ]; then
-            # Left over from an attempt that never published (published releases were refused above).
-            echo "::warning::moving unpublished tag ${TAG} from ${REMOTE} to ${GITHUB_SHA}"
-            git push origin ":refs/tags/${TAG}"
-            REMOTE=""
+            echo "::error::${TAG} already points to another commit; resolve the unpublished tag explicitly or bump the version."
+            exit 1
           fi
           if [ -z "$REMOTE" ]; then
             git tag -f "${TAG}" "${GITHUB_SHA}"  # checkout may already hold the stale local tag
@@ -95,45 +125,60 @@ jobs:
           TAG="${{ steps.v.outputs.tag }}"
           if [ -n "${{ inputs.reuse_build_run }}" ]; then
             RUN_ID="${{ inputs.reuse_build_run }}"
-            BUILT="$(gh run view "$RUN_ID" -R "$REPO" --json headSha --jq .headSha)"
-            TAGGED="$(git ls-remote --tags origin "refs/tags/${TAG}^{}" "refs/tags/${TAG}" | tail -1 | cut -f1)"
-            test -n "$TAGGED" && test "$BUILT" = "$TAGGED" || { echo "::error::run ${RUN_ID} built ${BUILT}, ${TAG} is ${TAGGED}"; exit 1; }
-            echo "run_id=${RUN_ID}" >> "$GITHUB_OUTPUT"
-            echo "Reusing https://github.com/${REPO}/actions/runs/${RUN_ID} (built ${BUILT})"
           else
-          SINCE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          gh workflow run desktop-release.yml -R "$REPO" --ref "${TAG}" \
-            -f release_target=github -f channel=default -f notes="flowstoken ${TAG}"
-          RUN_ID=""
-          for _ in $(seq 1 60); do
-            RUN_ID="$(gh run list -R "$REPO" --workflow desktop-release.yml --event workflow_dispatch --json databaseId,headBranch,createdAt \
-              --jq "map(select(.headBranch==\"${TAG}\" and .createdAt >= \"${SINCE}\")) | .[0].databaseId // empty")"
-            [ -n "$RUN_ID" ] && break
-            sleep 10
-          done
-          test -n "$RUN_ID" || { echo "::error::desktop-release run did not start"; exit 1; }
-          echo "run_id=${RUN_ID}" >> "$GITHUB_OUTPUT"
-          echo "Waiting for https://github.com/${REPO}/actions/runs/${RUN_ID}"
-          gh run watch "$RUN_ID" -R "$REPO" --interval 60 > /dev/null || true
+            SINCE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            gh workflow run desktop-release.yml -R "$REPO" --ref "${TAG}" \
+              -f release_target=github -f channel=default -f notes="flowstoken ${TAG}"
+            RUN_ID=""
+            for _ in $(seq 1 60); do
+              RUN_ID="$(gh run list -R "$REPO" --workflow desktop-release.yml --event workflow_dispatch --json databaseId,headBranch,createdAt \
+                --jq "map(select(.headBranch==\"${TAG}\" and .createdAt >= \"${SINCE}\")) | .[0].databaseId // empty")"
+              [ -n "$RUN_ID" ] && break
+              sleep 10
+            done
+            test -n "$RUN_ID" || { echo "::error::desktop-release run did not start"; exit 1; }
           fi
-          # Gate on upstream's quality job and all four platform builds. Upstream's post-build "verify" jobs
-          # hard-code Vetta install paths (/opt/Vetta/Vetta) and (in v0.5.59) break on Windows paths, so they
-          # are reported, not gating; FlowsToken runs its own package verification below.
-          gh run view "$RUN_ID" -R "$REPO" --json jobs --jq '.jobs[] | "\(.name)\t\(.conclusion)"' | tee jobs.tsv
-          for job in "validate and test Desktop release" "build linux" "build windows" "build macos-arm64" "build macos-x64"; do
-            grep -qP "^${job}\tsuccess$" jobs.tsv || { echo "::error::upstream job '${job}' did not succeed"; exit 1; }
-          done
-          grep -P "^verify " jobs.tsv | grep -vP "\tsuccess$" | while IFS=$'\t' read -r name result; do
-            echo "::warning::upstream ${name} = ${result} (not a FlowsToken gate)"
-          done
+          # Reuse only this workflow commit: older runs may not contain the macOS signature gate.
+          TAGGED="$(git ls-remote --tags origin "refs/tags/${TAG}^{}" "refs/tags/${TAG}" | tail -1 | cut -f1)"
+          test "$TAGGED" = "$GITHUB_SHA" || { echo "::error::${TAG} does not point to this workflow commit"; exit 1; }
+          echo "run_id=${RUN_ID}" >> "$GITHUB_OUTPUT"
+          # macOS builds now include their signature gate; unrelated upstream verify jobs do not delay publishing.
+          node scripts/flowstoken/wait-release-builds.mjs --repo "$REPO" --run "$RUN_ID" --sha "$GITHUB_SHA"
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+
+      - name: Install dependencies
+        uses: ./.github/actions/install-bun-dependencies
+
+      - name: Check build identity before downloading
+        run: node scripts/flowstoken/wait-release-builds.mjs --repo "$REPO" --run "${{ needs.build.outputs.run_id }}" --sha "$GITHUB_SHA" --attempt "${{ needs.build.outputs.attempt }}" --check
 
       - name: Collect build artifacts (from the build checkpoints)
         run: |
           mkdir -p ckpt apps/desktop/release
           for platform in linux windows macos-arm64 macos-x64; do
-            gh run download "${{ steps.build.outputs.run_id }}" -R "$REPO" -n "release-build-${platform}" -D "ckpt/${platform}"
+            gh run download "${{ needs.build.outputs.run_id }}" -R "$REPO" -n "release-build-${platform}" -D "ckpt/${platform}"
             mkdir -p "ckpt/${platform}/x" && tar -xf "ckpt/${platform}/release-build.tar" -C "ckpt/${platform}/x"
             src="ckpt/${platform}/x/release"
+            [ "$(cat "$src/release-publish.txt" 2>/dev/null)" = "false" ] || {
+              echo "::error::${platform} checkpoint did not come from a non-publishing dispatch"; exit 1; }
+            node scripts/flowstoken/release-artifacts.mjs --mode check-checkpoint --dir "$src" --version "${{ needs.build.outputs.version }}" --sha "$GITHUB_SHA" --run "${{ needs.build.outputs.run_id }}" --attempt "${{ needs.build.outputs.attempt }}" --platform "$platform"
             # 1 = the build ran with signing credentials; with them a signing or notarization failure fails the
             # build before its checkpoint exists, so only a signed and notarized macOS build carries a 1.
             case "$platform" in
@@ -145,7 +190,7 @@ jobs:
               macos-arm64) mv "$src/latest-mac.yml" "$src/latest-mac-arm64.yml" ;;
               macos-x64) mv "$src/latest-mac.yml" "$src/latest-mac-x64.yml" ;;
             esac
-            find "$src" -maxdepth 1 -type f \( -name '*.AppImage' -o -name '*.blockmap' -o -name '*.deb' -o -name '*.dmg' \
+            find "$src" -maxdepth 1 -type f ! -name '._*' ! -name 'default._*' \( -name '*.AppImage' -o -name '*.blockmap' -o -name '*.deb' -o -name '*.dmg' \
               -o -name '*.exe' -o -name '*.msi' -o -name '*.rpm' -o -name '*.zip' -o -name 'latest*.yml' \) \
               -exec mv -f {} apps/desktop/release/ \;
           done
@@ -170,30 +215,20 @@ jobs:
         run: bun run merge:updates:mac
 
       - name: Verify every feed entry is present
-        working-directory: apps/desktop/release
-        run: |
-          VERSION="${{ steps.v.outputs.version }}"
-          for y in latest.yml latest-mac.yml latest-linux.yml; do
-            test -f "$y" || { echo "::error::missing $y"; exit 1; }
-            grep -q "^version: ${VERSION}$" "$y" || { echo "::error::$y is not ${VERSION}"; exit 1; }
-            for f in $(grep -oE 'url: .+' "$y" | cut -d' ' -f2); do
-              test -f "$f" || { echo "::error::$y references missing $f"; exit 1; }
-            done
-          done
+        run: node scripts/flowstoken/release-artifacts.mjs --mode release --dir apps/desktop/release --version "${{ needs.build.outputs.version }}" --sha "$GITHUB_SHA" --run "${{ needs.build.outputs.run_id }}" --attempt "${{ needs.build.outputs.attempt }}"
+
+      - name: Check build identity after downloading
+        run: node scripts/flowstoken/wait-release-builds.mjs --repo "$REPO" --run "${{ needs.build.outputs.run_id }}" --sha "$GITHUB_SHA" --attempt "${{ needs.build.outputs.attempt }}" --check
 
       - name: Publish GitHub Release
         run: |
-          TAG="${{ steps.v.outputs.tag }}"; VERSION="${{ steps.v.outputs.version }}"
-          NOTES="$(node scripts/release/release-notes.mjs --version "${VERSION}")"
-          if ! gh release view "${TAG}" -R "$REPO" >/dev/null 2>&1; then
-            gh release create "${TAG}" -R "$REPO" --draft --verify-tag --title "FlowsToken Desktop ${VERSION}" --notes-file "${NOTES}"
-          fi
-          find apps/desktop/release -maxdepth 1 -type f -print0 | xargs -0 gh release upload "${TAG}" -R "$REPO" --clobber
-          gh release edit "${TAG}" -R "$REPO" --draft=false --latest
+          VERSION="${{ needs.build.outputs.version }}"
+          NOTES="$(node scripts/release/release-notes.mjs --version "$VERSION")"
+          node scripts/flowstoken/publish-release.mjs --repo "$REPO" --version "$VERSION" --sha "$GITHUB_SHA" --dir apps/desktop/release --notes "$NOTES"
 
       - name: Verify the published feed (what installed <= 0.5.61 clients read)
         run: |
-          TAG="${{ steps.v.outputs.tag }}"; VERSION="${{ steps.v.outputs.version }}"
+          TAG="${{ needs.build.outputs.tag }}"; VERSION="${{ needs.build.outputs.version }}"
           for y in latest.yml latest-mac.yml latest-linux.yml; do
             curl -fsSL "https://github.com/${REPO}/releases/download/${TAG}/${y}" | grep -q "^version: ${VERSION}$"
           done

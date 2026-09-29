@@ -13,6 +13,7 @@ const { marketplaceLog } = vi.hoisted(() => ({
 vi.mock("../../logger", () => ({ getAppLogger: () => marketplaceLog }));
 
 const temporaryRoots: string[] = [];
+const unexpectedNetworkFetch = vi.fn<typeof fetch>();
 const APP_VERSION = "0.5.11";
 const originalRepository = process.env.VETTA_OPEN_MARKETPLACE_REPOSITORY;
 const originalRef = process.env.VETTA_OPEN_MARKETPLACE_REF;
@@ -302,6 +303,10 @@ function githubManifestResponse(buffer: Buffer): Response {
 }
 
 beforeEach(() => {
+	unexpectedNetworkFetch
+		.mockReset()
+		.mockRejectedValue(new Error("Unexpected real network request in marketplace test"));
+	vi.stubGlobal("fetch", unexpectedNetworkFetch);
 	marketplaceLog.error.mockClear();
 	process.env.VETTA_OPEN_MARKETPLACE_REPOSITORY = "https://github.com/example/vetta-abilities";
 	process.env.VETTA_OPEN_MARKETPLACE_REF = "main";
@@ -313,6 +318,9 @@ afterEach(async () => {
 	restoreEnvironment("VETTA_OPEN_MARKETPLACE_REPOSITORY", originalRepository);
 	restoreEnvironment("VETTA_OPEN_MARKETPLACE_REF", originalRef);
 	restoreEnvironment("VETTA_OPEN_MARKETPLACE_ARCHIVE_URL", originalArchiveUrl);
+	vi.unstubAllGlobals();
+	// The service intentionally catches update-check failures; require explicit network fixtures even then.
+	expect(unexpectedNetworkFetch).not.toHaveBeenCalled();
 });
 
 describe("OpenMarketplaceService", () => {
@@ -329,6 +337,7 @@ describe("OpenMarketplaceService", () => {
 				hostApiVersion,
 				rootDir,
 				fetchArchive: async () => response(source),
+				fetchManifest: async () => manifestResponse(source),
 				installAbility: async (_root, ability) => {
 					installed.push(ability.version);
 				},
@@ -573,6 +582,8 @@ describe("OpenMarketplaceService", () => {
 	});
 	it("prepares an MCP from the active validated snapshot", async () => {
 		const rootDir = await temporaryRoot();
+		const source = pluginBundleArchive();
+		const fetchManifest = vi.fn(async () => manifestResponse(source));
 		const prepareMcpAbility = vi.fn(async (_snapshotRoot: string, _ability: unknown, _sourceId: string) => ({
 			type: "http" as const,
 			url: "https://mcp.example.com",
@@ -580,7 +591,8 @@ describe("OpenMarketplaceService", () => {
 		const service = new OpenMarketplaceService({
 			appVersion: APP_VERSION,
 			rootDir,
-			fetchArchive: async () => response(pluginBundleArchive()),
+			fetchArchive: async () => response(source),
+			fetchManifest,
 			prepareMcpAbility,
 		});
 		await service.refresh();
@@ -763,13 +775,16 @@ describe("OpenMarketplaceService", () => {
 
 	it("validates and lists MCP, plugin and bundle entries", async () => {
 		const rootDir = await temporaryRoot();
+		const source = pluginBundleArchive();
+		const fetchManifest = vi.fn(async () => manifestResponse(source));
 		const installAbility = vi.fn(
 			async (_snapshotRoot: string, _ability: object, _origin: GitHubMarketplaceOrigin) => undefined,
 		);
 		const service = new OpenMarketplaceService({
 			appVersion: APP_VERSION,
 			rootDir,
-			fetchArchive: async () => response(pluginBundleArchive()),
+			fetchArchive: async () => response(source),
+			fetchManifest,
 			installAbility,
 		});
 
@@ -808,6 +823,7 @@ describe("OpenMarketplaceService", () => {
 		]);
 
 		await service.install("plugin", "demo-plugin");
+		expect(fetchManifest).toHaveBeenCalledOnce();
 		expect(installAbility).toHaveBeenCalledOnce();
 		expect(installAbility.mock.calls[0]?.[1]).toMatchObject({ type: "plugin", slug: "demo-plugin" });
 	}, 10_000);
@@ -1112,13 +1128,16 @@ describe("OpenMarketplaceService", () => {
 
 	it("installs only from the active validated snapshot", async () => {
 		const rootDir = await temporaryRoot();
+		const source = archive();
+		const fetchManifest = vi.fn(async () => manifestResponse(source));
 		const installAbility = vi.fn(
 			async (_snapshotRoot: string, _ability: object, _origin: GitHubMarketplaceOrigin) => undefined,
 		);
 		const service = new OpenMarketplaceService({
 			appVersion: APP_VERSION,
 			rootDir,
-			fetchArchive: async () => response(archive()),
+			fetchArchive: async () => response(source),
+			fetchManifest,
 			installAbility,
 		});
 		await service.refresh();

@@ -227,11 +227,9 @@ jobs:
     needs: [prepare, quality]
     if: needs.prepare.outputs.should-build == 'true'
     runs-on: ${{ matrix.runner }}
-    # macOS 发布构建要对内置 node/python 运行时和各个 sidecar 二进制逐个签名再上传
-    # 公证，比未签名构建多出 10~30 分钟，托管 runner 上还要叠加 packaged E2E。
-    # FlowsToken: Apple 对新开发者账号的公证时常排队数小时（2026-09-29 实测 >5h），
-    # 给到接近 GitHub 上限，避免因等苹果而反复重跑整套构建。
-    timeout-minutes: 330
+    # FlowsToken: leave room around the bounded packaging step for setup, verification and diagnostics.
+    # The outer workflow waits only for build gates; publishing has its own job budget.
+    timeout-minutes: 270
     environment: ${{ needs.prepare.outputs.channel == 'test' && 'desktop-test' || 'desktop-production' }}
     strategy:
       fail-fast: false
@@ -400,6 +398,8 @@ jobs:
         uses: ./.github/actions/prepare-desktop-resources
 
       - name: Build updater artifacts
+        id: package
+        timeout-minutes: 240
         working-directory: apps/desktop
         env:
           # 由 prepare 解析：dispatch 表单 > desktop-production Environment/仓库 Variables。
@@ -408,12 +408,44 @@ jobs:
           VETTA_UPDATE_GITHUB_REPO: ${{ github.event.repository.name }}
         run: bun run ${{ matrix.command }}
 
-      # Archive before verification so an E2E/install failure never discards a signed build.
+      # A completed checkpoint must already pass the macOS signature and notarization gate.
+      - name: Verify macOS signature before checkpoint
+        id: mac-signature
+        if: matrix.macArch != ''
+        timeout-minutes: 15
+        working-directory: apps/desktop
+        run: bun run verify:updates:mac
+
+      # Keep platform validation in this job so it uses the same resolved product configuration as packaging.
+      - name: Verify non-macOS updater artifacts before checkpoint
+        id: platform-verification
+        if: matrix.macArch == '' && matrix.verify != ''
+        timeout-minutes: 15
+        working-directory: apps/desktop
+        run: bun run ${{ matrix.verify }}
+
+      - name: Verify Windows supplemental packages before checkpoint
+        id: windows-packages
+        if: matrix.platform == 'windows'
+        timeout-minutes: 15
+        working-directory: apps/desktop
+        run: bun run verify:packages:windows
+
+      # Archive before the remaining packaged E2E/install verification so those failures keep the build.
       # tar preserves executable modes and macOS bundle symlinks across artifact transfer.
+      - name: Record checkpoint provenance and file hashes
+        shell: bash
+        env:
+          RELEASE_PLATFORM: ${{ matrix.platform }}
+        run: |
+          VERSION="${VETTA_DESKTOP_BUILD_VERSION:-$(node -p "require('./apps/desktop/package.json').version")}"
+          node scripts/flowstoken/release-artifacts.mjs --mode checkpoint --dir apps/desktop/release --version "$VERSION" --sha "$GITHUB_SHA" --run "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" --platform "$RELEASE_PLATFORM"
+
       - name: Archive build checkpoint
         shell: bash
         run: |
           echo "${VETTA_REQUIRE_MAC_SIGNATURE:-0}" > apps/desktop/release/require-mac-signature.txt
+          echo "${VETTA_RELEASE_PUBLISH}" > apps/desktop/release/release-publish.txt
           (cd "${RUNNER_TEMP}" && tar --exclude=builder-debug.yml --exclude=builder-effective-config.yaml -cf release-build.tar -C "${GITHUB_WORKSPACE}/apps/desktop" release)
 
       - name: Upload build checkpoint
@@ -421,6 +453,29 @@ jobs:
         with:
           name: release-build-${{ matrix.platform }}
           path: ${{ runner.temp }}/release-build.tar
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+          overwrite: true
+
+      # Best effort after a step failure; these files are not a verified build or publishable checkpoint.
+      - name: Archive failed macOS build diagnostics
+        id: failed-macos
+        if: ${{ always() && matrix.macArch != '' && (steps.package.outcome == 'failure' || steps.mac-signature.outcome == 'failure') }}
+        shell: bash
+        run: |
+          if [[ -d apps/desktop/release ]]; then
+            (cd "${RUNNER_TEMP}" && tar --exclude=builder-debug.yml --exclude=builder-effective-config.yaml -cf failed-macos.tar -C "${GITHUB_WORKSPACE}/apps/desktop" release)
+            echo "saved=true" >> "${GITHUB_OUTPUT}"
+            echo "::warning::Partial macOS files saved for diagnosis only; not a release-build checkpoint and not eligible for publication."
+          fi
+
+      - name: Upload failed macOS build diagnostics
+        if: ${{ always() && steps.failed-macos.outputs.saved == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: failed-macos-${{ matrix.platform }}
+          path: ${{ runner.temp }}/failed-macos.tar
           if-no-files-found: error
           retention-days: 30
           compression-level: 0
@@ -438,6 +493,11 @@ jobs:
     needs: [prepare, build]
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
+    env:
+      # Packaging sets these inside its subprocess; verification runs in a fresh job.
+      VETTA_PRODUCT_NAME: FlowsToken
+      VETTA_EXECUTABLE_NAME: FlowsToken
+      VETTA_APP_ID: com.flowstoken.desktop
     strategy:
       fail-fast: false
       matrix: *release-platforms
@@ -471,7 +531,9 @@ jobs:
           BUILD_VERSION: ${{ needs.prepare.outputs.build-version }}
         run: |
           rm -rf apps/desktop/release
-          (cd "${RUNNER_TEMP}/release-checkpoint" && tar -xf release-build.tar -C "${GITHUB_WORKSPACE}/apps/desktop")
+          # Git Bash accepts RUNNER_TEMP, but GNU tar -C cannot read a Windows drive path.
+          CHECKPOINT_DIR="$(cd "${RUNNER_TEMP}/release-checkpoint" && pwd)"
+          (cd apps/desktop && tar -xf "${CHECKPOINT_DIR}/release-build.tar")
           SIGNATURE="$(cat apps/desktop/release/require-mac-signature.txt)"
           case "${SIGNATURE}" in 0|1) ;; *) echo "Invalid signature requirement" >&2; exit 1 ;; esac
           echo "VETTA_REQUIRE_MAC_SIGNATURE=${SIGNATURE}" >> "${GITHUB_ENV}"
@@ -506,18 +568,18 @@ jobs:
         working-directory: apps/desktop
         shell: bash
         run: |
-          docker run --rm --volume "${PWD}/release:/release:ro" ubuntu:24.04 bash -euo pipefail -c '
+          docker run --rm --env VETTA_EXECUTABLE_NAME --volume "${PWD}/release:/release:ro" ubuntu:24.04 bash -euo pipefail -c '
             apt-get update
             apt-get install --yes /release/*.deb
-            test -x /opt/Vetta/Vetta
-            test "$(cat /opt/Vetta/resources/package-type)" = "deb"
-            find /usr/share/applications -maxdepth 1 -type f -iname "*vetta*.desktop" -print -quit | grep -q .
+            test -x "/opt/${VETTA_EXECUTABLE_NAME}/${VETTA_EXECUTABLE_NAME}"
+            test "$(cat "/opt/${VETTA_EXECUTABLE_NAME}/resources/package-type")" = "deb"
+            find /usr/share/applications -maxdepth 1 -type f -name "*.desktop" -exec grep -lF "/opt/${VETTA_EXECUTABLE_NAME}/${VETTA_EXECUTABLE_NAME}" {} + | grep -q .
           '
-          docker run --rm --volume "${PWD}/release:/release:ro" fedora:latest bash -euo pipefail -c '
+          docker run --rm --env VETTA_EXECUTABLE_NAME --volume "${PWD}/release:/release:ro" fedora:latest bash -euo pipefail -c '
             dnf install --assumeyes --nogpgcheck /release/*.rpm
-            test -x /opt/Vetta/Vetta
-            test "$(cat /opt/Vetta/resources/package-type)" = "rpm"
-            find /usr/share/applications -maxdepth 1 -type f -iname "*vetta*.desktop" -print -quit | grep -q .
+            test -x "/opt/${VETTA_EXECUTABLE_NAME}/${VETTA_EXECUTABLE_NAME}"
+            test "$(cat "/opt/${VETTA_EXECUTABLE_NAME}/resources/package-type")" = "rpm"
+            find /usr/share/applications -maxdepth 1 -type f -name "*.desktop" -exec grep -lF "/opt/${VETTA_EXECUTABLE_NAME}/${VETTA_EXECUTABLE_NAME}" {} + | grep -q .
           '
 
       - name: Run packaged app and updater E2E
