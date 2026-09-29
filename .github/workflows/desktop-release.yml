@@ -229,7 +229,9 @@ jobs:
     runs-on: ${{ matrix.runner }}
     # macOS 发布构建要对内置 node/python 运行时和各个 sidecar 二进制逐个签名再上传
     # 公证，比未签名构建多出 10~30 分钟，托管 runner 上还要叠加 packaged E2E。
-    timeout-minutes: 120
+    # FlowsToken: Apple 对新开发者账号的公证时常排队数小时（2026-09-29 实测 >5h），
+    # 给到接近 GitHub 上限，避免因等苹果而反复重跑整套构建。
+    timeout-minutes: 330
     environment: ${{ needs.prepare.outputs.channel == 'test' && 'desktop-test' || 'desktop-production' }}
     strategy:
       fail-fast: false
