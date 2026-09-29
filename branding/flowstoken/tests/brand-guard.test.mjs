@@ -6,6 +6,7 @@ import { dirname, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { validateDesktopBuildEnvironment } from "../../../apps/desktop/scripts/desktop-build-environment.mjs";
+import { resolveMacSigningConfig } from "../../../apps/desktop/scripts/mac-signing-config.mjs";
 import { resolveDesktopReleaseConfig, toGithubEnv } from "../../../scripts/release/resolve-desktop-release-config.mjs";
 import { FLOWSTOKEN_UPDATE_URL, isFlowsTokenUpdateFeed } from "../update-feed.mjs";
 
@@ -101,4 +102,31 @@ test("disabling the builtin marketplace never falls back to the Vetta marketplac
 		read("apps/desktop/src/main/abilities/open-marketplace/marketplace-source-store.ts"),
 		/process\.env\.VETTA_DISABLE_BUILTIN_MARKETPLACE === "1"/,
 	);
+});
+
+test("macOS releases are signed with the FlowsToken Developer ID and notarized", () => {
+	// Upstream owns desktop-release.yml: a merge that renames or drops these secrets would otherwise only
+	// surface when flowstoken-release refuses the unsigned build.
+	const release = read(".github/workflows/desktop-release.yml");
+	for (const name of [
+		"MACOS_CERTIFICATE_P12_BASE64",
+		"MACOS_CERTIFICATE_PASSWORD",
+		"APPLE_API_KEY_P8_BASE64",
+		"APPLE_API_KEY_ID",
+		"APPLE_API_ISSUER",
+		"APPLE_TEAM_ID",
+	]) {
+		assert.match(release, new RegExp(`secrets\\.${name}\\b`), `desktop-release no longer reads secret ${name}`);
+	}
+	assert.match(release, /VETTA_REQUIRE_MAC_SIGNATURE:-0\}" > apps\/desktop\/release\/require-mac-signature\.txt/);
+	assert.match(read(".github/workflows/flowstoken-release.yml"), /require-mac-signature\.txt/);
+	const signing = resolveMacSigningConfig({
+		CSC_LINK: "/tmp/cert.p12",
+		CSC_KEY_PASSWORD: "x",
+		APPLE_API_KEY: "/tmp/key.p8",
+		APPLE_API_KEY_ID: "KEY",
+		APPLE_API_ISSUER: "issuer",
+		APPLE_TEAM_ID: "36G5T56368",
+	});
+	assert.deepEqual(signing, { enabled: true, notarize: true, teamId: "36G5T56368" });
 });
