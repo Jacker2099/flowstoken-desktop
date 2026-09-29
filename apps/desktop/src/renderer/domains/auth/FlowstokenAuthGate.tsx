@@ -1,18 +1,24 @@
 import { Button } from "@shared/components/ui/button";
 import { showToast } from "@shared/store/toast-atoms";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import type { FlowstokenAccountSnapshot } from "../../../preload/api-types/flowstoken.js";
 
 interface FlowstokenAuthGateProps {
 	children: ReactNode;
 }
 
+/** 每次应用运行只自动拉起一次浏览器登录；用户关掉窗口后不再自动弹（可手动重试）。 */
+let autoLoginAttempted = false;
+
 export function FlowstokenAuthGate({ children }: FlowstokenAuthGateProps): JSX.Element {
+	const { t } = useTranslation("common");
 	const [snapshot, setSnapshot] = useState<FlowstokenAccountSnapshot | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [statusText, setStatusText] = useState<string | null>(null);
+	const handleBrowserLoginRef = useRef<() => Promise<void>>(async () => {});
 
 	const checkStatus = useCallback(async () => {
 		try {
@@ -43,14 +49,14 @@ export function FlowstokenAuthGate({ children }: FlowstokenAuthGateProps): JSX.E
 	const handleBrowserLogin = async () => {
 		setBusy(true);
 		setError(null);
-		setStatusText("已拉起官方登录窗口，完成登录后将自动进入...");
+		setStatusText(t("flowstokenAuth.statusOpening"));
 		try {
 			const res = await window.vetta.flowstoken.loginWithBrowser();
 			if (res.ok && res.snapshot?.loggedIn) {
 				let currentSnap = res.snapshot;
 				// 如果有任何分组尚未接入，自动进行二次保障同步，无需人工点击
 				if (currentSnap.groups?.some((g) => !g.wired)) {
-					setStatusText("登录成功！正在全自动同步普通组、智能组与官方组...");
+					setStatusText(t("flowstokenAuth.statusSyncing"));
 					try {
 						const ensureRes = await window.vetta.flowstoken.ensureKeys();
 						if (ensureRes.snapshot) {
@@ -60,17 +66,17 @@ export function FlowstokenAuthGate({ children }: FlowstokenAuthGateProps): JSX.E
 						console.warn("[FlowstokenAuthGate] Secondary key ensure failed:", e);
 					}
 				}
-				setStatusText("登录成功！普通组、智能组与官方组已全部就绪...");
+				setStatusText(t("flowstokenAuth.statusDone"));
 				showToast({
 					variant: "success",
-					title: "登录成功",
-					message: "已启用智能组、普通组与官方组，可在下方随时切换模型与通道",
+					title: t("flowstokenAuth.successTitle"),
+					message: t("flowstokenAuth.successMessage"),
 					durationMs: 5000,
 				});
 				setSnapshot(currentSnap);
 			} else {
-				const msg = res.error || "登录未完成或已取消";
-				setError(msg.includes("已关闭") ? "登录窗口已关闭，请重新点击登录" : msg);
+				const msg = res.error || t("flowstokenAuth.loginCancelled");
+				setError(msg.includes("已关闭") ? t("flowstokenAuth.loginWindowClosed") : msg);
 				setStatusText(null);
 			}
 		} catch (err) {
@@ -80,13 +86,21 @@ export function FlowstokenAuthGate({ children }: FlowstokenAuthGateProps): JSX.E
 			setBusy(false);
 		}
 	};
+	handleBrowserLoginRef.current = handleBrowserLogin;
+
+	// 拿到快照且未登录时自动拉起一次官方登录窗口；无论成败都不再自动重试。
+	useEffect(() => {
+		if (loading || snapshot?.loggedIn || autoLoginAttempted) return;
+		autoLoginAttempted = true;
+		void handleBrowserLoginRef.current();
+	}, [loading, snapshot?.loggedIn]);
 
 	if (loading) {
 		return (
 			<div className="flex h-screen w-screen items-center justify-center bg-background text-foreground select-none">
 				<div className="flex flex-col items-center gap-3">
 					<div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-					<p className="text-[13px] text-muted-foreground">正在载入 FlowsToken 账户状态...</p>
+					<p className="text-[13px] text-muted-foreground">{t("flowstokenAuth.loading")}</p>
 				</div>
 			</div>
 		);
@@ -109,9 +123,11 @@ export function FlowstokenAuthGate({ children }: FlowstokenAuthGateProps): JSX.E
 							(e.currentTarget as HTMLImageElement).src = "./icon.png";
 						}}
 					/>
-					<h1 className="text-[22px] font-bold tracking-tight text-foreground">欢迎使用 FlowsToken</h1>
+					<h1 className="text-[22px] font-bold tracking-tight text-foreground">
+						{t("flowstokenAuth.welcome")}
+					</h1>
 					<p className="text-[13px] text-muted-foreground leading-relaxed px-2">
-						集成大模型与 AI 智能编程客户端。请登录您的 FlowsToken 账户以启用普通组、智能组与官方组。
+						{t("flowstokenAuth.subtitle")}
 					</p>
 				</div>
 
@@ -136,10 +152,10 @@ export function FlowstokenAuthGate({ children }: FlowstokenAuthGateProps): JSX.E
 						disabled={busy}
 						onClick={() => void handleBrowserLogin()}
 					>
-						{busy ? "正在登录中..." : "一键登录 FlowsToken 账户"}
+						{busy ? t("flowstokenAuth.loggingIn") : t("flowstokenAuth.loginButton")}
 					</Button>
 					<p className="text-[11px] text-muted-foreground text-center leading-relaxed">
-						支持账号密码、验证码、GitHub、Linux.do 及原生安全验证，登录成功后窗口将自动关闭并进入客户端
+						{t("flowstokenAuth.footerHint")}
 					</p>
 				</div>
 
@@ -150,7 +166,7 @@ export function FlowstokenAuthGate({ children }: FlowstokenAuthGateProps): JSX.E
 						className="hover:text-foreground transition-colors cursor-pointer"
 						onClick={() => void window.vetta.flowstoken.openExternal("https://www.flowstoken.com/register")}
 					>
-						注册新账号
+						{t("flowstokenAuth.register")}
 					</button>
 					<span className="text-border">·</span>
 					<button
@@ -158,7 +174,7 @@ export function FlowstokenAuthGate({ children }: FlowstokenAuthGateProps): JSX.E
 						className="hover:text-foreground transition-colors cursor-pointer"
 						onClick={() => void window.vetta.flowstoken.openExternal("https://www.flowstoken.com")}
 					>
-						官方主页
+						{t("flowstokenAuth.homepage")}
 					</button>
 					<span className="text-border">·</span>
 					<button
@@ -166,7 +182,7 @@ export function FlowstokenAuthGate({ children }: FlowstokenAuthGateProps): JSX.E
 						className="hover:text-foreground transition-colors cursor-pointer"
 						onClick={() => void window.vetta.flowstoken.openExternal("https://www.flowstoken.com/contact")}
 					>
-						帮助与客服
+						{t("flowstokenAuth.support")}
 					</button>
 				</div>
 			</div>

@@ -981,7 +981,16 @@
       "max": "极高",
       "none": "关闭",
       "off": "关闭"
-    }
+    },
+    "groupSmart": "智能组",
+    "groupDefault": "普通组",
+    "groupOfficial": "官方组",
+    "groupAll": "全部",
+    "smartHighlightTitle": "Bestoo-Auto（智能选模）",
+    "smartHighlightBadge": "推荐 · 智能组专享",
+    "smartHighlightDescription": "自动根据任务难度调度 Claude Opus、GPT、DeepSeek 等顶尖模型，兼顾效果与成本。",
+    "recommendationSelected": "✓ 当前已选用此模型",
+    "recommendationAction": "点击直接选用此模型"
   },
   "setupWizard": {
     "skip": "跳过",
@@ -1062,5 +1071,23 @@
       "project": "项目",
       "batch": "批量"
     }
+  },
+  "flowstokenAuth": {
+    "loading": "正在载入 FlowsToken 账户状态...",
+    "welcome": "欢迎使用 FlowsToken",
+    "subtitle": "集成大模型与 AI 智能编程客户端。请登录您的 FlowsToken 账户以启用普通组、智能组与官方组。",
+    "loginButton": "一键登录 FlowsToken 账户",
+    "loggingIn": "正在登录中...",
+    "statusOpening": "已拉起官方登录窗口，完成登录后将自动进入...",
+    "statusSyncing": "登录成功！正在全自动同步普通组、智能组与官方组...",
+    "statusDone": "登录成功！普通组、智能组与官方组已全部就绪...",
+    "successTitle": "登录成功",
+    "successMessage": "已启用智能组、普通组与官方组，可在下方随时切换模型与通道",
+    "loginCancelled": "登录未完成或已取消",
+    "loginWindowClosed": "登录窗口已关闭，请重新点击登录",
+    "footerHint": "支持账号密码、验证码、GitHub、Linux.do 及原生安全验证，登录成功后窗口将自动关闭并进入客户端",
+    "register": "注册新账号",
+    "homepage": "官方主页",
+    "support": "帮助与客服"
   }
 }

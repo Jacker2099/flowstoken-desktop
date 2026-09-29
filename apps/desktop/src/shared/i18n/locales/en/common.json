@@ -981,7 +981,16 @@
 			"max": "Max",
 			"none": "None",
 			"off": "Off"
-		}
+		},
+		"groupSmart": "Smart",
+		"groupDefault": "Standard",
+		"groupOfficial": "Official",
+		"groupAll": "All",
+		"smartHighlightTitle": "Bestoo-Auto (Smart Routing)",
+		"smartHighlightBadge": "Recommended",
+		"smartHighlightDescription": "Routes to top models like Claude Opus, GPT, and DeepSeek based on task difficulty.",
+		"recommendationSelected": "✓ Currently selected",
+		"recommendationAction": "Click to use this model"
 	},
 	"setupWizard": {
 		"skip": "Skip",
@@ -1062,5 +1071,23 @@
 			"project": "Project",
 			"batch": "Batch"
 		}
+	},
+	"flowstokenAuth": {
+		"loading": "Loading your FlowsToken account...",
+		"welcome": "Welcome to FlowsToken",
+		"subtitle": "Sign in to your FlowsToken account to enable the Smart, Standard and Official model groups.",
+		"loginButton": "Sign in with FlowsToken",
+		"loggingIn": "Signing in...",
+		"statusOpening": "Official sign-in window opened; you will continue automatically after signing in...",
+		"statusSyncing": "Signed in! Syncing the Standard, Smart and Official groups...",
+		"statusDone": "Signed in! All model groups are ready...",
+		"successTitle": "Signed in",
+		"successMessage": "Smart, Standard and Official groups are enabled — switch models anytime below",
+		"loginCancelled": "Sign-in was not completed or was cancelled",
+		"loginWindowClosed": "The sign-in window was closed. Click to sign in again.",
+		"footerHint": "Password, verification code, GitHub, Linux.do and native verification are supported",
+		"register": "Create account",
+		"homepage": "Website",
+		"support": "Support"
 	}
 }
