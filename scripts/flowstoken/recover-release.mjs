@@ -203,7 +203,13 @@ async function planRecovery(output) {
 	for (const job of jobs) {
 		const platform = job.name?.replace(/^build /, "");
 		if (["macos-arm64", "macos-x64"].includes(platform) && job.conclusion !== "success") {
-			const log = run("gh", ["api", `repos/${repo}/actions/jobs/${job.id}/logs`]);
+			// Newer gh refuses log bodies that contain terminal escapes; fetch the text directly (redirect drops auth).
+			const logResponse = await fetch(`https://api.github.com/repos/${repo}/actions/jobs/${job.id}/logs`, {
+				headers: { Authorization: `Bearer ${process.env.GH_TOKEN}`, "X-GitHub-Api-Version": "2022-11-28" },
+				signal: AbortSignal.timeout(120_000),
+			});
+			if (!logResponse.ok) throw new Error(`GitHub job log request failed (${logResponse.status})`);
+			const log = await logResponse.text();
 			submissionIdsByJob[job.id] = originalSubmissionFromLog(log, submissions[platform]);
 		}
 	}
