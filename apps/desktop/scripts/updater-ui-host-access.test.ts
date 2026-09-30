@@ -3,7 +3,7 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, expect, it, vi } from "vitest";
 import type * as HostAccessModule from "../src/preload/host-access.js";
 import type * as AccountViewModule from "../src/renderer/domains/settings/components/FlowstokenAccountSettingsView.js";
 import type { FlowstokenAccountSettingsModel } from "../src/renderer/domains/settings/components/useFlowstokenAccountSettingsModel.js";
@@ -16,6 +16,24 @@ interface TestElement {
 	getAttribute(name: string): Promise<string>;
 	click(): void;
 }
+
+const sourceRoot =
+	process.env.FLOWSTOKEN_TEST_SOURCE_ROOT ??
+	process.env.VETTA_RELEASE_SOURCE_ROOT ??
+	resolve(import.meta.dirname, "../../..");
+const sourceUrl = (file: string) => pathToFileURL(join(sourceRoot, "apps/desktop/src", file)).href;
+
+let createHostAccessGate: typeof HostAccessModule.createHostAccessGate;
+let FlowstokenAccountSettingsView: typeof AccountViewModule.FlowstokenAccountSettingsView;
+
+beforeAll(async () => {
+	// Cold UI dependency loading belongs to setup, outside the HostGate/UI behavior's timeout.
+	vi.resetModules();
+	({ createHostAccessGate } = await import(sourceUrl("preload/host-access.ts")));
+	({ FlowstokenAccountSettingsView } = await import(
+		sourceUrl("renderer/domains/settings/components/FlowstokenAccountSettingsView.tsx")
+	));
+});
 
 let previousApi: PropertyDescriptor | undefined;
 
@@ -30,19 +48,9 @@ afterEach(() => {
 });
 
 it("runs the updater spec through the account UI while raw Host API access remains denied", async () => {
-	vi.resetModules();
 	previousApi = Object.getOwnPropertyDescriptor(window, "vetta");
 	vi.stubEnv("VETTA_E2E", "1");
 	vi.stubEnv("VETTA_E2E_PACKAGED", "1");
-	const sourceRoot =
-		process.env.FLOWSTOKEN_TEST_SOURCE_ROOT ??
-		process.env.VETTA_RELEASE_SOURCE_ROOT ??
-		resolve(import.meta.dirname, "../../..");
-	const sourceUrl = (file: string) => pathToFileURL(join(sourceRoot, "apps/desktop/src", file)).href;
-	const { createHostAccessGate }: typeof HostAccessModule = await import(sourceUrl("preload/host-access.ts"));
-	const { FlowstokenAccountSettingsView }: typeof AccountViewModule = await import(
-		sourceUrl("renderer/domains/settings/components/FlowstokenAccountSettingsView.tsx")
-	);
 	const handlers = new Map<string, () => unknown>();
 	const gate = createHostAccessGate({
 		flowstoken: {

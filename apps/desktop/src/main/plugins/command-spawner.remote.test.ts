@@ -1,7 +1,7 @@
 import { mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createLoopbackSshConnection } from "@vetta/ssh-transport/testing";
+import { createLoopbackSshConnection, loopbackRemotePath } from "@vetta/ssh-transport/testing";
 import { describe, expect, it, vi } from "vitest";
 
 const connection = createLoopbackSshConnection("build-01");
@@ -33,7 +33,7 @@ const { getPluginCommandSpawnStatus, spawnPluginCommand, stopPluginCommandSpawn 
 
 function createRemoteProject(): { dir: string; uri: string } {
 	const dir = realpathSync(mkdtempSync(join(tmpdir(), "vetta-remote-spawn-")));
-	return { dir, uri: `ssh://build-01${dir}` };
+	return { dir, uri: `ssh://build-01${loopbackRemotePath(dir)}` };
 }
 
 describe("插件的长驻进程与远程项目", () => {

@@ -1,7 +1,13 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type * as GroupCatalogModule from "./group-catalog.js";
 
 const mocks = vi.hoisted(() => ({
+	userDataDir: "",
 	fetch: vi.fn(),
+	fetchCatalog: vi.fn<typeof GroupCatalogModule.fetchCatalog>(),
 	config: { providers: {} as Record<string, Record<string, unknown>>, defaultModel: "flowstoken-smart/Bestoo-Auto" },
 	replaceConfig: vi.fn(),
 	fetchSelf: vi.fn(),
@@ -10,8 +16,18 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("electron", () => ({
 	net: { fetch: mocks.fetch },
-	app: { getPath: () => "/nonexistent-ft-test-dir" },
+	app: {
+		getPath: () => {
+			if (!mocks.userDataDir) throw new Error("Account test userData fixture is not initialized");
+			return mocks.userDataDir;
+		},
+	},
 }));
+vi.mock("./group-catalog.js", async (importOriginal) => {
+	const catalog = await importOriginal<typeof GroupCatalogModule>();
+	mocks.fetchCatalog.mockImplementation(catalog.fetchCatalog);
+	return { ...catalog, fetchCatalog: mocks.fetchCatalog };
+});
 vi.mock("../models/model-settings-host.js", () => ({
 	getDesktopModelSettingsService: () => ({
 		getConfig: async () => structuredClone(mocks.config),
@@ -125,15 +141,39 @@ function wiredProvider(syncedAgoMs: number, models: Array<{ id: string; name?: s
 	};
 }
 
-async function flushBackgroundWork() {
-	for (let i = 0; i < 10; i++) await new Promise((resolve) => setTimeout(resolve, 0));
+function nextConfigReplacement() {
+	return new Promise<void>((resolve) => mocks.replaceConfig.mockImplementationOnce(() => resolve()));
 }
 
-beforeEach(() => {
+async function finishCatalogRequests() {
+	// The real fetch awaits both its disk read and its mkdir/write/rename sequence.
+	await Promise.all(
+		mocks.fetchCatalog.mock.results.map((result) => {
+			if (result.type !== "return") throw new Error("Catalog request did not return its completion promise");
+			return result.value;
+		}),
+	);
+}
+
+beforeEach(async () => {
+	// An allegedly nonexistent absolute path can be writable on Windows. Each case owns a real cache root.
+	mocks.userDataDir = await mkdtemp(join(tmpdir(), "flowstoken-account-test-"));
 	vi.clearAllMocks();
+	mocks.replaceConfig.mockReset();
 	resetGroupCatalogCacheForTests();
 	mocks.listTokens.mockResolvedValue([]);
 	mocks.fetchSelf.mockResolvedValue({});
+});
+
+afterEach(async () => {
+	const userDataDir = mocks.userDataDir;
+	try {
+		await finishCatalogRequests();
+	} finally {
+		if (userDataDir) await rm(userDataDir, { recursive: true, force: true });
+		mocks.userDataDir = "";
+		resetGroupCatalogCacheForTests();
+	}
 });
 
 describe("FlowsToken group model lists", () => {
@@ -178,9 +218,9 @@ describe("FlowsToken group model lists", () => {
 			},
 		};
 
+		const refreshed = nextConfigReplacement();
 		await getAccountSnapshot({ includeUsage: false });
-		await flushBackgroundWork();
-
+		await refreshed;
 		expect(mocks.replaceConfig).toHaveBeenCalledTimes(1);
 		const official = mocks.config.providers["flowstoken-official"];
 		expect((official.models as Array<{ id: string }>).map((m) => m.id)).toEqual([
@@ -203,13 +243,16 @@ describe("FlowsToken group model lists", () => {
 		};
 		respond();
 		await getAccountSnapshot({ includeUsage: false });
-		await flushBackgroundWork();
+		// The fresh branch only awaits the immediately resolved getConfig mock; it starts no I/O.
+		expect(mocks.fetchCatalog).not.toHaveBeenCalled();
+		expect(mocks.fetch).not.toHaveBeenCalled();
 		expect(mocks.replaceConfig).not.toHaveBeenCalled();
 
 		mocks.config.providers["flowstoken-official"].modelsSyncedAt = new Date(0).toISOString();
 		mocks.fetch.mockRejectedValue(new Error("offline"));
 		await getAccountSnapshot({ includeUsage: false });
-		await flushBackgroundWork();
+		expect(mocks.fetchCatalog).toHaveBeenCalledTimes(1);
+		await finishCatalogRequests();
 		expect(mocks.replaceConfig).not.toHaveBeenCalled();
 		expect(mocks.config.providers["flowstoken-official"].models).toEqual([{ id: "openai/gpt-4o" }]);
 	});
@@ -234,9 +277,9 @@ describe("FlowsToken group model lists", () => {
 		};
 		respond("pv-9");
 
+		const refreshed = nextConfigReplacement();
 		await getAccountSnapshot({ includeUsage: false });
-		await flushBackgroundWork();
-
+		await refreshed;
 		expect(mocks.replaceConfig).toHaveBeenCalledTimes(1);
 		const official = mocks.config.providers["flowstoken-official"];
 		expect(official.catalogVersion).toBe("pv-9");
@@ -288,7 +331,7 @@ describe("picker-driven catalog refresh", () => {
 		expect(mocks.replaceConfig).toHaveBeenCalledTimes(1);
 	});
 
-	it("preserves an explicit input override and keeps existing providers when offline without a catalog", async () => {
+	it("preserves an explicit input override through disk fallback and keeps providers when no catalog exists", async () => {
 		mocks.config = {
 			defaultModel: "flowstoken-default/claude-opus-5-5",
 			providers: {
@@ -309,6 +352,14 @@ describe("picker-driven catalog refresh", () => {
 		resetGroupCatalogCacheForTests();
 		mocks.fetch.mockRejectedValue(new Error("offline"));
 		mocks.replaceConfig.mockClear();
+		const cachePath = join(mocks.userDataDir, "flowstoken", "desktop-catalog.json");
+		expect(JSON.parse(await readFile(cachePath, "utf8")).pricingVersion).toBe("pv-vision");
+		// Clearing memory preserves the production disk fallback; offline alone is not a cache miss.
+		expect((await getCatalogAndRefreshProviders()).pricingVersion).toBe("pv-vision");
+		expect(mocks.config).toEqual(before);
+		expect(mocks.replaceConfig).not.toHaveBeenCalled();
+		await rm(cachePath);
+		resetGroupCatalogCacheForTests();
 		expect((await getCatalogAndRefreshProviders()).pricingVersion).toBe("");
 		expect(mocks.config).toEqual(before);
 		expect(mocks.replaceConfig).not.toHaveBeenCalled();
