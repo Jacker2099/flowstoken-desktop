@@ -77,7 +77,11 @@ describe("Desktop release workflow contracts", () => {
 		expect(checkpoint?.with.name).toBe("release-build-$" + "{{ matrix.platform }}");
 		expect(checkpoint?.with["retention-days"]).toBe(30);
 		expect(checkpoint?.with.overwrite).toBe(true);
-		const download = verifySteps.find((step) => step.uses === "actions/download-artifact@v4");
+		const downloads = verifySteps.filter(
+			(step) => step.uses === "actions/download-artifact@v4" && step.with?.name === checkpoint?.with.name,
+		);
+		expect(downloads).toHaveLength(1);
+		const download = downloads[0];
 		expect(download?.with.name).toBe(checkpoint?.with.name);
 		expect(download?.with["run-id"]).toBeUndefined();
 		expect(verifySteps.some((step) => step.run?.includes("matrix.command"))).toBe(false);

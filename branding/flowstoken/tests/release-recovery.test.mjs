@@ -41,7 +41,7 @@ test("publishing starts only after this commit's required build and verification
 	);
 	const build = outer.jobs.build.steps.find((step) => step.id === "build");
 	assert.match(build.run, /wait-release-builds\.mjs.*--sha "\$GITHUB_SHA"/);
-	assert.match(build.run, /test "\$TAGGED" = "\$GITHUB_SHA"/);
+	assert.match(build.run, /test "\$TAGGED" = .*steps\.identity\.outputs\.source_sha/);
 	assert.doesNotMatch(build.run, /gh run watch/);
 	assert.equal(outer.jobs.build.outputs.run_id, "$" + "{{ steps.build.outputs.run_id }}");
 	const collect = outer.jobs.publish.steps.find(

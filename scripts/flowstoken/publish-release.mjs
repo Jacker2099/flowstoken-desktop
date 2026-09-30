@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { digest, verifyReleaseArtifacts } from "./release-artifacts.mjs";
+import { validateManifestLineage, verifyRecoveryPlanOnline } from "./release-recovery-identity.mjs";
 
 export async function githubJson(path, { allowMissing = false } = {}) {
 	const response = await fetch(`https://api.github.com/${path}`, {
@@ -62,6 +63,7 @@ export async function publishRelease({
 	repo,
 	version,
 	sha,
+	controllerSha = sha,
 	directory,
 	notes,
 	api = githubJson,
@@ -70,7 +72,10 @@ export async function publishRelease({
 }) {
 	const tag = `v${version}`;
 	const saved = JSON.parse(await readFile(join(directory, "release-manifest.json"), "utf8"));
-	if (saved.version !== version || saved.sha !== sha) throw new Error("Release manifest does not match this workflow");
+	if (saved.version !== version || saved.sha !== sha || (saved.controllerSha ?? saved.sha) !== controllerSha)
+		throw new Error("Release manifest does not match this workflow");
+	validateManifestLineage(saved);
+	if (saved.recoveryPlan) await verifyRecoveryPlanOnline(saved.recoveryPlan, api);
 	const current = await verifyReleaseArtifacts(directory, saved);
 	if (JSON.stringify(saved.files) !== JSON.stringify(current.files))
 		throw new Error("Release files changed after verification");
@@ -142,6 +147,7 @@ async function main() {
 			repo: { type: "string" },
 			version: { type: "string" },
 			sha: { type: "string" },
+			"controller-sha": { type: "string" },
 			dir: { type: "string" },
 			notes: { type: "string" },
 			check: { type: "boolean", default: false },
@@ -158,6 +164,7 @@ async function main() {
 			repo: values.repo,
 			version: values.version,
 			sha: values.sha,
+			controllerSha: values["controller-sha"] ?? values.sha,
 			directory: resolve(values.dir),
 			notes: values.notes,
 		});

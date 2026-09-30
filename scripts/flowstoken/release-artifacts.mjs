@@ -6,7 +6,18 @@ import { basename, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 
-const require = createRequire(new URL("../../apps/desktop/package.json", import.meta.url));
+import {
+	assertRecoveryCheckpoint,
+	RECOVERY_PLATFORMS,
+	validateManifestLineage,
+	validateRecoveryPlan,
+} from "./release-recovery-identity.mjs";
+
+const require = createRequire(
+	process.env.VETTA_RELEASE_SOURCE_ROOT
+		? join(process.env.VETTA_RELEASE_SOURCE_ROOT, "apps/desktop/package.json")
+		: new URL("../../apps/desktop/package.json", import.meta.url),
+);
 const downloadable = /\.(?:AppImage|blockmap|deb|dmg|exe|msi|rpm|zip)$|^latest.*\.yml$/;
 
 export async function digest(file, algorithm = "sha256", encoding = "hex") {
@@ -26,7 +37,7 @@ async function inspectFiles(directory, names) {
 	);
 }
 
-export async function checkpoint(directory, identity, verify = false) {
+export async function checkpoint(directory, identity, verify = false, recoveryPlan) {
 	const names = (await readdir(directory)).filter(
 		(name) => downloadable.test(name) && !name.startsWith("._") && !name.startsWith("default._"),
 	);
@@ -35,6 +46,7 @@ export async function checkpoint(directory, identity, verify = false) {
 	const path = join(directory, "release-provenance.json");
 	if (verify) {
 		const saved = JSON.parse(await readFile(path, "utf8"));
+		assertRecoveryCheckpoint(saved, identity, recoveryPlan);
 		for (const key of ["sha", "run", "version", "platform"]) {
 			if (saved[key] !== identity[key]) throw new Error(`Checkpoint ${key} differs from requested release`);
 		}
@@ -53,11 +65,13 @@ export async function checkpoint(directory, identity, verify = false) {
 		) {
 			throw new Error("Incomplete checkpoint identity");
 		}
+		assertRecoveryCheckpoint(identity, identity, recoveryPlan);
 		await writeFile(path, `${JSON.stringify({ ...identity, files }, null, 2)}\n`);
 	}
 }
 
 export async function verifyReleaseArtifacts(directory, identity) {
+	validateManifestLineage(identity);
 	const { parse } = require("yaml");
 	const expected = new Set(["latest.yml", "latest-linux.yml", "latest-mac.yml"]);
 	const artifactGroups = {};
@@ -121,13 +135,49 @@ export async function verifyReleaseArtifacts(directory, identity) {
 async function main() {
 	const { values } = parseArgs({
 		options: Object.fromEntries(
-			["dir", "version", "sha", "run", "attempt", "platform", "mode"].map((name) => [name, { type: "string" }]),
+			[
+				"dir",
+				"version",
+				"sha",
+				"run",
+				"attempt",
+				"platform",
+				"mode",
+				"controller-sha",
+				"recovery-plan",
+				"recovery-result",
+				"lineage-dir",
+			].map((name) => [name, { type: "string" }]),
 		),
 	});
-	const { dir, mode, ...identity } = values;
-	identity.attempt = Number(identity.attempt);
+	const { dir, mode } = values;
+	const identity = {
+		sha: values.sha,
+		controllerSha: values["controller-sha"] ?? values.sha,
+		run: values.run,
+		attempt: Number(values.attempt),
+		version: values.version,
+		...(values.platform ? { platform: values.platform } : {}),
+	};
+	const plan = values["recovery-plan"] ? JSON.parse(await readFile(values["recovery-plan"], "utf8")) : undefined;
+	if (plan)
+		validateRecoveryPlan(plan, {
+			controllerSha: identity.controllerSha,
+			recoveryRun: identity.run,
+			"source.sha": identity.sha,
+			"source.version": identity.version,
+		});
+	if (mode === "checkpoint" && plan) identity.recovery = JSON.parse(await readFile(values["recovery-result"], "utf8"));
+	if (mode === "release" && values["lineage-dir"]) {
+		identity.lineage = await Promise.all(
+			RECOVERY_PLATFORMS.map((platform) =>
+				readFile(join(values["lineage-dir"], `${platform}.json`), "utf8").then(JSON.parse),
+			),
+		);
+	}
+	if (mode === "release" && plan) identity.recoveryPlan = plan;
 	if (mode === "checkpoint" || mode === "check-checkpoint")
-		await checkpoint(resolve(dir), identity, mode === "check-checkpoint");
+		await checkpoint(resolve(dir), identity, mode === "check-checkpoint", plan);
 	else if (mode === "release") await verifyReleaseArtifacts(resolve(dir), identity);
 	else throw new Error("Expected checkpoint, check-checkpoint or release mode");
 }

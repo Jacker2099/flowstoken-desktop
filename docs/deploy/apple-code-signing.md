@@ -100,7 +100,7 @@ Apple 用邓白氏（D-U-N-S）编号核验公司法人存在，个人账号不�
 
 ## 3. 准备公证凭据
 
-公证（notarization）是把签好名的产物传给 Apple 扫描，换回一张票据（ticket）钉进 DMG。两种鉴权方式选其一，推荐 API Key。
+公证（notarization）是把签好名的产物传给 Apple 扫描，换回一张票据（ticket）钉进应用包（`.app`），再生成 DMG / ZIP。两种鉴权方式选其一，推荐 API Key。
 
 ### 方式 A：App Store Connect API Key（推荐，CI 友好）
 
@@ -154,11 +154,11 @@ CI 上 `CSC_LINK` 可以直接放 base64：`export CSC_LINK="$(base64 -i develop
 
 构建脚本的行为：
 
-- **一个相关变量都没设** → 走原来的未签名路径（`identity: null` / `notarize: false`），DMG 里带「修复已损坏.app」
+- **一个相关变量都没设** → 本地或非发布演练走未签名路径（`identity: "-"` / `notarize: false`），DMG 里带「修复已损坏.app」；正式发布拒绝未签名产物
 - **设了一部分** → 直接报错并列出缺哪些，不会产出「签了名但没公证」这种半成品
 - **全齐** → 开启 hardened runtime + entitlements + 公证，DMG 变回两图标常规版式，不再带修复助手
 
-签名+公证会让 `dist:mac` 明显变慢：产物里内置了 Node / Python 运行时与多个 sidecar 二进制，逐个签名再上传公证，整体多出 10～30 分钟属正常。
+签名+公证会让 `dist:mac` 明显变慢：产物里内置了 Node / Python 运行时与多个 sidecar 二进制，需要逐个签名再上传；Apple 的处理时长与排队情况独立于本地构建时长，等待超时不代表审核被拒绝。
 
 ---
 
@@ -199,7 +199,40 @@ xcrun notarytool history --key "$APPLE_API_KEY" --key-id "$APPLE_API_KEY_ID" --i
 
 macOS 在 matrix 里是 `dist:mac:arm64` 与 `dist:mac:x64` 两个任务（内置的 node/python 运行时按 `VETTA_VENDOR_PLATFORM` 单架构落盘，一次构建出不了两套），分别跑在 `macos-15` 与 `macos-15-intel` 托管 runner 上，两者各自签名公证并校验，产物元数据以 `latest-mac-<arch>.yml` 上传，由发布任务的 `merge:updates:mac` 合并回单一 `latest-mac.yml`。
 
-公证不需要专用签名机：`notarytool` 只是把签好名的产物传给 Apple 换票据，托管 runner 有网络即可。工作流会在 runner 的临时目录还原 `.p12` 和 `.p8`（`chmod 600`），仅通过环境变量传给 electron-builder，构建结束随 runner 销毁。完全没有这些 Secrets 时，tag 和手动构建都允许生成未签名包；只配置一部分仍会直接失败，避免产出「签了名但没公证」的半成品。反过来，**只要 Secrets 配齐，非发布的 `workflow_dispatch` 演练也会签名并公证**，因为开关只看凭据完整性；想快速验证构建可以设 `VETTA_SKIP_NOTARIZE=1` 只签名不公证。凭据齐全时会设置 `VETTA_REQUIRE_MAC_SIGNATURE=1`，构建后自动校验 ZIP 内应用的签名、Gatekeeper 接受状态和公证票据。正式启用签名后，发布负责人还应把“macOS 必须签名”设为发布策略，不能继续把未签名包当成最终交付物。
+公证不需要专用签名机：`notarytool` 把签好名的产物传给 Apple 换票据，托管 runner 有网络即可。工作流会在 runner 的临时目录还原 `.p12` 和 `.p8`（`chmod 600`），仅通过环境变量使用，构建结束随 runner 销毁。**tag 和发布型手动构建必须具备完整签名、公证凭据；FlowsToken 外层发布也拒绝未签名的构建检查点。** 只有非发布的 `workflow_dispatch` 演练在完全没有签名变量时允许未签名包；只配置一部分仍直接失败。凭据齐全的演练同样签名、公证并设置 `VETTA_REQUIRE_MAC_SIGNATURE=1`。此门禁下 `VETTA_SKIP_NOTARIZE=1` 不合法；仅限未要求正式签名验收的本地实验使用该开关。
+
+### 4.3 保留一次提交并恢复公证
+
+`prepare-pack.js` 对需要公证的签名构建设置唯一的 `afterSign` hook：`scripts/notarize-mac-app.mjs`。electron-builder 内置 `mac.notarize` 关闭，是为了把执行交给此 hook，而不是跳过公证；`macSigning.notarize` 和 `VETTA_REQUIRE_MAC_SIGNATURE` 的要求不变。hook 返回成功后，builder 才继续生成 DMG / ZIP。
+
+执行顺序：
+
+1. 深度验证签名，核对 bundle ID、版本、Team ID、架构和各架构 CDHash；生成不可重写的待提交 ZIP。
+2. 在 `release/<Mac 输出目录>/notarization/receipt.json` 原子保存并同步到磁盘的 `submitting` 回执，再执行一次 `notarytool submit --no-wait --output-format json`。获取 UUID 后立即保存 `submitted` 回执。该目录保留提交 ZIP，可随失败构建归档恢复，不包含 `.p8`、`.p12`、密码或访问令牌。
+3. 仅对同一个 UUID 执行 `notarytool info`；网络错误有限次退避重试。默认状态等待预算 180 分钟，单次查询最多 2 分钟。到达预算、持续断网或异常状态均阻止构建继续，保留原提交；Apple 后台不会因此取消审核。
+4. `Invalid` / `Rejected` 立即失败。`Accepted` 后读取该 UUID 的 Apple 日志，核对日志 ID、已知提交 ZIP 的 SHA-256，以及根 `.app` 的各架构 CDHash。任意一个 `Accepted` UUID 不能代替当前应用的公证。
+5. 票据匹配后才执行 `stapler staple`，再次运行 `codesign --verify --deep --strict` 和 `stapler validate`，全部通过才把回执标为 `stapled`。回执中的 `acceptance` 只保存用于核验的提交 ID、归档名、SHA-256 和签名摘要。外层 ZIP / Gatekeeper、packaged E2E、产物来源和更新清单门禁继续执行。
+
+如果 `submit` 超时、退出异常或未返回可解析 UUID，回执会标为 `needs-review`。这表示 Apple 可能已接收上传；后续执行不得自动重投。先从同次原始输出或 Apple 提交记录核对原 UUID，再显式恢复。不要删除回执、重新签名或重新执行完整 `dist:mac` 来重试状态查询。
+
+恢复已有回执或旧构建中已知 UUID 的签名应用时，使用以下入口（路径、标识、版本和 UUID 必须替换成已核验的原产物信息；凭据仍取本节环境变量）：
+
+```bash
+node apps/desktop/scripts/notarize-mac-app.mjs \
+  --app '/path/to/release/mac-arm64/FlowsToken.app' \
+  --state-dir '/path/to/release/mac-arm64/notarization' \
+  --expected-bundle-id com.flowstoken.desktop \
+  --expected-version 0.6.3 \
+  --expected-team-id "$APPLE_TEAM_ID" \
+  --expected-arch arm64 \
+  --submission-id '<原提交 UUID>' \
+  --resume-only \
+  --timeout-seconds 1200
+```
+
+已有回执含 UUID 时可省略 `--submission-id`；外部 UUID 必须与 `--resume-only` 一起使用。此模式绝不执行 `submit`，也不需要重新导入签名私钥。带原 ZIP 信息的 `needs-review` 回执会保留其 SHA-256 绑定，不会因为人工补入 UUID 而丢失。
+
+跨 runner 恢复前必须先核对原 artifact 的 SHA / run / attempt / digest，并在 macOS 上用原生 `tar` 解包，保留应用的符号链接、权限和资源 fork；通用解包器留下的 `._*` 文件可能破坏严格验签。保留的失败 `.app` 仅是待验收输入，不能当作已通过检查点。恢复成功后使用 `--prepackaged` 包装同一 `.app`，重建 DMG / ZIP、blockmap 和更新元数据，再通过正式恢复工作流的全部门禁；不能重新编译或重新签名替换原应用。
 
 ## 5. 验证
 

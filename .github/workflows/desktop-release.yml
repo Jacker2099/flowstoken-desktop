@@ -63,8 +63,30 @@ on:
         type: string
         required: false
 
+      recovery_source_run:
+        description: "Recovery only: original completed non-publishing desktop-release run"
+        type: string
+        required: false
+      recovery_source_attempt:
+        description: "Exact original run attempt"
+        type: string
+        required: false
+      recovery_source_sha:
+        description: "Original application source commit; its version tag must stay unchanged"
+        type: string
+        required: false
+      recovery_arm64_submission:
+        description: "Original ARM notarization submission ID (only for a failed Mac build)"
+        type: string
+        required: false
+      recovery_x64_submission:
+        description: "Original Intel notarization submission ID (only for a failed Mac build)"
+        type: string
+        required: false
+
 permissions:
   contents: read
+  actions: read
 
 jobs:
   prepare:
@@ -72,10 +94,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     environment: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.channel == 'test' && 'desktop-test' || 'desktop-production' }}
+    env:
+      GH_TOKEN: ${{ github.token }}
     outputs:
+      recovery: ${{ steps.identity.outputs.recovery }}
+      source-sha: ${{ steps.identity.outputs.source_sha }}
+      controller-sha: ${{ steps.identity.outputs.controller_sha }}
+      source-version: ${{ steps.identity.outputs.source_version }}
+      recovery-plan-digest: ${{ steps.identity.outputs.plan_digest }}
       should-build: ${{ steps.scope.outputs.should-build }}
       should-publish: ${{ steps.config.outputs.should_publish }}
-      build-version: ${{ steps.config.outputs.build_version }}
+      build-version: ${{ steps.identity.outputs.recovery == 'true' && steps.identity.outputs.source_version || steps.config.outputs.build_version }}
       channel: ${{ steps.config.outputs.channel }}
       cloud_enabled: ${{ steps.config.outputs.cloud_enabled }}
       marketplace_repository: ${{ steps.config.outputs.marketplace_repository }}
@@ -93,6 +122,45 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve original source and immutable recovery plan
+        id: identity
+        env:
+          RECOVERY_SOURCE_RUN: ${{ inputs.recovery_source_run }}
+          RECOVERY_SOURCE_ATTEMPT: ${{ inputs.recovery_source_attempt }}
+          RECOVERY_SOURCE_SHA: ${{ inputs.recovery_source_sha }}
+          RECOVERY_ARM64_SUBMISSION: ${{ inputs.recovery_arm64_submission }}
+          RECOVERY_X64_SUBMISSION: ${{ inputs.recovery_x64_submission }}
+        run: node scripts/flowstoken/recover-release.mjs --mode plan --out "${{ runner.temp }}/recovery-plan.json"
+
+      - name: Require non-publishing recovery inputs
+        if: steps.identity.outputs.recovery == 'true'
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          CHANNEL: ${{ inputs.channel }}
+          BUILD_VERSION: ${{ inputs.build_version }}
+          RELEASE_TARGET: ${{ inputs.release_target }}
+        run: |
+          test "$EVENT_NAME" = workflow_dispatch && test "${CHANNEL:-default}" = default && test -z "$BUILD_VERSION"
+          test "${RELEASE_TARGET:-default}" = default || test "$RELEASE_TARGET" = github
+
+      - name: Upload immutable recovery plan
+        if: steps.identity.outputs.recovery == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-recovery-plan
+          path: ${{ runner.temp }}/recovery-plan.json
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 30
+
+      - uses: actions/checkout@v4
+        if: steps.identity.outputs.recovery == 'true'
+        with:
+          ref: ${{ steps.identity.outputs.source_sha }}
+
 
       - name: Match workflow event to desktop version
         id: scope
@@ -183,6 +251,34 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Stage recovery controller outside the source checkout
+        if: needs.prepare.outputs.recovery == 'true'
+        shell: bash
+        run: node scripts/flowstoken/recover-release.mjs --mode stage --out "${RUNNER_TEMP}/release-controller"
+
+      - uses: actions/checkout@v4
+        if: needs.prepare.outputs.recovery == 'true'
+        with:
+          ref: ${{ needs.prepare.outputs.source-sha }}
+          fetch-depth: 0
+
+      - name: Download immutable recovery plan
+        if: needs.prepare.outputs.recovery == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: release-recovery-plan
+          path: ${{ runner.temp }}/release-recovery
+
+      - name: Verify original checkout and recovery plan
+        if: needs.prepare.outputs.recovery == 'true'
+        shell: bash
+        env:
+          PLAN_DIGEST: ${{ needs.prepare.outputs.recovery-plan-digest }}
+        run: |
+          node -e 'const fs=require("node:fs"),crypto=require("node:crypto"); const p=JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP+"/release-recovery/recovery-plan.json","utf8")); if(crypto.createHash("sha256").update(JSON.stringify(p)).digest("hex")!==process.env.PLAN_DIGEST) throw new Error("Recovery plan changed between jobs")'
+          node "$VETTA_RELEASE_CONTROLLER_DIR/scripts/flowstoken/recover-release.mjs" --mode check-source --plan "$RUNNER_TEMP/release-recovery/recovery-plan.json" --source-root "$GITHUB_WORKSPACE"
+
+
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
         with:
@@ -190,6 +286,29 @@ jobs:
 
       - name: Install dependencies
         uses: ./.github/actions/install-bun-dependencies
+
+      - name: Set up Python for controller archive safety tests
+        if: needs.prepare.outputs.recovery == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Test recovery controller independently of original application source
+        env:
+          FLOWSTOKEN_TEST_SOURCE_ROOT: ${{ github.workspace }}
+        if: needs.prepare.outputs.recovery == 'true'
+        shell: bash
+        run: |
+          node --test "$VETTA_RELEASE_CONTROLLER_DIR/branding/flowstoken/tests/recovery-ci.test.mjs" "$VETTA_RELEASE_CONTROLLER_DIR/apps/desktop/scripts/notarize-mac-app.node-test.mjs" "$VETTA_RELEASE_CONTROLLER_DIR/apps/desktop/scripts/repackage-notarized-mac.node-test.mjs"
+
+      - name: Test original FlowsToken source integrations
+        if: needs.prepare.outputs.recovery == 'true'
+        shell: bash
+        run: |
+          UPSTREAM_TAG="$(tr -d '\r\n' < branding/flowstoken/UPSTREAM_SYNCED)"
+          [[ "$UPSTREAM_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 1
+          git fetch --no-tags https://github.com/openvetta/open-vetta.git "refs/tags/${UPSTREAM_TAG}:refs/tags/upstream/${UPSTREAM_TAG}"
+          node scripts/flowstoken/test-flowstoken-related.mjs "upstream/${UPSTREAM_TAG}"
 
       # im-gateway 的 Go 测试不在 `bun run check` 覆盖范围内，而 im-gateway.yml
       # 只在改动命中 apps/im-gateway/** 时触发、且与本流水线没有 needs 依赖。
@@ -264,6 +383,34 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Stage recovery controller outside the source checkout
+        if: needs.prepare.outputs.recovery == 'true'
+        shell: bash
+        run: node scripts/flowstoken/recover-release.mjs --mode stage --out "${RUNNER_TEMP}/release-controller"
+
+      - uses: actions/checkout@v4
+        if: needs.prepare.outputs.recovery == 'true'
+        with:
+          ref: ${{ needs.prepare.outputs.source-sha }}
+          fetch-depth: 0
+
+      - name: Download immutable recovery plan
+        if: needs.prepare.outputs.recovery == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: release-recovery-plan
+          path: ${{ runner.temp }}/release-recovery
+
+      - name: Verify original checkout and recovery plan
+        if: needs.prepare.outputs.recovery == 'true'
+        shell: bash
+        env:
+          PLAN_DIGEST: ${{ needs.prepare.outputs.recovery-plan-digest }}
+        run: |
+          node -e 'const fs=require("node:fs"),crypto=require("node:crypto"); const p=JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP+"/release-recovery/recovery-plan.json","utf8")); if(crypto.createHash("sha256").update(JSON.stringify(p)).digest("hex")!==process.env.PLAN_DIGEST) throw new Error("Recovery plan changed between jobs")'
+          node "$VETTA_RELEASE_CONTROLLER_DIR/scripts/flowstoken/recover-release.mjs" --mode check-source --plan "$RUNNER_TEMP/release-recovery/recovery-plan.json" --source-root "$GITHUB_WORKSPACE"
+
+
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
         with:
@@ -289,7 +436,7 @@ jobs:
           sudo apt-get install --no-install-recommends -y build-essential libcap-dev meson ninja-build pkg-config xz-utils rpm
 
       - name: Configure macOS signing and notarization
-        if: matrix.macArch != ''
+        if: matrix.macArch != '' && needs.prepare.outputs.recovery != 'true'
         shell: bash
         env:
           # 一律加 SECRET_ 前缀：runner 环境可能自带同名的 APPLE_* 变量（自持签名机
@@ -395,9 +542,11 @@ jobs:
         run: node scripts/release/resolve-desktop-release-config.mjs --from-outputs --export-env >> "${GITHUB_ENV}"
 
       - name: Prepare cached release resources
+        if: needs.prepare.outputs.recovery != 'true'
         uses: ./.github/actions/prepare-desktop-resources
 
       - name: Build updater artifacts
+        if: needs.prepare.outputs.recovery != 'true'
         id: package
         timeout-minutes: 240
         working-directory: apps/desktop
@@ -407,6 +556,35 @@ jobs:
           VETTA_UPDATE_GITHUB_OWNER: ${{ github.repository_owner }}
           VETTA_UPDATE_GITHUB_REPO: ${{ github.event.repository.name }}
         run: bun run ${{ matrix.command }}
+
+      - name: Set up Python for recovery archive path validation
+        if: needs.prepare.outputs.recovery == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Configure only notarization credentials for Mac recovery
+        if: needs.prepare.outputs.recovery == 'true' && matrix.macArch != ''
+        shell: bash
+        env:
+          SECRET_APPLE_API_KEY_P8_BASE64: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
+          SECRET_APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          SECRET_APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          SECRET_APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          node -e 'const fs=require("node:fs"),p=require("node:path");for(const k of ["SECRET_APPLE_API_KEY_P8_BASE64","SECRET_APPLE_API_KEY_ID","SECRET_APPLE_API_ISSUER","SECRET_APPLE_TEAM_ID"])if(!process.env[k])throw new Error("Missing recovery credential: "+k);const key=p.join(process.env.RUNNER_TEMP,"recovery-auth.p8");fs.writeFileSync(key,Buffer.from(process.env.SECRET_APPLE_API_KEY_P8_BASE64,"base64"),{mode:0o600});fs.appendFileSync(process.env.GITHUB_ENV,`APPLE_API_KEY=${key}\nAPPLE_API_KEY_ID=${process.env.SECRET_APPLE_API_KEY_ID}\nAPPLE_API_ISSUER=${process.env.SECRET_APPLE_API_ISSUER}\nAPPLE_TEAM_ID=${process.env.SECRET_APPLE_TEAM_ID}\nVETTA_REQUIRE_MAC_SIGNATURE=1\n`)'
+
+      - name: Restore original artifacts without rebuilding or submitting notarization
+        id: recovery-package
+        if: needs.prepare.outputs.recovery == 'true'
+        timeout-minutes: 60
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_PLATFORM: ${{ matrix.platform }}
+        run: |
+          test "$VETTA_RELEASE_PUBLISH" = false
+          node "$VETTA_RELEASE_CONTROLLER_DIR/scripts/flowstoken/recover-release.mjs" --mode restore --plan "$RUNNER_TEMP/release-recovery/recovery-plan.json" --platform "$RELEASE_PLATFORM" --source-root "$GITHUB_WORKSPACE" --controller-root "$VETTA_RELEASE_CONTROLLER_DIR" --work-dir "$RUNNER_TEMP"
 
       # A completed checkpoint must already pass the macOS signature and notarization gate.
       - name: Verify macOS signature before checkpoint
@@ -439,7 +617,11 @@ jobs:
           RELEASE_PLATFORM: ${{ matrix.platform }}
         run: |
           VERSION="${VETTA_DESKTOP_BUILD_VERSION:-$(node -p "require('./apps/desktop/package.json').version")}"
-          node scripts/flowstoken/release-artifacts.mjs --mode checkpoint --dir apps/desktop/release --version "$VERSION" --sha "$GITHUB_SHA" --run "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" --platform "$RELEASE_PLATFORM"
+          EXTRA=()
+          if [[ "${{ needs.prepare.outputs.recovery }}" == true ]]; then
+            EXTRA=(--recovery-plan "$RUNNER_TEMP/release-recovery/recovery-plan.json" --recovery-result apps/desktop/release/recovery-result.json)
+          fi
+          node "${VETTA_RELEASE_CONTROLLER_DIR:-$GITHUB_WORKSPACE}/scripts/flowstoken/release-artifacts.mjs" --mode checkpoint --dir apps/desktop/release --version "$VERSION" --sha "${{ needs.prepare.outputs.source-sha }}" --controller-sha "$GITHUB_SHA" --run "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" --platform "$RELEASE_PLATFORM" "${EXTRA[@]}"
 
       - name: Archive build checkpoint
         shell: bash
@@ -461,7 +643,7 @@ jobs:
       # Best effort after a step failure; these files are not a verified build or publishable checkpoint.
       - name: Archive failed macOS build diagnostics
         id: failed-macos
-        if: ${{ always() && matrix.macArch != '' && (steps.package.outcome == 'failure' || steps.mac-signature.outcome == 'failure') }}
+        if: ${{ always() && matrix.macArch != '' && (steps.package.outcome == 'failure' || steps.recovery-package.outcome == 'failure' || steps.mac-signature.outcome == 'failure') }}
         shell: bash
         run: |
           if [[ -d apps/desktop/release ]]; then
@@ -504,6 +686,34 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Stage recovery controller outside the source checkout
+        if: needs.prepare.outputs.recovery == 'true'
+        shell: bash
+        run: node scripts/flowstoken/recover-release.mjs --mode stage --out "${RUNNER_TEMP}/release-controller"
+
+      - uses: actions/checkout@v4
+        if: needs.prepare.outputs.recovery == 'true'
+        with:
+          ref: ${{ needs.prepare.outputs.source-sha }}
+          fetch-depth: 0
+
+      - name: Download immutable recovery plan
+        if: needs.prepare.outputs.recovery == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: release-recovery-plan
+          path: ${{ runner.temp }}/release-recovery
+
+      - name: Verify original checkout and recovery plan
+        if: needs.prepare.outputs.recovery == 'true'
+        shell: bash
+        env:
+          PLAN_DIGEST: ${{ needs.prepare.outputs.recovery-plan-digest }}
+        run: |
+          node -e 'const fs=require("node:fs"),crypto=require("node:crypto"); const p=JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP+"/release-recovery/recovery-plan.json","utf8")); if(crypto.createHash("sha256").update(JSON.stringify(p)).digest("hex")!==process.env.PLAN_DIGEST) throw new Error("Recovery plan changed between jobs")'
+          node "$VETTA_RELEASE_CONTROLLER_DIR/scripts/flowstoken/recover-release.mjs" --mode check-source --plan "$RUNNER_TEMP/release-recovery/recovery-plan.json" --source-root "$GITHUB_WORKSPACE"
+
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
@@ -629,7 +839,7 @@ jobs:
 
   publish-r2:
     name: publish R2
-    if: needs.prepare.outputs.should-build == 'true' && needs.prepare.outputs.should-publish == 'true' && needs.prepare.outputs.release_target == 'r2'
+    if: needs.prepare.outputs.recovery != 'true' && needs.prepare.outputs.should-build == 'true' && needs.prepare.outputs.should-publish == 'true' && needs.prepare.outputs.release_target == 'r2'
     needs: [prepare, quality, build, verify]
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -693,7 +903,7 @@ jobs:
   # 版本说明归档，两者同时发布。test 渠道除外——它的构建不该出现在正式 Release 列表里。
   publish-github:
     name: publish GitHub Release
-    if: needs.prepare.outputs.should-build == 'true' && needs.prepare.outputs.should-publish == 'true' && needs.prepare.outputs.channel != 'test'
+    if: needs.prepare.outputs.recovery != 'true' && needs.prepare.outputs.should-build == 'true' && needs.prepare.outputs.should-publish == 'true' && needs.prepare.outputs.channel != 'test'
     needs: [prepare, quality, build, verify]
     runs-on: ubuntu-latest
     timeout-minutes: 15

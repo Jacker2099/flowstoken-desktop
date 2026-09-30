@@ -735,6 +735,9 @@ const builderConfig = {
 	productName: process.env.VETTA_PRODUCT_NAME?.trim() || "FlowsToken",
 	executableName: process.env.VETTA_EXECUTABLE_NAME?.trim() || process.env.VETTA_PRODUCT_NAME?.trim() || "FlowsToken",
 	afterPack: join(projectRoot, "scripts", "windows-version-layout.mjs"),
+	...(macSigning.enabled && macSigning.notarize
+		? { afterSign: join(projectRoot, "scripts", "notarize-mac-app.mjs") }
+		: {}),
 	electronVersion,
 	electronLanguages: ["zh-CN", "en-US"],
 	npmRebuild: false,
@@ -762,9 +765,8 @@ const builderConfig = {
 					gatekeeperAssess: false,
 					entitlements: "build/entitlements.mac.plist",
 					entitlementsInherit: "build/entitlements.mac.inherit.plist",
-					// electron-builder 26 起 notarize 只接受布尔值，团队与密钥
-					// 一律从 APPLE_TEAM_ID / APPLE_API_* 环境变量读取。
-					notarize: macSigning.notarize,
+					// The required afterSign hook persists one submission and resumes polling by ID.
+					notarize: false,
 				}
 			: {
 					identity: "-",

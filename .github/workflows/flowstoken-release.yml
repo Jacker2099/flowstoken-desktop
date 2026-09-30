@@ -27,6 +27,27 @@ on:
         type: string
         required: false
 
+      recovery_source_run:
+        description: "Explicit recovery: original completed desktop-release run"
+        type: string
+        required: false
+      recovery_source_attempt:
+        description: "Exact original run attempt"
+        type: string
+        required: false
+      recovery_source_sha:
+        description: "Original app source SHA; version tag remains on this commit"
+        type: string
+        required: false
+      recovery_arm64_submission:
+        description: "Original ARM notarization ID if its build failed"
+        type: string
+        required: false
+      recovery_x64_submission:
+        description: "Original Intel notarization ID if its build failed"
+        type: string
+        required: false
+
 run-name: "flowstoken-release ${{ github.ref_name }} ${{ inputs.reason }}"
 
 permissions:
@@ -65,6 +86,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 360
     outputs:
+      recovery: ${{ steps.identity.outputs.recovery }}
+      source-sha: ${{ steps.identity.outputs.source_sha }}
       version: ${{ steps.v.outputs.version }}
       tag: ${{ steps.v.outputs.tag }}
       run_id: ${{ steps.build.outputs.run_id }}
@@ -81,13 +104,23 @@ jobs:
         with:
           node-version: 22
 
+      - name: Resolve original recovery source without moving its tag
+        id: identity
+        env:
+          RECOVERY_SOURCE_RUN: ${{ inputs.recovery_source_run }}
+          RECOVERY_SOURCE_ATTEMPT: ${{ inputs.recovery_source_attempt }}
+          RECOVERY_SOURCE_SHA: ${{ inputs.recovery_source_sha }}
+          RECOVERY_ARM64_SUBMISSION: ${{ inputs.recovery_arm64_submission }}
+          RECOVERY_X64_SUBMISSION: ${{ inputs.recovery_x64_submission }}
+        run: node scripts/flowstoken/recover-release.mjs --mode plan --out "${{ runner.temp }}/recovery-plan.json"
+
       - name: Resolve version
         id: v
         env:
           EXPECTED_SHA: ${{ inputs.expected_sha }}
         run: |
           test -z "$EXPECTED_SHA" || test "$EXPECTED_SHA" = "$GITHUB_SHA" || { echo "::error::main changed after upstream sync; refusing a different commit"; exit 1; }
-          VERSION="$(node -p "require('./apps/desktop/package.json').version")"
+          VERSION="${{ steps.identity.outputs.source_version }}"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
           node scripts/flowstoken/publish-release.mjs --check --repo "$REPO" --version "$VERSION"
@@ -99,13 +132,18 @@ jobs:
       - name: Install dependencies
         uses: ./.github/actions/install-bun-dependencies
 
+      - name: Set up Python for archive safety regression tests
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - name: FlowsToken brand guard + release notes
         run: |
           node --test branding/flowstoken/tests/*.test.mjs
           node scripts/release/release-notes.mjs --check
 
       - name: Tag the release commit
-        if: inputs.reuse_build_run == ''
+        if: inputs.reuse_build_run == '' && inputs.recovery_source_run == ''
         run: |
           TAG="${{ steps.v.outputs.tag }}"
           REMOTE="$(git ls-remote --tags origin "refs/tags/${TAG}" | cut -f1)"
@@ -121,26 +159,40 @@ jobs:
 
       - name: Build all platforms (upstream desktop-release, non-publishing)
         id: build
+        env:
+          REUSE_BUILD_RUN: ${{ inputs.reuse_build_run }}
+          RECOVERY_SOURCE_RUN: ${{ inputs.recovery_source_run }}
+          RECOVERY_SOURCE_ATTEMPT: ${{ inputs.recovery_source_attempt }}
+          RECOVERY_SOURCE_SHA: ${{ inputs.recovery_source_sha }}
+          RECOVERY_ARM64_SUBMISSION: ${{ inputs.recovery_arm64_submission }}
+          RECOVERY_X64_SUBMISSION: ${{ inputs.recovery_x64_submission }}
         run: |
           TAG="${{ steps.v.outputs.tag }}"
-          if [ -n "${{ inputs.reuse_build_run }}" ]; then
-            RUN_ID="${{ inputs.reuse_build_run }}"
+          DISPATCH_REF="$TAG"
+          RECOVERY_ARGS=()
+          if [[ "${{ steps.identity.outputs.recovery }}" == true ]]; then
+            DISPATCH_REF="$GITHUB_REF_NAME"
+            RECOVERY_ARGS=(-f recovery_source_run="$RECOVERY_SOURCE_RUN" -f recovery_source_attempt="$RECOVERY_SOURCE_ATTEMPT" -f recovery_source_sha="$RECOVERY_SOURCE_SHA" -f recovery_arm64_submission="$RECOVERY_ARM64_SUBMISSION" -f recovery_x64_submission="$RECOVERY_X64_SUBMISSION")
+          fi
+          if [ -n "$REUSE_BUILD_RUN" ]; then
+            [[ "$REUSE_BUILD_RUN" =~ ^[0-9]+$ ]] || { echo "::error::reuse_build_run must be numeric"; exit 1; }
+            RUN_ID="$REUSE_BUILD_RUN"
           else
             SINCE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-            gh workflow run desktop-release.yml -R "$REPO" --ref "${TAG}" \
-              -f release_target=github -f channel=default -f notes="flowstoken ${TAG}"
+            gh workflow run desktop-release.yml -R "$REPO" --ref "$DISPATCH_REF" \
+              -f release_target=github -f channel=default -f notes="flowstoken ${TAG}" "${RECOVERY_ARGS[@]}"
             RUN_ID=""
             for _ in $(seq 1 60); do
               RUN_ID="$(gh run list -R "$REPO" --workflow desktop-release.yml --event workflow_dispatch --json databaseId,headBranch,createdAt \
-                --jq "map(select(.headBranch==\"${TAG}\" and .createdAt >= \"${SINCE}\")) | .[0].databaseId // empty")"
+                --jq "map(select(.headBranch==\"${DISPATCH_REF}\" and .createdAt >= \"${SINCE}\")) | .[0].databaseId // empty")"
               [ -n "$RUN_ID" ] && break
               sleep 10
             done
             test -n "$RUN_ID" || { echo "::error::desktop-release run did not start"; exit 1; }
           fi
-          # Reuse only this workflow commit: older runs may not contain the required release gates.
+          # Run head must remain this controller commit; only an explicit recovery plan can name a different app source.
           TAGGED="$(git ls-remote --tags origin "refs/tags/${TAG}^{}" "refs/tags/${TAG}" | tail -1 | cut -f1)"
-          test "$TAGGED" = "$GITHUB_SHA" || { echo "::error::${TAG} does not point to this workflow commit"; exit 1; }
+          test "$TAGGED" = "${{ steps.identity.outputs.source_sha }}" || { echo "::error::${TAG} does not point to this workflow commit"; exit 1; }
           echo "run_id=${RUN_ID}" >> "$GITHUB_OUTPUT"
           # Require quality, all four builds and all four verification jobs, including packaged E2E.
           node scripts/flowstoken/wait-release-builds.mjs --repo "$REPO" --run "$RUN_ID" --sha "$GITHUB_SHA"
@@ -166,19 +218,35 @@ jobs:
       - name: Install dependencies
         uses: ./.github/actions/install-bun-dependencies
 
+      - name: Set up Python for recovery plan ZIP validation
+        if: needs.build.outputs.recovery == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Authenticate completed recovery lineage
+        if: needs.build.outputs.recovery == 'true'
+        env:
+          ORIGINAL_RUN: ${{ inputs.recovery_source_run }}
+          ORIGINAL_ATTEMPT: ${{ inputs.recovery_source_attempt }}
+        run: node scripts/flowstoken/recover-release.mjs --mode load-plan --repo "$REPO" --run "${{ needs.build.outputs.run_id }}" --controller-sha "$GITHUB_SHA" --source-sha "${{ needs.build.outputs.source-sha }}" --origin-run "$ORIGINAL_RUN" --origin-attempt "$ORIGINAL_ATTEMPT" --out "$RUNNER_TEMP/recovery-plan.json"
+
       - name: Check build identity before downloading
         run: node scripts/flowstoken/wait-release-builds.mjs --repo "$REPO" --run "${{ needs.build.outputs.run_id }}" --sha "$GITHUB_SHA" --attempt "${{ needs.build.outputs.attempt }}" --check
 
       - name: Collect build artifacts (from the build checkpoints)
         run: |
-          mkdir -p ckpt apps/desktop/release
+          mkdir -p ckpt apps/desktop/release "$RUNNER_TEMP/release-lineage"
+          RECOVERY_ARGS=()
+          if [[ "${{ needs.build.outputs.recovery }}" == true ]]; then RECOVERY_ARGS=(--recovery-plan "$RUNNER_TEMP/recovery-plan.json"); fi
           for platform in linux windows macos-arm64 macos-x64; do
             gh run download "${{ needs.build.outputs.run_id }}" -R "$REPO" -n "release-build-${platform}" -D "ckpt/${platform}"
             mkdir -p "ckpt/${platform}/x" && tar -xf "ckpt/${platform}/release-build.tar" -C "ckpt/${platform}/x"
             src="ckpt/${platform}/x/release"
             [ "$(cat "$src/release-publish.txt" 2>/dev/null)" = "false" ] || {
               echo "::error::${platform} checkpoint did not come from a non-publishing dispatch"; exit 1; }
-            node scripts/flowstoken/release-artifacts.mjs --mode check-checkpoint --dir "$src" --version "${{ needs.build.outputs.version }}" --sha "$GITHUB_SHA" --run "${{ needs.build.outputs.run_id }}" --attempt "${{ needs.build.outputs.attempt }}" --platform "$platform"
+            node scripts/flowstoken/release-artifacts.mjs --mode check-checkpoint --dir "$src" --version "${{ needs.build.outputs.version }}" --sha "${{ needs.build.outputs.source-sha }}" --controller-sha "$GITHUB_SHA" --run "${{ needs.build.outputs.run_id }}" --attempt "${{ needs.build.outputs.attempt }}" --platform "$platform" "${RECOVERY_ARGS[@]}"
+            cp "$src/release-provenance.json" "$RUNNER_TEMP/release-lineage/${platform}.json"
             # 1 = the build ran with signing credentials; with them a signing or notarization failure fails the
             # build before its checkpoint exists, so only a signed and notarized macOS build carries a 1.
             case "$platform" in
@@ -215,7 +283,10 @@ jobs:
         run: bun run merge:updates:mac
 
       - name: Verify every feed entry is present
-        run: node scripts/flowstoken/release-artifacts.mjs --mode release --dir apps/desktop/release --version "${{ needs.build.outputs.version }}" --sha "$GITHUB_SHA" --run "${{ needs.build.outputs.run_id }}" --attempt "${{ needs.build.outputs.attempt }}"
+        run: |
+          RECOVERY_ARGS=()
+          if [[ "${{ needs.build.outputs.recovery }}" == true ]]; then RECOVERY_ARGS=(--recovery-plan "$RUNNER_TEMP/recovery-plan.json"); fi
+          node scripts/flowstoken/release-artifacts.mjs --mode release --dir apps/desktop/release --version "${{ needs.build.outputs.version }}" --sha "${{ needs.build.outputs.source-sha }}" --controller-sha "$GITHUB_SHA" --run "${{ needs.build.outputs.run_id }}" --attempt "${{ needs.build.outputs.attempt }}" --lineage-dir "$RUNNER_TEMP/release-lineage" "${RECOVERY_ARGS[@]}"
 
       - name: Check build identity after downloading
         run: node scripts/flowstoken/wait-release-builds.mjs --repo "$REPO" --run "${{ needs.build.outputs.run_id }}" --sha "$GITHUB_SHA" --attempt "${{ needs.build.outputs.attempt }}" --check
@@ -224,7 +295,7 @@ jobs:
         run: |
           VERSION="${{ needs.build.outputs.version }}"
           NOTES="$(node scripts/release/release-notes.mjs --version "$VERSION")"
-          node scripts/flowstoken/publish-release.mjs --repo "$REPO" --version "$VERSION" --sha "$GITHUB_SHA" --dir apps/desktop/release --notes "$NOTES"
+          node scripts/flowstoken/publish-release.mjs --repo "$REPO" --version "$VERSION" --sha "${{ needs.build.outputs.source-sha }}" --controller-sha "$GITHUB_SHA" --dir apps/desktop/release --notes "$NOTES"
 
       - name: Verify the published feed (what installed <= 0.5.61 clients read)
         run: |
