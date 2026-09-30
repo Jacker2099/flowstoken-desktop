@@ -9,6 +9,10 @@ export const RELEASE_BUILD_JOBS = [
 	"build windows",
 	"build macos-arm64",
 	"build macos-x64",
+	"verify linux",
+	"verify windows",
+	"verify macos-arm64",
+	"verify macos-x64",
 ];
 
 export function releaseBuildState(run, expectedSha, expectedAttempt) {
@@ -26,7 +30,8 @@ export function releaseBuildState(run, expectedSha, expectedAttempt) {
 	if (failed) return { state: "failure", reason: `${failed.name}: ${failed.conclusion}` };
 	if (jobs.every((job) => job?.status === "completed" && job.conclusion === "success"))
 		return { state: "success", attempt: run.attempt };
-	if (run.status === "completed") return { state: "failure", reason: "run ended without all required build gates" };
+	if (run.status === "completed")
+		return { state: "failure", reason: "run ended without all required build and verification gates" };
 	return { state: "pending" };
 }
 
@@ -48,7 +53,7 @@ export async function waitForReleaseBuilds({
 	read = readRun,
 	delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
 	now = Date.now,
-	timeoutMs = 330 * 60_000,
+	timeoutMs = 340 * 60_000,
 	pollMs = 60_000,
 }) {
 	if (!/^[\w.-]+\/[\w.-]+$/.test(repo) || !/^\d+$/.test(runId) || !/^[a-f\d]{40}$/.test(expectedSha)) {
@@ -77,7 +82,7 @@ async function main() {
 			check: { type: "boolean", default: false },
 		},
 	});
-	console.info(`Waiting for required build gates in run ${values.run}`);
+	console.info(`Waiting for required build and verification gates in run ${values.run}`);
 	const expectedAttempt = values.attempt === undefined ? undefined : Number(values.attempt);
 	let result;
 	if (values.check) {
@@ -95,7 +100,7 @@ async function main() {
 		});
 	}
 	if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `build_attempt=${result.attempt}\n`);
-	console.info(`Required build gates passed for run ${values.run}`);
+	console.info(`Required build and verification gates passed for run ${values.run}`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

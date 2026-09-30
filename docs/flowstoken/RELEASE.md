@@ -4,7 +4,7 @@
 
 1. 在 `main` 准备客户端版本和 `.github/release-notes/v<版本>.md`，提交并推送。已经公开的版本不能覆盖。
 2. GitHub → Actions → **flowstoken-release** → **Run workflow**，选择 `main`，填写可选 `reason`。正常发布不填 `reuse_build_run` 或 `expected_sha`。
-3. 流程自动执行 FlowsToken 相关测试、品牌/构建配置检查、四平台打包、Mac 签名公证及 Gatekeeper/票据验证、产物来源/大小/哈希验证，然后核对 GitHub 草稿资产后公开。上游 `desktop-release` 是内部构建步骤，不作为 FlowsToken 的日常发布入口。
+3. 流程自动执行 FlowsToken 相关测试、品牌/构建配置检查、四平台打包、Mac 签名公证及 Gatekeeper/票据验证、四平台独立安装包检查和真实 packaged/updater E2E、产物来源/大小/哈希验证，然后核对 GitHub 草稿资产后公开。上游 `desktop-release` 是内部构建步骤，不作为 FlowsToken 的日常发布入口。
 4. 服务器每 10 分钟自动校验并镜像到官网更新源，再对齐下载页、安装脚本和阿里云盘。客户端从 `https://www.flowstoken.com/downloads/desktop` 检查更新。
 
 命令行与按钮等价：
@@ -16,8 +16,9 @@ gh workflow run flowstoken-release.yml -R Jacker2099/flowstoken-desktop --ref ma
 ## 门禁和失败恢复
 
 - 任何必须检查失败都不会公开新版本。Mac 必须沿用 FlowsToken 的 Developer ID 和 `com.flowstoken.desktop`，保持从 0.6.2 升级的身份一致。
-- 等待构建与发布分开计时；失败的 Mac 资料保存为 `failed-macos-*`，仅供诊断，不能当成验证通过的安装包。此流程尚不跨运行自动续接 Apple 公证提交。
-- 构建成功、后续发布失败时，可填 `reuse_build_run` 复用同一源码提交的构建；流程核对 SHA、run、attempt、平台和版本。失败平台未完成时不能复用。
+- 质量检查、四个平台 build 和四个平台 verify 必须全部成功；E2E 使用严格退出码，失败、取消、跳过或尚未完成都不能发布。
+- 父构建任务上限 360 分钟，等待门禁上限 340 分钟，发布单独上限 60 分钟。失败的 Mac 资料保存为 `failed-macos-*`，仅供诊断，不能当成验证通过的安装包。此流程尚不跨运行自动续接 Apple 公证提交。
+- 全部构建和验证成功、后续发布失败时，可填 `reuse_build_run` 复用同一源码提交的构建；流程核对 SHA、run、attempt、平台和版本。任一平台构建或验证未通过时不能复用；源码改变后必须重新构建，不能复用前一个候选提交的制品。
 - 未公开标签若指向不同提交，流程停止，不自动移动标签。确认没有公开 Release 后，人工备份并处理旧标签，再发布同一版本；已公开版本必须升版本。
 - 草稿额外附件可清理，已公开附件不能覆盖。每次发布生成 `release-manifest.json`，将源码/构建与每个文件的 SHA-256 关联。
 - 官网镜像中断后，下一轮按持久状态补齐；阿里云上传状态在上传前保存，失败可重试。保留当前版和上一完整版本。网站重新部署后调用镜像脚本的 `--pages-only`，以已验证的本地更新源重新对齐下载版本。

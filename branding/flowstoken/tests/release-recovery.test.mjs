@@ -28,7 +28,7 @@ const completedRun = () => ({
 	jobs: RELEASE_BUILD_JOBS.map((name) => ({ name, status: "completed", conclusion: "success" })),
 });
 
-test("publishing starts only after this commit's required build gates and has a separate time budget", () => {
+test("publishing starts only after this commit's required build and verification gates and has a separate time budget", () => {
 	assert.equal(outer.jobs.publish.needs, "build");
 	assert.equal(outer.jobs.publish.if, undefined);
 	assert.equal(outer.jobs.publish["timeout-minutes"], 60);
@@ -36,7 +36,8 @@ test("publishing starts only after this commit's required build gates and has a 
 		outer.jobs.build["timeout-minutes"] >
 			inner.jobs.prepare["timeout-minutes"] +
 				inner.jobs.quality["timeout-minutes"] +
-				inner.jobs.build["timeout-minutes"],
+				inner.jobs.build["timeout-minutes"] +
+				inner.jobs.verify["timeout-minutes"],
 	);
 	const build = outer.jobs.build.steps.find((step) => step.id === "build");
 	assert.match(build.run, /wait-release-builds\.mjs.*--sha "\$GITHUB_SHA"/);
@@ -157,23 +158,72 @@ test("failed macOS files are archived separately, preserving the bundle but excl
 	}
 });
 
-test("successful required builds release the gate while unrelated verify jobs are pending or failed", () => {
-	const run = completedRun();
-	run.jobs.push(
-		{ name: "verify linux", status: "completed", conclusion: "failure" },
-		{ name: "verify macos-arm64", status: "in_progress" },
-	);
-	assert.deepEqual(releaseBuildState(run, sha), { state: "success", attempt: 1 });
+test("all four verification jobs are mandatory even after quality and every build pass", () => {
+	const expected = [inner.jobs.quality.name];
+	for (const job of ["build", "verify"]) {
+		for (const { platform } of inner.jobs[job].strategy.matrix.include) expected.push(`${job} ${platform}`);
+	}
+	assert.deepEqual([...RELEASE_BUILD_JOBS].sort(), expected.sort());
+	for (const { platform } of inner.jobs.verify.strategy.matrix.include) {
+		const name = `verify ${platform}`;
+		const run = completedRun();
+		const verification = run.jobs.find((job) => job.name === name);
+		for (const conclusion of ["failure", "cancelled", "timed_out", "skipped"]) {
+			verification.conclusion = conclusion;
+			assert.equal(releaseBuildState(run, sha).state, "failure", `${name}: ${conclusion}`);
+		}
+		verification.status = "in_progress";
+		verification.conclusion = null;
+		assert.equal(releaseBuildState(run, sha).state, "pending", name);
+		run.jobs = run.jobs.filter((job) => job.name !== name);
+		assert.equal(releaseBuildState(run, sha).state, "pending", name);
+		run.status = "completed";
+		assert.equal(releaseBuildState(run, sha).state, "failure", name);
+	}
+	assert.deepEqual(releaseBuildState(completedRun(), sha), { state: "success", attempt: 1 });
 });
 
-test("the build wait follows pending jobs through success without waiting for the whole child workflow", async () => {
+test("the packaged E2E step propagates a failed WDIO run on every platform", () => {
+	const step = inner.jobs.verify.steps.find((entry) => entry.name === "Run packaged app and updater E2E");
+	assert.notEqual(step["continue-on-error"], true);
+	assert.equal(step.env.VETTA_E2E_PACKAGED, "1");
+	assert.equal(step.env.VETTA_E2E_UPDATE_FEED, "1");
+	const temporary = mkdtempSync(join(tmpdir(), "flowstoken-strict-e2e-"));
+	try {
+		const bun = join(temporary, "bun");
+		const xvfb = join(temporary, "xvfb-run");
+		writeFileSync(
+			bun,
+			'#!/bin/sh\n[ "$2" != "test:e2e:packaged" ] || exit 0\n[ "$2" = "test:e2e" ] || exit 99\n[ "$VETTA_E2E_PACKAGED" = "1" ] && [ "$VETTA_E2E_UPDATE_FEED" = "1" ] || exit 98\nexit 23\n',
+		);
+		writeFileSync(xvfb, '#!/bin/sh\nshift\nexec "$@"\n');
+		chmodSync(bun, 0o755);
+		chmodSync(xvfb, 0o755);
+		for (const { platform } of inner.jobs.verify.strategy.matrix.include) {
+			const result = spawnSync(
+				"bash",
+				["-e", "-o", "pipefail", "-c", step.run.replaceAll("$" + "{{ matrix.platform }}", platform)],
+				{
+					cwd: temporary,
+					encoding: "utf8",
+					env: { ...process.env, ...step.env, PATH: `${temporary}:${process.env.PATH}` },
+				},
+			);
+			assert.equal(result.status, 23, `${platform}: ${result.stderr}`);
+		}
+	} finally {
+		rmSync(temporary, { recursive: true, force: true });
+	}
+});
+
+test("the release wait follows a pending verification through success", async () => {
 	let reads = 0;
 	let time = 0;
 	await waitForReleaseBuilds({
 		...options,
 		read: () => {
 			const run = completedRun();
-			if (reads++ === 0) run.jobs[3] = { name: "build macos-arm64", status: "in_progress" };
+			if (reads++ === 0) run.jobs.find((job) => job.name === "verify macos-arm64").status = "in_progress";
 			return run;
 		},
 		now: () => time,
@@ -235,6 +285,23 @@ test("the wait exits at its deadline when Apple is still processing", async () =
 		/Timed out/,
 	);
 	assert.equal(time, 90_000);
+});
+
+test("the default verification wait is bounded at 340 minutes within the 360-minute parent", async () => {
+	let time = 0;
+	await assert.rejects(
+		waitForReleaseBuilds({
+			...options,
+			read: () => ({ ...completedRun(), jobs: [] }),
+			now: () => time,
+			delay: async (milliseconds) => {
+				time += milliseconds;
+			},
+		}),
+		/Timed out/,
+	);
+	assert.equal(time, 340 * 60_000);
+	assert.equal(outer.jobs.build["timeout-minutes"], 360);
 });
 
 test("the workflow CLI queries GitHub and returns failure for a stale run", () => {

@@ -1,3 +1,7 @@
+import type {} from "@wdio/electron-service";
+import type { DesktopFlowstokenApi } from "../src/preload/api-types/flowstoken.js";
+import { installUpdaterAuthFixture, UPDATER_ACCOUNT_SNAPSHOT } from "./updater-auth-fixture.js";
+
 const packaged = process.env.VETTA_E2E_PACKAGED === "1";
 const UPDATE_TIMEOUT_MS = 60_000;
 
@@ -45,10 +49,21 @@ describe("Vetta Desktop packaged updater", () => {
 		expect(currentVersion).toMatch(/^\d+\.\d+\.\d+$/);
 
 		await focusMainRenderer();
+		// Isolate account IPC only; real login is covered separately by auth component/IPC tests.
+		await browser.electron.execute(installUpdaterAuthFixture, UPDATER_ACCOUNT_SNAPSHOT);
+		await browser.refresh();
+		await focusMainRenderer();
+		const account = await browser.execute(async () => {
+			const host = window as Window & { vetta?: { flowstoken?: DesktopFlowstokenApi } };
+			if (!host.vetta?.flowstoken) throw new Error("FlowsToken preload API is unavailable");
+			return host.vetta.flowstoken.getSnapshot();
+		});
+		expect(account.loggedIn).toBe(true);
+		expect(account.user?.username).toBe(UPDATER_ACCOUNT_SNAPSHOT.user?.username);
 		await browser.execute(() => {
 			window.location.hash = "/settings/general";
 		});
-		const checkButton = await $('[data-testid="updater-check"]');
+		const checkButton = await $('[data-testid="updater-check"]').getElement();
 		await checkButton.waitForDisplayed({ timeout: UPDATE_TIMEOUT_MS });
 		await activateRendererControl(checkButton);
 		await waitForUpdaterPhase(checkButton, "checking");
@@ -59,7 +74,7 @@ describe("Vetta Desktop packaged updater", () => {
 			await detail.waitForDisplayed({ timeout: UPDATE_TIMEOUT_MS });
 			expect(await detail.getText()).toContain(currentVersion);
 
-			const downloadButton = await $('[data-testid="updater-primary"]');
+			const downloadButton = await $('[data-testid="updater-primary"]').getElement();
 			await activateRendererControl(downloadButton);
 			await waitForUpdaterPhase(checkButton, "ready");
 		} else {

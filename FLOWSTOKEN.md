@@ -51,9 +51,9 @@ cd apps/desktop && bun run dist:opensource
 
 图标源：`branding/flowstoken/assets/` → `apps/desktop/build/icon.{png,icns,ico}`。
 
-## Wire providers（手动兜底）
+## Wire providers（登录后手动配置）
 
-若无法登录，仍可按 `branding/flowstoken/SETUP.md` 手动粘贴密钥到三组预设。
+客户端需要先登录 FlowsToken 账户。登录后可按 `branding/flowstoken/SETUP.md` 手动调整三组预设密钥；手动密钥不能绕过账户登录。
 
 ## Upstream
 

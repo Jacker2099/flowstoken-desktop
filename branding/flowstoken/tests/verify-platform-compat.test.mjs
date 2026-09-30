@@ -46,7 +46,8 @@ test("fresh verification jobs use the packaged FlowsToken brand across all platf
 	assert.equal(verify.env.VETTA_EXECUTABLE_NAME, "FlowsToken");
 	assert.equal(verify.env.VETTA_APP_ID, "com.flowstoken.desktop");
 	const e2e = verify.steps.find((step) => step.name === "Run packaged app and updater E2E");
-	assert.match(e2e.run, /bun run test:e2e:packaged/);
+	assert.match(e2e.run, /bun run test:e2e(?:\s|$)/);
+	assert.doesNotMatch(e2e.run, /test:e2e:packaged|\|\|/);
 	assert.notEqual(e2e["continue-on-error"], true);
 	assert.equal(e2e.env.VETTA_E2E_PACKAGED, "1");
 	const previous = Object.fromEntries(Object.keys(verify.env).map((key) => [key, process.env[key]]));

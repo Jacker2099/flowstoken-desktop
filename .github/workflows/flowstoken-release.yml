@@ -23,7 +23,7 @@ on:
         type: string
         required: false
       reuse_build_run:
-        description: "Retry only: publish from an existing desktop-release run (must have built this workflow commit and passed its macOS gate)"
+        description: "Retry only: publish from an existing desktop-release run (must have built this workflow commit and passed every build and verification gate)"
         type: string
         required: false
 
@@ -138,11 +138,11 @@ jobs:
             done
             test -n "$RUN_ID" || { echo "::error::desktop-release run did not start"; exit 1; }
           fi
-          # Reuse only this workflow commit: older runs may not contain the macOS signature gate.
+          # Reuse only this workflow commit: older runs may not contain the required release gates.
           TAGGED="$(git ls-remote --tags origin "refs/tags/${TAG}^{}" "refs/tags/${TAG}" | tail -1 | cut -f1)"
           test "$TAGGED" = "$GITHUB_SHA" || { echo "::error::${TAG} does not point to this workflow commit"; exit 1; }
           echo "run_id=${RUN_ID}" >> "$GITHUB_OUTPUT"
-          # macOS builds now include their signature gate; unrelated upstream verify jobs do not delay publishing.
+          # Require quality, all four builds and all four verification jobs, including packaged E2E.
           node scripts/flowstoken/wait-release-builds.mjs --repo "$REPO" --run "$RUN_ID" --sha "$GITHUB_SHA"
 
   publish:

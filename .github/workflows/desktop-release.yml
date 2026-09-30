@@ -582,6 +582,7 @@ jobs:
             find /usr/share/applications -maxdepth 1 -type f -name "*.desktop" -exec grep -lF "/opt/${VETTA_EXECUTABLE_NAME}/${VETTA_EXECUTABLE_NAME}" {} + | grep -q .
           '
 
+      # Use the strict WDIO entry point; the environment below selects packaged/update-feed fixtures.
       - name: Run packaged app and updater E2E
         working-directory: apps/desktop
         env:
@@ -591,9 +592,9 @@ jobs:
         shell: bash
         run: |
           if [[ "${{ matrix.platform }}" == "linux" ]]; then
-            xvfb-run --auto-servernum bun run test:e2e:packaged
+            xvfb-run --auto-servernum bun run test:e2e
           else
-            bun run test:e2e:packaged
+            bun run test:e2e
           fi
 
       - name: Re-verify platform updater artifacts after packaged E2E
