@@ -341,7 +341,10 @@ jobs:
       - name: Test Desktop packaging helpers
         run: bun run test:desktop:packaging
 
+      # Recovery checks out the original tagged source, which predates these tests; the controller
+      # branch covers them in flowstoken-release / PR quality instead.
       - name: Test SSH remote process signal portability
+        if: needs.prepare.outputs.recovery != 'true'
         env:
           VETTA_TEST_REMOTE_SHELL: /bin/dash
         run: bun scripts/quality/run-vitest.mjs --run packages/ssh-transport/src/remote-command.test.ts packages/ssh-transport/src/remote-command-signals.test.ts
