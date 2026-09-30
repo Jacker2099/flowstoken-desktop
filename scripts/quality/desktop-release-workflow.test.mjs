@@ -197,7 +197,8 @@ describe("Desktop release workflow contracts", () => {
 		expect(packagedWorkflow).toContain("runner: windows-latest");
 		expect(packagedWorkflow).toContain("runner: macos-latest");
 		expect(packagedWorkflow).toContain("runner: ubuntu-latest");
-		expect(packagedWorkflow).toContain("bun run test:e2e:packaged");
+		expect(packagedWorkflow).toMatch(/bun run test:e2e(?:\s|$)/);
+		expect(packagedWorkflow).not.toContain("bun run test:e2e:packaged");
 		expect(packagedWorkflow).toContain("xvfb-run --auto-servernum");
 	});
 

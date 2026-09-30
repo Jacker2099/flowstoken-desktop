@@ -51,6 +51,10 @@ jobs:
     if: needs.scope.outputs.packaged-smoke == 'true'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
+    env:
+      VETTA_PRODUCT_NAME: FlowsToken
+      VETTA_EXECUTABLE_NAME: FlowsToken
+      VETTA_APP_ID: com.flowstoken.desktop
     strategy:
       fail-fast: false
       matrix:
@@ -109,14 +113,15 @@ jobs:
         working-directory: apps/desktop
         env:
           VETTA_E2E_PACKAGED: "1"
+          VETTA_E2E_UPDATE_FEED: "1"
           VETTA_BUILD_ENV: test
           VETTA_SPEECH_INPUT_ENABLED: "false"
         shell: bash
         run: |
           if [[ "${{ matrix.platform }}" == "Linux" ]]; then
-            xvfb-run --auto-servernum bun run test:e2e:packaged
+            xvfb-run --auto-servernum bun run test:e2e
           else
-            bun run test:e2e:packaged
+            bun run test:e2e
           fi
 
       - name: Upload packaged diagnostics on failure
