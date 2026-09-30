@@ -1,6 +1,16 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { appendFileSync, closeSync, cpSync, existsSync, mkdirSync, openSync, readFileSync } from "node:fs";
+import {
+	appendFileSync,
+	closeSync,
+	cpSync,
+	existsSync,
+	lstatSync,
+	mkdirSync,
+	openSync,
+	readFileSync,
+	writeFileSync,
+} from "node:fs";
 import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve, win32 } from "node:path";
@@ -14,12 +24,56 @@ import {
 	RECOVERY_PLATFORMS,
 	recoveryPlanDigest,
 	SOURCE_CONFIG_FILES,
+	VERIFICATION_HARNESS_INPUTS,
 	validateRecoveryPlan,
 	verifyRecoveryPlanOnline,
 } from "./release-recovery-identity.mjs";
 
 function run(file, args, options = {}) {
 	return execFileSync(file, args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, ...options });
+}
+
+export function stageController(
+	destination,
+	{ sourceRoot = process.cwd(), controllerSha = process.env.GITHUB_SHA, envFile = process.env.GITHUB_ENV } = {},
+) {
+	if (
+		!/^[a-f\d]{40}$/.test(controllerSha) ||
+		run("git", ["rev-parse", "HEAD"], { cwd: sourceRoot }).trim() !== controllerSha
+	)
+		throw new Error("Controller checkout differs from the workflow commit");
+	run("git", ["diff", "--exit-code", "HEAD", "--", ...VERIFICATION_HARNESS_INPUTS], { cwd: sourceRoot });
+	const files = run("git", ["ls-files", "-z", "--", ...VERIFICATION_HARNESS_INPUTS], { cwd: sourceRoot })
+		.split("\0")
+		.filter(Boolean)
+		.sort();
+	if (!files.includes("apps/desktop/wdio.conf.ts") || !files.some((file) => file.endsWith(".e2e.ts")))
+		throw new Error("Controller verification harness is incomplete");
+	for (const file of files)
+		if (!lstatSync(join(sourceRoot, file)).isFile())
+			throw new Error(`Verification tool must be a regular tracked file: ${file}`);
+	for (const name of [
+		"scripts/flowstoken",
+		"scripts/release",
+		"apps/desktop/scripts",
+		"apps/desktop/package.json",
+		"apps/desktop/wdio.conf.ts",
+		"apps/desktop/e2e",
+		"branding/flowstoken",
+		".github/workflows",
+	])
+		cpSync(join(sourceRoot, name), join(destination, name), { recursive: true });
+	const manifest = {
+		schema: 1,
+		controllerSha,
+		files: files.map((file) => {
+			const body = readFileSync(join(destination, file));
+			return { path: file, size: body.length, sha256: createHash("sha256").update(body).digest("hex") };
+		}),
+	};
+	writeFileSync(join(destination, "controller-verification.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+	appendFileSync(envFile, `VETTA_RELEASE_CONTROLLER_DIR=${destination}\nVETTA_RELEASE_SOURCE_ROOT=${sourceRoot}\n`);
+	return manifest;
 }
 
 export function assertSourceCheckout(plan, sourceRoot) {
@@ -369,19 +423,7 @@ async function main() {
 	if (values.mode === "plan") return planRecovery(values.out);
 	if (values.mode === "stage") {
 		const destination = resolve(values.out);
-		for (const name of [
-			"scripts/flowstoken",
-			"scripts/release",
-			"apps/desktop/scripts",
-			"apps/desktop/package.json",
-			"branding/flowstoken",
-			".github/workflows",
-		])
-			cpSync(name, join(destination, name), { recursive: true });
-		appendFileSync(
-			process.env.GITHUB_ENV,
-			`VETTA_RELEASE_CONTROLLER_DIR=${destination}\nVETTA_RELEASE_SOURCE_ROOT=${process.cwd()}\n`,
-		);
+		stageController(destination);
 		return;
 	}
 	if (values.mode === "load-plan")

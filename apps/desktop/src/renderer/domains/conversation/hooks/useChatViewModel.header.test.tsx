@@ -2,6 +2,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { getDefaultStore } from "jotai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { DesktopTerminalApi } from "../../../../preload/api-types/terminal.js";
 
 /**
  * 发送链路级联提交的合同：ChatView 把 actions/header memo 成 header slot 元素写进
@@ -23,6 +24,9 @@ function stubVettaWindow(): void {
 	Object.defineProperty(window, "vetta", {
 		configurable: true,
 		value: {
+			terminal: {
+				capabilities: async () => ({ localPty: true }),
+			} satisfies Pick<DesktopTerminalApi, "capabilities">,
 			window: {
 				isAlwaysOnTop: async () => false,
 				toggleAlwaysOnTop: async () => true,

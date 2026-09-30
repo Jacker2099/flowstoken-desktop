@@ -80,6 +80,9 @@ jobs:
           [[ "$UPSTREAM_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Invalid upstream marker" >&2; exit 1; }
           git fetch --no-tags https://github.com/openvetta/open-vetta.git "refs/tags/${UPSTREAM_TAG}:refs/tags/upstream/${UPSTREAM_TAG}"
           node scripts/flowstoken/test-flowstoken-related.mjs "upstream/${UPSTREAM_TAG}"
+      - name: Verify updater account boundary and remote process lifecycle
+        working-directory: apps/desktop
+        run: bun ../../scripts/quality/run-vitest.mjs --run scripts/updater-ui-host-access.test.ts scripts/updater-auth-fixture.test.ts src/main/plugins/command-spawner.remote.test.ts
 
   build:
     needs: validate-related

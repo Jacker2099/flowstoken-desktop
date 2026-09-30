@@ -1,9 +1,8 @@
 #!/usr/bin/env node
 // Runs every Vitest test that depends on a file FlowsToken changed relative to an upstream ref, per workspace.
 //
-// Upstream Open Vetta ships releases while its full affected-unit-test job is red (flaky remote-process
-// tests), so an automatic sync cannot demand that whole job. What it must prove is that the merge did not
-// break FlowsToken's own code: `vitest related` selects exactly the tests importing our changed files.
+// `vitest related` selects the suites importing the fork's changed files. Explicit release gates also
+// exercise packaging, host access and remote process lifecycle contracts across their real boundaries.
 //
 // usage: node scripts/flowstoken/test-flowstoken-related.mjs <upstream-ref>
 import { execFileSync, spawnSync } from "node:child_process";
@@ -48,7 +47,7 @@ if (buildDependencies.length > 0) {
 	if (code !== 0) process.exit(code);
 }
 
-// Upstream test files that are red in upstream's own CI are quarantined explicitly (with reason and date).
+// Any temporary exclusion needs reproducible evidence; fixed cases must return to the gate.
 const known = JSON.parse(readFileSync("branding/flowstoken/tests/upstream-known-failures.json", "utf8")).excluded;
 
 const runner = join(process.cwd(), "scripts/quality/run-vitest.mjs");

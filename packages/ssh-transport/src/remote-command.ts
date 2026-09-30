@@ -88,13 +88,17 @@ export function buildKillCommand(processToken: string): string {
 		`k=\${r%"\${r#?}"}`,
 		`n=\${r#?}`,
 		// 只接受大于 1 的纯数字：`kill -- -1` 会杀掉该用户的所有进程。
-		`case "$n" in ''|*[!0-9]*|0|1) exit 0 ;; esac`,
+		// 拒绝前导零和超出 macOS/Linux pid_t 的值，避免转换后变成 -1 等其它目标。
+		`case "$k" in p|g) ;; *) exit 0 ;; esac`,
+		`case "$n" in ''|*[!0-9]*|0*|1) exit 0 ;; esac`,
+		`[ "$n" -le 2147483647 ] 2>/dev/null || exit 0`,
 		`if [ "$k" = g ]; then t="-$n"; else t="$n"; pkill -TERM -P "$n" 2>/dev/null; fi`,
-		`kill -TERM -- "$t" 2>/dev/null || exit 0`,
+		// dash 仅在 -s 的显式信号形式下正确处理 --；负进程组号必须仍作为操作数。
+		`kill -s TERM -- "$t" 2>/dev/null || exit 0`,
 		"i=0",
-		`while [ $i -lt 20 ] && kill -0 -- "$t" 2>/dev/null; do sleep 0.1; i=$((i+1)); done`,
+		`while [ $i -lt 20 ] && kill -s 0 -- "$t" 2>/dev/null; do sleep 0.1; i=$((i+1)); done`,
 		`if [ "$k" != g ]; then pkill -KILL -P "$n" 2>/dev/null; fi`,
-		`kill -KILL -- "$t" 2>/dev/null`,
+		`kill -s KILL -- "$t" 2>/dev/null`,
 		"exit 0",
 	].join("\n");
 	return `/bin/sh -c ${quoteShellArgument(script)}`;

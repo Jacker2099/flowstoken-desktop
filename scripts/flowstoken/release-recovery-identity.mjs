@@ -2,6 +2,12 @@ import { createHash } from "node:crypto";
 
 export const RECOVERY_PLATFORMS = ["linux", "windows", "macos-arm64", "macos-x64"];
 export const SOURCE_CONFIG_FILES = ["apps/desktop/package.json", "apps/desktop/scripts/prepare-pack.js", "bun.lock"];
+export const VERIFICATION_HARNESS_INPUTS = [
+	"apps/desktop/wdio.conf.ts",
+	"apps/desktop/e2e",
+	"apps/desktop/scripts/electron-e2e-service-options.mjs",
+	"apps/desktop/scripts/packaged-e2e-binary.mjs",
+];
 const shaPattern = /^[a-f\d]{40}$/;
 const digestPattern = /^sha256:[a-f\d]{64}$/;
 const uuidPattern = /^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/i;

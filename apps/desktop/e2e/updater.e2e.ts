@@ -1,5 +1,5 @@
+/// <reference types="@wdio/globals/types" />
 import type {} from "@wdio/electron-service";
-import type { DesktopFlowstokenApi } from "../src/preload/api-types/flowstoken.js";
 import { installUpdaterAuthFixture, UPDATER_ACCOUNT_SNAPSHOT } from "./updater-auth-fixture.js";
 
 const packaged = process.env.VETTA_E2E_PACKAGED === "1";
@@ -53,13 +53,16 @@ describe("Vetta Desktop packaged updater", () => {
 		await browser.electron.execute(installUpdaterAuthFixture, UPDATER_ACCOUNT_SNAPSHOT);
 		await browser.refresh();
 		await focusMainRenderer();
-		const account = await browser.execute(async () => {
-			const host = window as Window & { vetta?: { flowstoken?: DesktopFlowstokenApi } };
-			if (!host.vetta?.flowstoken) throw new Error("FlowsToken preload API is unavailable");
-			return host.vetta.flowstoken.getSnapshot();
+		// Observe the normal account UI: raw window.vetta calls lack the renderer's private host token.
+		await browser.execute(() => {
+			window.location.hash = "/settings/flowstoken";
 		});
-		expect(account.loggedIn).toBe(true);
-		expect(account.user?.username).toBe(UPDATER_ACCOUNT_SNAPSHOT.user?.username);
+		const fixtureName = UPDATER_ACCOUNT_SNAPSHOT.user?.displayName || UPDATER_ACCOUNT_SNAPSHOT.user?.username;
+		if (!fixtureName) throw new Error("Updater account fixture has no display name");
+		const loggedInText = `${fixtureName}（已登录）`;
+		const accountStatus = await $(`div=${loggedInText}`).getElement();
+		await accountStatus.waitForDisplayed({ timeout: UPDATE_TIMEOUT_MS });
+		expect(await accountStatus.getText()).toBe(loggedInText);
 		await browser.execute(() => {
 			window.location.hash = "/settings/general";
 		});

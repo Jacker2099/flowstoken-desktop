@@ -299,7 +299,7 @@ jobs:
         if: needs.prepare.outputs.recovery == 'true'
         shell: bash
         run: |
-          node --test "$VETTA_RELEASE_CONTROLLER_DIR/branding/flowstoken/tests/recovery-ci.test.mjs" "$VETTA_RELEASE_CONTROLLER_DIR/apps/desktop/scripts/notarize-mac-app.node-test.mjs" "$VETTA_RELEASE_CONTROLLER_DIR/apps/desktop/scripts/repackage-notarized-mac.node-test.mjs"
+          node --test "$VETTA_RELEASE_CONTROLLER_DIR/branding/flowstoken/tests/recovery-ci.test.mjs" "$VETTA_RELEASE_CONTROLLER_DIR/branding/flowstoken/tests/verification-harness.test.mjs" "$VETTA_RELEASE_CONTROLLER_DIR/apps/desktop/scripts/notarize-mac-app.node-test.mjs" "$VETTA_RELEASE_CONTROLLER_DIR/apps/desktop/scripts/repackage-notarized-mac.node-test.mjs"
 
       - name: Test original FlowsToken source integrations
         if: needs.prepare.outputs.recovery == 'true'
@@ -340,6 +340,11 @@ jobs:
 
       - name: Test Desktop packaging helpers
         run: bun run test:desktop:packaging
+
+      - name: Test SSH remote process signal portability
+        env:
+          VETTA_TEST_REMOTE_SHELL: /bin/dash
+        run: bun scripts/quality/run-vitest.mjs --run packages/ssh-transport/src/remote-command.test.ts packages/ssh-transport/src/remote-command-signals.test.ts
 
   build:
     name: build ${{ matrix.platform }}
@@ -739,6 +744,7 @@ jobs:
         shell: bash
         env:
           BUILD_VERSION: ${{ needs.prepare.outputs.build-version }}
+          RECOVERY_MODE: ${{ needs.prepare.outputs.recovery }}
         run: |
           rm -rf apps/desktop/release
           # Git Bash accepts RUNNER_TEMP, but GNU tar -C cannot read a Windows drive path.
@@ -754,8 +760,12 @@ jobs:
               if (!/^\d+\.\d+\.\d+$/.test(process.env.BUILD_VERSION)) throw new Error("Invalid build version");
               const file = "apps/desktop/package.json";
               const pkg = JSON.parse(readFileSync(file, "utf8"));
-              pkg.version = process.env.BUILD_VERSION;
-              writeFileSync(file, JSON.stringify(pkg));
+              if (process.env.RECOVERY_MODE === "true") {
+                if (pkg.version !== process.env.BUILD_VERSION) throw new Error("Recovery must keep the original source package version");
+              } else {
+                pkg.version = process.env.BUILD_VERSION;
+                writeFileSync(file, JSON.stringify(pkg));
+              }
             }
           '
 
@@ -792,9 +802,15 @@ jobs:
             find /usr/share/applications -maxdepth 1 -type f -name "*.desktop" -exec grep -lF "/opt/${VETTA_EXECUTABLE_NAME}/${VETTA_EXECUTABLE_NAME}" {} + | grep -q .
           '
 
+      - name: Prepare isolated controller verification harness
+        id: verification-harness
+        if: needs.prepare.outputs.recovery == 'true'
+        shell: bash
+        run: node "$VETTA_RELEASE_CONTROLLER_DIR/scripts/flowstoken/prepare-verification-harness.mjs" --controller-root "$VETTA_RELEASE_CONTROLLER_DIR" --source-root "$GITHUB_WORKSPACE" --destination "$RUNNER_TEMP/verification-harness" --plan "$RUNNER_TEMP/release-recovery/recovery-plan.json" --controller-sha "$GITHUB_SHA" --source-sha "${{ needs.prepare.outputs.source-sha }}" --run "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" --platform "${{ matrix.platform }}"
+
       # Use the strict WDIO entry point; the environment below selects packaged/update-feed fixtures.
       - name: Run packaged app and updater E2E
-        working-directory: apps/desktop
+        working-directory: ${{ env.VETTA_E2E_HARNESS_ROOT || 'apps/desktop' }}
         env:
           VETTA_E2E_PACKAGED: "1"
           VETTA_E2E_UPDATE_FEED: "1"
@@ -806,6 +822,16 @@ jobs:
           else
             bun run test:e2e
           fi
+
+      - name: Upload verification tooling manifest
+        if: ${{ always() && steps.verification-harness.outputs.ready == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: verification-tooling-${{ matrix.platform }}
+          path: ${{ steps.verification-harness.outputs.manifest }}
+          if-no-files-found: error
+          retention-days: 30
+          overwrite: true
 
       - name: Re-verify platform updater artifacts after packaged E2E
         if: matrix.verify != ''
