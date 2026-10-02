@@ -2,10 +2,13 @@ rootProject.name = "vetta-mobile"
 
 pluginManagement {
     repositories {
-        // Prefer mirrors for more reliable downloads in restricted networks.
-        maven(url = "https://maven.aliyun.com/repository/google")
-        maven(url = "https://maven.aliyun.com/repository/public")
-        maven(url = "https://maven.aliyun.com/repository/gradle-plugin")
+        // Local restricted networks can use mirrors. CI uses official repositories
+        // so a mirror HTTP 502 cannot disable dependency resolution for the job.
+        if (System.getenv("CI") != "true") {
+            maven(url = "https://maven.aliyun.com/repository/google")
+            maven(url = "https://maven.aliyun.com/repository/public")
+            maven(url = "https://maven.aliyun.com/repository/gradle-plugin")
+        }
         google {
             mavenContent {
                 includeGroupAndSubgroups("androidx")
@@ -20,8 +23,10 @@ pluginManagement {
 
 dependencyResolutionManagement {
     repositories {
-        maven(url = "https://maven.aliyun.com/repository/google")
-        maven(url = "https://maven.aliyun.com/repository/public")
+        if (System.getenv("CI") != "true") {
+            maven(url = "https://maven.aliyun.com/repository/google")
+            maven(url = "https://maven.aliyun.com/repository/public")
+        }
         google {
             mavenContent {
                 includeGroupAndSubgroups("androidx")

@@ -86,11 +86,15 @@ jobs:
 
       - name: Install ripgrep on Linux
         if: runner.os == 'Linux'
-        run: command -v rg >/dev/null || { sudo apt-get update && sudo apt-get install --yes ripgrep; }
+        run: |
+          command -v rg >/dev/null || { sudo apt-get update && sudo apt-get install --yes ripgrep; }
+          command -v fd >/dev/null || command -v fdfind >/dev/null || { sudo apt-get update && sudo apt-get install --yes fd-find; }
 
       - name: Install ripgrep on macOS
         if: runner.os == 'macOS'
-        run: command -v rg >/dev/null || brew install ripgrep
+        run: |
+          command -v rg >/dev/null || brew install ripgrep
+          command -v fd >/dev/null || brew install fd
 
       - name: Install ripgrep on Windows
         if: runner.os == 'Windows'
@@ -120,7 +124,7 @@ jobs:
 
       - name: Test affected workspaces
         if: ${{ !inputs.source_sha }}
-        run: bun run test:changed --base "${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}"
+        run: node scripts/flowstoken/test-pr-source.mjs "${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}"
 
       - name: Test complete release client workspaces and SSH transport
         if: inputs.source_sha

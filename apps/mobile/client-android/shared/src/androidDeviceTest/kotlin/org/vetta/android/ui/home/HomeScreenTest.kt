@@ -155,7 +155,7 @@ class HomeScreenTest {
                 )
             }
         }
-        composeRule.onNodeWithTag("home.newSession.detail").assertTextEquals("vetta")
+        composeRule.onNodeWithTag("home.newSession.detail", useUnmergedTree = true).assertTextEquals("vetta")
         composeRule.onNodeWithTag("home.newSession").performClick()
         assertEquals(1, started)
     }
@@ -174,7 +174,7 @@ class HomeScreenTest {
             )
         }
         composeRule.onNodeWithText(str(Res.string.home_connect_computer)).assertIsDisplayed()
-        composeRule.onNodeWithTag("home.connect.detail").assertTextEquals("MacBook Pro")
+        composeRule.onNodeWithTag("home.connect.detail", useUnmergedTree = true).assertTextEquals("MacBook Pro")
         assertTrue(top("home.newSession") < top("home.taskBoard"))
         assertTrue(top("home.taskBoard") < top("home.connect"))
         assertTrue(top("home.connect") < top("home.remote"))

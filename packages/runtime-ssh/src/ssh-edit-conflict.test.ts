@@ -8,8 +8,9 @@ import { createSshEditOperations } from "./ssh-file-operations.js";
 import { createSshCodingToolEnvironment } from "./ssh-tool-environment.js";
 
 const helperBinary = buildSshHelperForTests();
+if (!helperBinary) throw new Error("Native runtime-ssh edit conflict contract requires a successful Go helper build");
 
-describe.skipIf(!helperBinary)("远端 edit 的并发保护（由 helper 在远端核对）", () => {
+describe("远端 edit 的并发保护（由 helper 在远端核对）", () => {
 	const connect = async () => {
 		const connection = createLoopbackSshConnection("loopback", { helper: { resolveBinary: () => helperBinary } });
 		if (!(await connection.helper())) throw new Error("helper did not come up");

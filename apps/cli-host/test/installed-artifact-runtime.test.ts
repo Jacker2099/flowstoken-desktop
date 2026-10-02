@@ -1035,6 +1035,11 @@ async function buildInstalledCliArtifact(): Promise<InstalledCliArtifact> {
 }
 
 async function expectStandaloneArtifact(installed: InstalledCliArtifact): Promise<void> {
+	if (process.platform === "darwin") {
+		// The production compiler must return runnable signed bytes, including
+		// when the artifact is copied out of its build directory for installation.
+		await runCommand("codesign", ["--verify", "--strict", installed.binaryPath]);
+	}
 	expect(await readdir(installed.installDir)).toEqual([process.platform === "win32" ? "vetta.exe" : "vetta"]);
 	expect((await stat(installed.binaryPath)).size).toBeGreaterThan(0);
 	const metafile = MetafileSchema.parse(JSON.parse(await readFile(installed.buildMetafilePath, "utf8")));

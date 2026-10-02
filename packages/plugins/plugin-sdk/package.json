@@ -29,6 +29,7 @@
 		"src/tailwind-theme.css"
 	],
 	"scripts": {
+		"test": "bun ../../../scripts/quality/run-vitest.mjs --run",
 		"clean": "rm -rf dist docs",
 		"bundle-docs": "node scripts/bundle-docs.mjs",
 		"build": "tsgo -p tsconfig.build.json && node scripts/bundle-docs.mjs",

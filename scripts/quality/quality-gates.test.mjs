@@ -603,7 +603,7 @@ describe("CI unit test coverage", () => {
 		expect(workflow).toContain("fetch-depth: 0");
 		expect(workflow).toContain("command -v rg >/dev/null || { sudo apt-get update");
 		expect(workflow).toContain("Get-Command rg -ErrorAction SilentlyContinue");
-		expect(workflow).toContain("bun run test:changed --base");
+		expect(workflow).toContain("node scripts/flowstoken/test-pr-source.mjs");
 	});
 
 	it("cancels stale PR runs while preserving release validation, fails the matrix fast and uses the exact-lockfile cache", () => {

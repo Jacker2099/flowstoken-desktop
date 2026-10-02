@@ -2,6 +2,7 @@ import type { PluginCommandSpawnExit } from "@vetta-org/plugin-sdk";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import type * as DesignRuntimeModule from "../src/canvas/design-runtime";
 
 interface QueuedServer {
 	port: number;
@@ -14,6 +15,9 @@ const mocks = vi.hoisted(() => ({
 	startDesignServer: vi.fn(),
 	stopDesignServer: vi.fn(() => Promise.resolve()),
 	setCanvasController: vi.fn(),
+	pendingRegistered: vi.fn(),
+	pendingDelivered: vi.fn(),
+	pendingDisposed: vi.fn(),
 	notify: vi.fn(),
 	notesVisibility: { visible: true, show: vi.fn(), toggle: vi.fn() },
 	t: (key: string, values?: Record<string, string | number>) =>
@@ -77,12 +81,24 @@ vi.mock("../src/vetd/discover", () => ({ findVetdFiles: () => Promise.resolve(["
 vi.mock("../src/vetd/scaffold", () => ({ scaffoldDesign: vi.fn() }));
 vi.mock("../src/export/export-design", () => ({ exportDesign: vi.fn() }));
 vi.mock("../src/canvas/cover-compose", () => ({ refreshCover: () => Promise.resolve() }));
-vi.mock("../src/canvas/design-runtime", () => ({
-	clearFrameActivity: vi.fn(),
-	setCanvasController: mocks.setCanvasController,
-	setPendingDesignPath: vi.fn(),
-	takePendingDesignPath: () => null,
-}));
+vi.mock("../src/canvas/design-runtime", async (importOriginal) => {
+	const actual = await importOriginal<typeof DesignRuntimeModule>();
+	return {
+		...actual,
+		setCanvasController: mocks.setCanvasController,
+		onPendingDesignPath(listener: () => void) {
+			mocks.pendingRegistered();
+			const dispose = actual.onPendingDesignPath(() => {
+				mocks.pendingDelivered();
+				listener();
+			});
+			return () => {
+				dispose();
+				mocks.pendingDisposed();
+			};
+		},
+	};
+});
 vi.mock("../src/canvas/bridge-client", () => ({ BridgeHub: class {} }));
 vi.mock("../src/canvas/DesignCanvas", () => ({
 	DesignCanvas: ({ port }: { port: number }) => <div data-testid="design-canvas" data-port={port} />,
@@ -91,9 +107,11 @@ vi.mock("../src/canvas/ThemePalette", () => ({ ThemePalette: () => null }));
 vi.mock("../src/preview-mode/PreviewDialog", () => ({ PreviewDialog: () => null }));
 
 import { CanvasTab } from "../src/canvas/CanvasTab";
+import { setPendingDesignPath, takePendingDesignPath } from "../src/canvas/design-runtime";
 
 let root: Root;
 let host: HTMLDivElement;
+let mounted: boolean;
 
 function queueServer(port: number): QueuedServer {
 	let resolveExit: (exit: PluginCommandSpawnExit) => void = () => undefined;
@@ -122,6 +140,11 @@ beforeEach(() => {
 	mocks.startDesignServer.mockReset();
 	mocks.stopDesignServer.mockClear();
 	mocks.setCanvasController.mockClear();
+	mocks.pendingRegistered.mockClear();
+	mocks.pendingDelivered.mockClear();
+	mocks.pendingDisposed.mockClear();
+	setPendingDesignPath(null, "C:/project");
+	takePendingDesignPath();
 	mocks.notify.mockClear();
 	mocks.startDesignServer.mockImplementation(async () => {
 		const server = mocks.servers.shift();
@@ -131,10 +154,11 @@ beforeEach(() => {
 	host = document.createElement("div");
 	document.body.appendChild(host);
 	root = createRoot(host);
+	mounted = true;
 });
 
 afterEach(async () => {
-	await act(async () => root.unmount());
+	if (mounted) await act(async () => root.unmount());
 	host.remove();
 	vi.useRealTimers();
 });
@@ -146,14 +170,30 @@ it("unmounts consumers of a dead port and restarts the design engine automatical
 	await flush();
 
 	expect(host.querySelector('[data-testid="design-canvas"]')?.getAttribute("data-port")).toBe("53114");
+	expect(mocks.pendingRegistered).toHaveBeenCalledTimes(1);
 
 	await act(async () => first.resolveExit({ exitCode: 1, signal: null }));
 	await flush();
 	expect(host.querySelector('[data-testid="design-canvas"]')).toBeNull();
+	expect(mocks.setCanvasController).toHaveBeenLastCalledWith(null);
 	expect(host.textContent).toContain("restarting 1/3");
 
 	await act(async () => vi.advanceTimersByTimeAsync(250));
 	await flush();
 	expect(mocks.startDesignServer).toHaveBeenCalledTimes(2);
 	expect(host.querySelector('[data-testid="design-canvas"]')?.getAttribute("data-port")).toBe("53120");
+
+	await act(async () => setPendingDesignPath("C:/project/demo.vetd", "C:/project"));
+	await flush();
+	expect(mocks.pendingDelivered).toHaveBeenCalledTimes(1);
+	expect(mocks.pendingRegistered).toHaveBeenCalledTimes(1);
+	expect(mocks.startDesignServer).toHaveBeenCalledTimes(2);
+	expect(takePendingDesignPath("C:/project")).toBeNull();
+
+	await act(async () => root.unmount());
+	mounted = false;
+	expect(mocks.pendingDisposed).toHaveBeenCalledTimes(1);
+	setPendingDesignPath("C:/project/after-unmount.vetd", "C:/project");
+	expect(mocks.pendingDelivered).toHaveBeenCalledTimes(1);
+	expect(takePendingDesignPath("C:/project")).toBe("C:/project/after-unmount.vetd");
 });
