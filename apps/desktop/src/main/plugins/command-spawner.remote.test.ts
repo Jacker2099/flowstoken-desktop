@@ -37,6 +37,7 @@ const { getPluginCommandSpawnStatus, spawnPluginCommand, stopPluginCommandSpawn 
 	"./command-spawner.js"
 );
 const commandLauncher = await import("./command-launcher.js");
+const spawnedProcess = await import("./spawned-process.js");
 
 const directories: string[] = [];
 const scopes: ReturnType<typeof createCommandScope>[] = [];
@@ -45,15 +46,106 @@ const restoreConnections: (() => Promise<void>)[] = [];
 function createCommandScope() {
 	const scope = createLoopbackTestScope();
 	scope.onClosing(() => connection.abortOwnedOperations());
+	const observed = observeProcessEvents(scope);
 	return Object.assign(scope, {
-		spawn: (...args: Parameters<typeof spawnPluginCommand>) =>
-			scope.start(
-				() => spawnPluginCommand(...args),
-				(result) => stopPluginCommandSpawn(args[0], result.spawnId),
-			),
+		spawn: (...args: Parameters<typeof spawnPluginCommand>) => {
+			const index = observed.starts.length;
+			return scope
+				.start(
+					() => spawnPluginCommand(...args),
+					(result) => stopPluginCommandSpawn(args[0], result.spawnId),
+				)
+				.then((result) => {
+					observed.bind(result.spawnId, index);
+					return result;
+				});
+		},
+		output: observed.output,
 		waitFor: (check: () => void, options?: Parameters<typeof vi.waitFor>[1]) =>
 			scope.until(check, (predicate) => vi.waitFor(predicate, options)),
 	});
+}
+
+/** Observe the real process; a returned spawnId is not an output-ready event. */
+function observeProcessEvents(scope: ReturnType<typeof createLoopbackTestScope>) {
+	const original = spawnedProcess.startProcess;
+	const starts: {
+		process: ReturnType<typeof original>;
+		chunks: Buffer[];
+		exit?: { exitCode: number | null; signal: string | null };
+		stages: string[];
+		checks: Set<() => void>;
+	}[] = [];
+	const byId = new Map<string, (typeof starts)[number]>();
+	const pending = new Set<(error: Error) => void>();
+	let closed: Error | undefined;
+	const spy = vi.spyOn(spawnedProcess, "startProcess").mockImplementation((...args) => {
+		const process = original(...args);
+		const entry: (typeof starts)[number] = { process, chunks: [], stages: ["started"], checks: new Set() };
+		starts.push(entry);
+		process.onOutput((chunk) => {
+			entry.chunks.push(chunk);
+			entry.stages.push("output");
+			for (const check of entry.checks) check();
+		});
+		process.onExit((exitCode, signal) => {
+			entry.exit = { exitCode, signal };
+			entry.stages.push("exit");
+			// The plugin's record listener follows this observer; read its updated
+			// running/exit state after all listeners for this actual event complete.
+			for (const check of entry.checks) queueMicrotask(check);
+		});
+		return process;
+	});
+	scope.onClosing(() => {
+		closed = new Error("Owned process observation closed");
+		for (const reject of pending) reject(closed);
+	});
+	// Restore only after scope stop/physical-close barriers, before removing files.
+	restoreConnections.push(async () => spy.mockRestore());
+	return {
+		starts,
+		bind(spawnId: string, index: number) {
+			if (starts.length !== index + 1) throw new Error("Expected exactly one real process per plugin spawn");
+			byId.set(spawnId, starts[index]);
+		},
+		output(spawnId: string, expected: string | RegExp, requireExit = false): Promise<void> {
+			if (closed) return Promise.reject(closed);
+			const entry = byId.get(spawnId);
+			if (!entry) return Promise.reject(new Error("Missing observed real process"));
+			return scope.track(
+				new Promise<void>((resolve, reject) => {
+					let settled = false;
+					const finish = (error?: Error) => {
+						if (settled) return;
+						settled = true;
+						entry.checks.delete(check);
+						pending.delete(fail);
+						if (error) reject(error);
+						else resolve();
+					};
+					const fail = (error: Error) => finish(error);
+					const check = () => {
+						if (settled) return;
+						if (closed) return fail(closed);
+						const output = Buffer.concat(entry.chunks).toString();
+						const matches = typeof expected === "string" ? output.includes(expected) : expected.test(output);
+						const ended = entry.process.finished || entry.exit !== undefined;
+						if (ended && (!requireExit || !matches || entry.exit?.exitCode !== 0)) {
+							fail(
+								new Error(
+									`Real command exited before expected output/completion: ${JSON.stringify({ status: getPluginCommandSpawnStatus("demo", spawnId), exit: entry.exit, output, stages: entry.stages })}`,
+								),
+							);
+						} else if (matches && (!requireExit || ended)) finish();
+					};
+					entry.checks.add(check);
+					pending.add(fail);
+					check();
+				}),
+			);
+		},
+	};
 }
 
 function ownedIt(name: string, body: (scope: ReturnType<typeof createCommandScope>) => Promise<void>) {
@@ -119,17 +211,13 @@ describe("插件的长驻进程与远程项目", () => {
 			cwd: project.uri,
 		});
 
-		await scope.waitFor(
-			() => {
-				const status = getPluginCommandSpawnStatus("demo", started.spawnId);
-				expect(status.running).toBe(false);
-				expect(status.exit?.exitCode).toBe(0);
-				// 输出来自远端那份 package.json，证明命令确实在项目所在的机器上跑过。
-				expect(status.recentOutput).toContain('"name":"demo"');
-				expect(status.recentOutput).toContain("done");
-			},
-			{ timeout: 15_000 },
-		);
+		await scope.output(started.spawnId, "done", true);
+		const status = getPluginCommandSpawnStatus("demo", started.spawnId);
+		expect(status.running).toBe(false);
+		expect(status.exit?.exitCode).toBe(0);
+		// 输出来自远端那份 package.json，证明命令确实在项目所在的机器上跑过。
+		expect(status.recentOutput).toContain('"name":"demo"');
+		expect(status.recentOutput).toContain("done");
 	});
 
 	ownedIt("要端口的进程：端口在远端分配，再转发回本机——插件拿到的始终是本机可连的那个", async (scope) => {
@@ -190,12 +278,9 @@ describe("插件的长驻进程与远程项目", () => {
 		expect(forwards[0].localPort).toBe(started.port);
 		// 进程拿到的是远端那个端口，与插件看到的本机端口不是同一个。
 		expect(forwards[0].remotePort).not.toBe(started.port);
-		await scope.waitFor(
-			() =>
-				expect(getPluginCommandSpawnStatus("demo", started.spawnId).recentOutput).toContain(
-					`port=${forwards[0].remotePort}`,
-				),
-			{ timeout: 15_000 },
+		await scope.output(started.spawnId, `port=${forwards[0].remotePort}`);
+		expect(getPluginCommandSpawnStatus("demo", started.spawnId).recentOutput).toContain(
+			`port=${forwards[0].remotePort}`,
 		);
 
 		let stopFinished = false;
@@ -228,11 +313,10 @@ describe("插件的长驻进程与远程项目", () => {
 			allocatePort: true,
 			env: { MY_PORT: "{{PORT}}" },
 		});
-		await scope.waitFor(() => {
-			expect(getPluginCommandSpawnStatus("demo", next.spawnId).recentOutput).toContain(
-				`next=${forwards[1].remotePort}`,
-			);
-		});
+		await scope.output(next.spawnId, `next=${forwards[1].remotePort}`);
+		expect(getPluginCommandSpawnStatus("demo", next.spawnId).recentOutput).toContain(
+			`next=${forwards[1].remotePort}`,
+		);
 		await stopPluginCommandSpawn("demo", next.spawnId);
 		expect(cancelled).toEqual(forwards);
 	});
@@ -240,10 +324,8 @@ describe("插件的长驻进程与远程项目", () => {
 	ownedIt("停止远端进程后状态转为已结束", async (scope) => {
 		const project = createRemoteProject();
 		const started = await scope.spawn("demo", "sh", ["-c", "echo up; sleep 60"], { cwd: project.uri });
-		await scope.waitFor(
-			() => expect(getPluginCommandSpawnStatus("demo", started.spawnId).recentOutput).toContain("up"),
-			{ timeout: 15_000 },
-		);
+		await scope.output(started.spawnId, "up");
+		expect(getPluginCommandSpawnStatus("demo", started.spawnId).recentOutput).toContain("up");
 
 		await stopPluginCommandSpawn("demo", started.spawnId);
 
@@ -264,13 +346,12 @@ describe("插件的长驻进程与远程项目", () => {
 			cwd: project.uri,
 		});
 		let nativePids: number[] = [];
-		await scope.waitFor(() => {
-			const output = getPluginCommandSpawnStatus("demo", started.spawnId).recentOutput;
-			const match = /owned-tree=(\d+),(\d+)\n/.exec(output);
-			expect(match).not.toBeNull();
-			nativePids = [Number(match?.[1]), Number(match?.[2])];
-			expect(nativePids.every((pid) => pid > 1)).toBe(true);
-		});
+		await scope.output(started.spawnId, /owned-tree=\d+,\d+\n/);
+		const output = getPluginCommandSpawnStatus("demo", started.spawnId).recentOutput;
+		const match = /owned-tree=(\d+),(\d+)\n/.exec(output);
+		expect(match).not.toBeNull();
+		nativePids = [Number(match?.[1]), Number(match?.[2])];
+		expect(nativePids.every((pid) => pid > 1)).toBe(true);
 
 		const witnesses: ReturnType<typeof openOwnedWindowsProcessWitness>[] = [];
 		const closeWitnesses = (): void => {
@@ -325,9 +406,11 @@ describe("插件的长驻进程与远程项目", () => {
 			closeWitnesses();
 		}
 		const next = await scope.spawn("demo", "sh", ["-c", "printf reconnected"], { cwd: project.uri });
-		await scope.waitFor(() => {
-			const status = getPluginCommandSpawnStatus("demo", next.spawnId);
-			expect(status).toMatchObject({ running: false, exit: { exitCode: 0 }, recentOutput: "reconnected" });
+		await scope.output(next.spawnId, "reconnected", true);
+		expect(getPluginCommandSpawnStatus("demo", next.spawnId)).toMatchObject({
+			running: false,
+			exit: { exitCode: 0 },
+			recentOutput: "reconnected",
 		});
 	});
 
@@ -363,9 +446,8 @@ describe("插件的长驻进程与远程项目", () => {
 		scope.onCleanup(() => observed.cleanup());
 		try {
 			const started = await scope.spawn("demo", process.execPath, ["-e", program], { cwd: dir });
-			await scope.waitFor(() => {
-				expect(getPluginCommandSpawnStatus("demo", started.spawnId).recentOutput).toContain("local");
-			});
+			await scope.output(started.spawnId, "local");
+			expect(getPluginCommandSpawnStatus("demo", started.spawnId).recentOutput).toContain("local");
 			// The old output-only predicate is satisfied while the real process still holds its cwd.
 			expect(observed.child.exitCode).toBeNull();
 			expect(() => process.kill(started.pid, 0)).not.toThrow();
