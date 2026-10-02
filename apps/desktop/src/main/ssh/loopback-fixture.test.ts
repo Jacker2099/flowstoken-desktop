@@ -2,6 +2,7 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { quoteShellArgument } from "@vetta/ssh-transport";
 import {
 	acceptOwnedJobReady,
 	createLoopbackTestScope,
@@ -380,36 +381,185 @@ describe("loopback remote shell boundary", () => {
 
 	it("traces sanitized operation metadata and timing only when explicitly enabled", async () => {
 		const events: string[] = [];
+		let releaseShell: string | undefined;
+		const release = () => {
+			if (releaseShell) writeFileSync(releaseShell, "release");
+		};
 		vi.spyOn(console, "error").mockImplementation((value) => {
-			events.push(String(value));
+			const event = String(value);
+			events.push(event);
+			if (event.includes('"phase":"shell-start"')) release();
 		});
 		await fixture(0, undefined, false).runner.run({ argv: ["printf sensitive-command"] });
 		expect(events).toEqual([]);
-		await fixture(0, undefined, true).runner.run({
-			argv: ["printf sensitive-command"],
-			env: { PRIVATE_VALUE: "sensitive-env" },
-		});
-		const phases = events.map((event) => {
+		const traced = fixture(0, undefined, true);
+		if (process.platform === "win32") releaseShell = join(traced.directory, "trace-shell-release");
+		const boundary = ownedBoundaries.at(-1);
+		expect(boundary).toBeDefined();
+		boundary?.scope.onClosing(release);
+		// A short printf can exit before its native witness is sampled. Keep this
+		// owned shell alive until the parent receives shell-start, without a timer.
+		const command = releaseShell
+			? `printf sensitive-command; while [ ! -f ${quoteShellArgument(loopbackRemotePath(releaseShell))} ]; do :; done`
+			: "printf sensitive-command";
+		try {
+			await traced.runner.run({
+				argv: [command],
+				env: { PRIVATE_VALUE: "sensitive-env" },
+			});
+		} finally {
+			release();
+		}
+		const witnessKeys = ["pid", "ppid", "image", "createdAt", "creationTicks", "active", "exitCode", "exitedAt"];
+		const externalPhases = ["queue", "start", "spawn", "stdout-first", "exit", "close"];
+		const parseEvent = (event: string) => {
 			const match = /^\[loopback \d+\] ([a-z-]+) \d+ms (\{.*\})$/.exec(event);
 			expect(match).not.toBeNull();
-			const details: unknown = JSON.parse(match?.[2] ?? "{}");
+			const phase = match?.[1] ?? "";
+			const details = JSON.parse(match?.[2] ?? "{}") as Record<string, unknown>;
 			expect(details).toBeTypeOf("object");
-			const allowed = new Set([
-				"commandKind",
-				"commandHash",
-				"pid",
-				"needsParent",
-				"nativeCommandEndpoint",
-				"bytes",
-				"code",
-				"signal",
-				"exitCode",
-				"stdoutBytes",
-			]);
-			expect(Object.keys(details as Record<string, unknown>).every((key) => allowed.has(key))).toBe(true);
-			return match?.[1];
-		});
-		expect(phases).toEqual(["queue", "start", "spawn", "stdout-first", "exit", "close"]);
+			let keys: string[];
+			switch (phase) {
+				case "queue":
+					keys = ["commandKind", "commandHash"];
+					break;
+				case "start":
+					keys = [];
+					break;
+				case "spawn":
+					keys = ["pid", "needsParent", "commandKind", "commandHash"];
+					if (process.platform === "win32") keys.push("nativeCommandEndpoint");
+					break;
+				case "stdout-first":
+					keys = ["bytes"];
+					break;
+				case "exit":
+					keys = ["code", "signal"];
+					break;
+				case "close":
+					keys = ["exitCode", "stdoutBytes"];
+					break;
+				case "native-start":
+				case "native-exit":
+					keys = witnessKeys;
+					break;
+				case "inner-native":
+					keys =
+						details.type === "owned-supervisor-ready"
+							? ["type", "pid", "creationTicks"]
+							: ["phase", ...witnessKeys];
+					break;
+				case "job-assigned":
+					keys = ["pid", "activeProcesses"];
+					break;
+				case "job-empty":
+					keys = ["activeProcesses"];
+					break;
+				default:
+					throw new Error("Unexpected trace phase");
+			}
+			expect(Object.keys(details).sort()).toEqual([...keys].sort());
+			if ("pid" in details) expect(Number.isSafeInteger(details.pid) && Number(details.pid) > 1).toBe(true);
+			if ("creationTicks" in details) expect(details.creationTicks).toMatch(/^\d+$/);
+			if ("commandHash" in details) expect(details.commandHash).toMatch(/^[a-f0-9]{16}$/);
+			if ("commandKind" in details) expect(details.commandKind).toBe("execute");
+			if ("image" in details) {
+				expect(details.ppid === null || (Number.isSafeInteger(details.ppid) && Number(details.ppid) > 0)).toBe(
+					true,
+				);
+				expect(details.image).toMatch(/\\(?:node|sh)\.exe$/i);
+				expect(details.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+				expect(Number.isFinite(Date.parse(String(details.createdAt)))).toBe(true);
+				expect(details.active).toBeTypeOf("boolean");
+				if (details.active) expect([details.exitCode, details.exitedAt]).toEqual([null, null]);
+				else {
+					expect(details.exitCode).toBe(0);
+					expect(details.exitedAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+					expect(Date.parse(String(details.exitedAt))).toBeGreaterThanOrEqual(
+						Date.parse(String(details.createdAt)),
+					);
+				}
+			}
+			for (const privateValue of ["sensitive-command", "sensitive-env", "PRIVATE_VALUE"]) {
+				expect(event).not.toContain(privateValue);
+			}
+			return { phase, details };
+		};
+		const records = events.map(parseEvent);
+		const phases = records.map(({ phase }) => phase);
+		expect(phases.filter((phase) => externalPhases.includes(phase))).toEqual(externalPhases);
+		if (process.platform === "win32") {
+			const one = (phase: string, innerPhase?: string) => {
+				const matching = records.filter(
+					(record) => record.phase === phase && (!innerPhase || record.details.phase === innerPhase),
+				);
+				expect(matching).toHaveLength(1);
+				return matching[0].details;
+			};
+			const before = (earlier: Record<string, unknown>, later: Record<string, unknown>) => {
+				expect(records.findIndex(({ details }) => details === earlier)).toBeLessThan(
+					records.findIndex(({ details }) => details === later),
+				);
+			};
+			const started = one("native-start");
+			const exited = one("native-exit");
+			const assigned = one("job-assigned");
+			const shellStarted = one("inner-native", "shell-start");
+			const shellExited = one("inner-native", "shell-exit");
+			const shellClosed = one("inner-native", "shell-close");
+			expect(
+				records.filter(({ phase }) => phase === "inner-native").map(({ details }) => details.phase ?? details.type),
+			).toEqual(["wrapper-start", "owned-supervisor-ready", "shell-start", "shell-exit", "shell-close"]);
+			expect(one("spawn")).toMatchObject({ pid: started.pid, needsParent: true, nativeCommandEndpoint: true });
+			expect(one("inner-native", "wrapper-start")).toEqual({ phase: "wrapper-start", ...started });
+			expect(records.find(({ details }) => details.type === "owned-supervisor-ready")?.details).toEqual({
+				type: "owned-supervisor-ready",
+				pid: started.pid,
+				creationTicks: started.creationTicks,
+			});
+			expect(assigned.pid).toBe(started.pid);
+			// Launch IPC is sent before this snapshot; the shell may already belong to the job.
+			expect([1, 2]).toContain(assigned.activeProcesses);
+			expect(started.active).toBe(true);
+			before(assigned, shellStarted);
+			expect(shellStarted).toMatchObject({ ppid: started.pid, active: true });
+			for (const ended of [shellExited, shellClosed]) {
+				expect(ended).toMatchObject({
+					pid: shellStarted.pid,
+					creationTicks: shellStarted.creationTicks,
+					createdAt: shellStarted.createdAt,
+					image: shellStarted.image,
+					active: false,
+					exitCode: 0,
+				});
+			}
+			expect(exited).toMatchObject({
+				pid: started.pid,
+				creationTicks: started.creationTicks,
+				createdAt: started.createdAt,
+				image: started.image,
+				active: false,
+				exitCode: 0,
+			});
+			expect(one("exit")).toEqual({ code: 0, signal: null });
+			expect(one("close")).toEqual({ exitCode: 0, stdoutBytes: Buffer.byteLength("sensitive-command") });
+			expect(one("job-empty")).toEqual({ activeProcesses: 0 });
+			before(one("close"), one("job-empty"));
+			for (const privateValue of ["sensitive-command", "sensitive-env", "PRIVATE_VALUE"]) {
+				expect(() =>
+					parseEvent(
+						`[loopback 1] native-start 0ms ${JSON.stringify({ ...started, image: `C:\\${privateValue}\\node.exe` })}`,
+					),
+				).toThrow();
+			}
+		} else {
+			expect(phases).toEqual(externalPhases);
+		}
+		const queue = records[0].details;
+		expect(() => parseEvent(`[loopback 1] queue 0ms ${JSON.stringify({ ...queue, unexpected: "extra" })}`)).toThrow();
+		expect(() =>
+			parseEvent(`[loopback 1] queue 0ms ${JSON.stringify({ ...queue, commandKind: "sensitive-command" })}`),
+		).toThrow();
 		expect(events.join("\n")).not.toContain("sensitive-command");
 		expect(events.join("\n")).not.toContain("sensitive-env");
 		expect(events.join("\n")).not.toContain("PRIVATE_VALUE");
