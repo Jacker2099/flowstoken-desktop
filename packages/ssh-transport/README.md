@@ -97,9 +97,13 @@ Git Bash 流程；停止、端口实际撤销/再绑定/再用、参数引用、
 POSIX 主机的真实 `/bin/sh`、进程组 TERM/KILL 与 PID 保护由 macOS/Linux 测试验证；
 本地 OpenSSH/ProxyCommand 的取消和通道关闭由 `node-process-runner.test.ts` 验证：
 POSIX 使用独立进程组，Windows 对自己持有的 live 原生 PID 使用 `taskkill /T`。
-Windows 客户端用 Git Bash 表达远端 POSIX 命令，可取消操作由独立 Node 父进程保留
-原生 PID，再用 `taskkill /T` 回收自己的进程树。夹具必须等待真实管道关闭后再执行排队请求，
-并保留排队期间的取消、超时与终止错误。
+Windows 测试夹具用 Git Bash 表达远端 POSIX 命令。可取消操作默认先把等待 IPC 的独立
+Node 父进程加入专用 Windows Job，再启动 Bash；Job 禁止 breakaway，并在关闭时回收
+它拥有的进程。停止必须同时经过真实管道关闭和 Job 内进程数归零，才能执行排队请求；
+多层 shell 回归还以保留的原生句柄验证两个固定身份的子进程退出。此边界不需要 CI 环境
+开关，保留原来的 5 秒测试要求及排队期间的取消、超时和终止错误。只读资源发现直接启动
+真实 shell，避免每个 stat/read 再增加 Node 父进程。原生 Win32 调用通过测试依赖 Koffi
+加载；缺库、身份不匹配、分配失败或 Job 未清空都会让门禁失败。
 
 Desktop 的插件端口分配、停止及再次执行，以及远程资源发现共同验证这条跨包接线。
 在 `apps/desktop` 中运行以下命令；这些测试不使用真实 SSH 主机或用户状态目录：

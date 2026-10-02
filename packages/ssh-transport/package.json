@@ -25,6 +25,7 @@
 		"build": "tsgo -p tsconfig.build.json"
 	},
 	"devDependencies": {
+		"koffi": "2.16.2",
 		"@types/node": "^22.10.5",
 		"typescript": "^5.9.2"
 	}

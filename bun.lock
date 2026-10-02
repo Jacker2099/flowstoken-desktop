@@ -1121,6 +1121,7 @@
       "version": "0.0.1",
       "devDependencies": {
         "@types/node": "^22.10.5",
+        "koffi": "2.16.2",
         "typescript": "^5.9.2",
       },
     },

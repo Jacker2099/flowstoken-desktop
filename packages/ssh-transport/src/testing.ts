@@ -71,8 +71,16 @@ export function createLoopbackSshConnection(
 	);
 }
 
+export {
+	acceptOwnedJobReady,
+	stopOwnedJob,
+	waitForOwnedJobEmpty,
+	waitForOwnedSupervisorLaunch,
+} from "./testing-owned-job.js";
 // These helpers are exported only by the testing entry point, never the production entry point.
 export { createShellLoopbackRunner, terminateWindowsLoopbackTree } from "./testing-process-runner.js";
+export { createOwnedJobFromNativeCallsForTests } from "./testing-windows-job.js";
+export { openOwnedWindowsProcessWitness } from "./testing-windows-witness.js";
 
 export function loopbackShellBinary(): string {
 	return process.platform === "win32" ? gitBashTools().bash : "/bin/sh";
