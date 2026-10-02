@@ -16,4 +16,12 @@ for _ in $(seq 1 100); do
 done
 [[ -s "$info" ]] || { echo "interop harness did not start"; cat "$log"; exit 1; }
 cd "$root/apps/mobile/client-apple/VettaKit"
-VETTA_INTEROP_FILE="$info" swift test --no-parallel --filter InteropTests
+if VETTA_INTEROP_FILE="$info" swift test --no-parallel --filter InteropTests; then
+	exit 0
+else
+	test_status=$?
+	echo "interop fixture diagnostics:" >&2
+	# Keep connection states/errors while withholding ephemeral pairing credentials.
+	sed -E '/\[interop\] invite /d; s/(verification code )[0-9]{6}/\1[redacted]/g' "$log" >&2
+	exit "$test_status"
+fi

@@ -115,7 +115,8 @@ public final class PairingFlow {
 				mobileSecret: invite.mobileSecret,
 				lanEndpoints: invite.lanEndpoints,
 				relayBaseUrl: invite.relayBaseUrl,
-				lastEventSequence: 0,
+				// The validation socket may already have acknowledged this pairing's events.
+				lastEventSequence: connection.snapshot.lastEventSequence,
 				pairedAt: now,
 				lastSeenAt: now
 			)

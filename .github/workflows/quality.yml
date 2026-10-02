@@ -103,6 +103,15 @@ jobs:
       - name: Install dependencies
         uses: ./.github/actions/install-bun-dependencies
 
+      - name: Set up Go for native SSH contracts
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/ssh-helper/go.mod
+          cache-dependency-path: apps/ssh-helper/go.sum
+
+      - name: Verify native Go prerequisite
+        run: go version
+
       - name: Prepare Windows remote contract dependencies
         if: runner.os == 'Windows'
         shell: bash

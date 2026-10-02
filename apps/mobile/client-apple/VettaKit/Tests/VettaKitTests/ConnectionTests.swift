@@ -272,6 +272,46 @@ import Testing
 		if case .paired = phases.last {} else { Issue.record("expected paired") }
 	}
 
+	@Test func carriesTheAcknowledgedInviteCursorIntoTheLastingLinkWithoutLosingDesktopStatus() async throws {
+		let desktop = FakeDesktop()
+		desktop.onHello = { _ in .approve }
+		desktop.onRequest = { connection, request in
+			try? connection.respond(requestId: request.requestId, success: true, payload: ["sessions": []])
+		}
+		let transport: TransportFactory = { url, options in
+			let opened = desktop.createTransport(url, options)
+			let acceptor = desktop.acceptors.last!
+			acceptor.onEvent { event in
+				if case .state(.online) = event {
+					try? acceptor.emitEvent(.deviceStatus, payload: [
+						"deviceName": "MacBook Pro",
+						"lanEndpoints": ["192.168.1.20:43117"],
+						"relayEnabled": false,
+						"runningSessionCount": 0,
+					])
+				}
+			}
+			return opened
+		}
+		let identity = makeLink()
+		let record = try #require(await PairingFlow(options: PairingFlowOptions(
+			link: identity,
+			createTransport: transport,
+			onPhase: { _ in }
+		)).pairWithCode(invite(desktop)))
+		#expect(record.lastEventSequence == 1)
+		// The server has discarded the event acknowledged by the validation socket.
+		desktop.journal.acknowledge(1)
+		#expect(desktop.journal.replay(after: 0) == nil)
+		let manager = ChannelManager(options: ChannelManagerOptions(desktop: record, link: identity, createTransport: transport))
+		defer { manager.stop() }
+		manager.start()
+		#expect(await eventually(timeoutMs: 5_000) { manager.snapshot.desktop?.deviceName == "MacBook Pro" })
+		#expect(manager.snapshot.isUsable && manager.snapshot.channel == .lan)
+		let sessions = try await manager.request(.sessionList)
+		#expect(sessions?["sessions"] != nil)
+	}
+
 	@Test func fallsBackToTheRelayFromTheInvite() async throws {
 		let desktop = FakeDesktop()
 		desktop.onHello = { _ in .approve }
@@ -343,7 +383,7 @@ import Testing
 		#expect(desktop.opened.first == "ws://192.168.1.20:43117/v2/lan/pair")
 		approve?.resume(returning: true)
 		#expect(await eventually { acceptor.state == .online })
-		try acceptor.emitEvent(.devicePaired, payload: [
+		let pairedEvent = try acceptor.emitEvent(.devicePaired, payload: [
 			"pairingId": "pair-manual-1234567890",
 			"mobileSecret": "secret-manual-1234567890",
 			"desktopName": "MacBook Pro",
@@ -356,6 +396,8 @@ import Testing
 		#expect(record?.mobileSecret == "secret-manual-1234567890")
 		#expect(record?.lanEndpoints == ["192.168.1.20:43117", "10.0.0.5:43117"])
 		#expect(record?.relayBaseUrl == "wss://relay.example")
+		#expect(pairedEvent.sequence > 0)
+		#expect(record?.lastEventSequence == 0, "the manual approval stream belongs to a different journal than the new pairing identity")
 		if case .paired = phases.last {} else { Issue.record("expected paired") }
 	}
 

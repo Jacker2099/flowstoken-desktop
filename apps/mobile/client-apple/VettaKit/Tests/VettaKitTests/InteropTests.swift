@@ -38,7 +38,8 @@ struct InteropTests {
 		#expect(await eventually(timeoutMs: 5_000) { model.online })
 		#expect(model.link.channel == .lan)
 		#expect(await eventually(timeoutMs: 5_000) { model.sessions.contains { $0.id == "s-report" } })
-		#expect(await eventually(timeoutMs: 5_000) { model.link.desktop?.deviceName == "Interop MacBook Pro" })
+		let hasDesktopStatus = await eventually(timeoutMs: 5_000) { model.link.desktop?.deviceName == "Interop MacBook Pro" }
+		#expect(hasDesktopStatus, "link=\(model.link.status.rawValue), channel=\(model.link.channel?.rawValue ?? "none"), desktop=\(model.link.desktop?.deviceName ?? "missing")")
 
 		await model.openSession("s-report")
 		let history = model.transcript("s-report")

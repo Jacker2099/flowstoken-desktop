@@ -1,10 +1,12 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, posix, win32 } from "node:path";
 import type { RuntimeToolResult } from "@vetta/runtime-core/kernel";
+import { resolveExistingPath } from "@vetta/runtime-node/coding";
 import type { CodingToolRegistration } from "@vetta/runtime-tools";
 import { SshConnection, type SshHost, type SshProcessResult, type SshProcessRunner } from "@vetta/ssh-transport";
 import { describe, expect, it } from "vitest";
+import { createLocalReadPathMatcher, createSshReadPathHost } from "./ssh-file-operations.js";
 import { createSshCodingToolEnvironment } from "./ssh-tool-environment.js";
 
 const host: SshHost = { id: "build-01", label: "构建机", target: "build", source: "manual" };
@@ -140,6 +142,31 @@ function textOf(result: RuntimeToolResult): string {
 		.trim();
 }
 
+describe("Windows 本机附件的纯路径归属合同（实际文件读取另由宿主测试验收）", () => {
+	const roots = ["C:\\managed artifacts", "\\\\host\\share\\managed"];
+	it.each([
+		["drive", "C:\\managed artifacts\\reference.md", true],
+		["drive mixed separators", "c:/managed artifacts\\reference.md", true],
+		["UNC", "\\\\host\\share\\managed\\reference.md", true],
+		["UNC mixed separators", "\\\\host/share\\managed/reference.md", true],
+		["similar prefix", "C:\\managed artifacts-other\\reference.md", false],
+		["parent traversal", "C:/managed artifacts\\..\\outside.md", false],
+		["UNC parent traversal", "\\\\host/share\\managed\\../private/reference.md", false],
+		["different drive", "D:\\managed artifacts\\reference.md", false],
+		["drive relative", "C:managed artifacts\\reference.md", false],
+	])("%s respects the read-root boundary before remote cwd resolution", (_name, path, allowed) => {
+		const matcher = createLocalReadPathMatcher(roots, win32);
+		const host = createSshReadPathHost(roots, win32);
+		expect(matcher(path)).toBe(allowed);
+		const resolved = resolveExistingPath(path, REMOTE_CWD, host);
+		expect(resolved).toBe(allowed ? path : posix.resolve(REMOTE_CWD, path));
+		expect(matcher(resolved)).toBe(allowed);
+		expect(resolveExistingPath("main.ts", REMOTE_CWD, host)).toBe("/srv/app/main.ts");
+		expect(resolveExistingPath("/srv/app/main.ts", REMOTE_CWD, host)).toBe("/srv/app/main.ts");
+		expect(resolveExistingPath("~/reference.md", REMOTE_CWD, host)).toBe("~/reference.md");
+	});
+});
+
 describe("远程项目的 Agent 工具", () => {
 	it("read 读到的是远端文件内容", async () => {
 		const files = new Map([["/srv/app/main.ts", "export const answer = 42;\n"]]);
@@ -239,12 +266,50 @@ describe("远程项目的 Agent 工具", () => {
 		});
 		const read = toolByName(environment.registrations, "read");
 
-		expect(textOf(await execute(read, { path: join(localRoot, "reference.md") }))).toContain("LOCAL SKILL REFERENCE");
-		// 挂载目录之外的路径照旧读远端，哪怕本机恰好也有同名文件。
-		expect(textOf(await execute(read, { path: "/srv/app/main.ts" }))).toContain("remote");
-		// 用 `..` 跳出挂载目录不算在其下。
-		await expect(execute(read, { path: join(localRoot, "../outside.md") })).rejects.toThrow();
-		expect(fake.commands.some((command) => command.includes("reference.md"))).toBe(false);
+		try {
+			expect(textOf(await execute(read, { path: join(localRoot, "reference.md") }))).toContain(
+				"LOCAL SKILL REFERENCE",
+			);
+			// 挂载目录之外的路径照旧读远端，哪怕本机恰好也有同名文件。
+			expect(textOf(await execute(read, { path: "/srv/app/main.ts" }))).toContain("remote");
+			// 用 `..` 跳出挂载目录不算在其下。
+			await expect(execute(read, { path: join(localRoot, "../outside.md") })).rejects.toThrow();
+			expect(fake.commands.some((command) => command.includes("reference.md"))).toBe(false);
+		} finally {
+			environment.dispose();
+			rmSync(localRoot, { recursive: true, force: true });
+		}
+	});
+
+	it("本机附件白名单只开放 read，write 与 edit 仍操作远端且不改本机文件", async () => {
+		const localRoot = mkdtempSync(join(tmpdir(), "vetta-local-read-only-"));
+		const localFile = join(localRoot, "reference.md");
+		writeFileSync(localFile, "LOCAL REFERENCE\n");
+		const remoteFile = posix.isAbsolute(localFile) ? localFile : posix.resolve(REMOTE_CWD, localFile);
+		const files = new Map([[remoteFile, "REMOTE REFERENCE\n"]]);
+		const fake = createFakeHost(files);
+		const environment = createSshCodingToolEnvironment({
+			connection: fake.connection,
+			remoteCwd: REMOTE_CWD,
+			editPathPolicy: { getRejectionReason: () => undefined },
+			writePathPolicy: { getRejectionReason: () => undefined },
+			localReadRoots: [localRoot],
+		});
+		try {
+			await execute(toolByName(environment.registrations, "write"), { path: localFile, content: "REMOTE WRITE\n" });
+			expect(files.get(remoteFile)).toBe("REMOTE WRITE\n");
+			await execute(toolByName(environment.registrations, "edit"), {
+				path: localFile,
+				oldText: "REMOTE WRITE",
+				newText: "REMOTE EDIT",
+			});
+			expect(files.get(remoteFile)).toBe("REMOTE EDIT\n");
+			expect(readFileSync(localFile, "utf8")).toBe("LOCAL REFERENCE\n");
+			expect(fake.commands.some((command) => command.includes("reference.md"))).toBe(true);
+		} finally {
+			environment.dispose();
+			rmSync(localRoot, { recursive: true, force: true });
+		}
 	});
 
 	it("bash 超时后告诉模型超时了多久，并保留已经产生的输出", async () => {

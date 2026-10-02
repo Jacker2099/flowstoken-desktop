@@ -604,6 +604,9 @@ describe("CI unit test coverage", () => {
 		expect(workflow).toContain("command -v rg >/dev/null || { sudo apt-get update");
 		expect(workflow).toContain("Get-Command rg -ErrorAction SilentlyContinue");
 		expect(workflow).toContain("node scripts/flowstoken/test-pr-source.mjs");
+		expect(workflow).toContain("uses: actions/setup-go@v5");
+		expect(workflow).toContain("go-version-file: apps/ssh-helper/go.mod");
+		expect(workflow).toContain("run: go version");
 	});
 
 	it("cancels stale PR runs while preserving release validation, fails the matrix fast and uses the exact-lockfile cache", () => {

@@ -27,6 +27,7 @@ import {
 	createSshEditOperations,
 	createSshLsOperations,
 	createSshReadOperations,
+	createSshReadPathHost,
 	createSshWriteOperations,
 	type SshReadOperationsOptions,
 } from "./ssh-file-operations.js";
@@ -79,8 +80,9 @@ export interface SshCodingToolEnvironment {
 export function createSshCodingToolEnvironment(options: SshCodingToolEnvironmentOptions): SshCodingToolEnvironment {
 	const { connection, remoteCwd } = options;
 	const createLocal = options.createLocalFileToolRegistrations;
-	// 路径一律按远端解析：不探本机磁盘、不按本机家目录展开 `~`、固定 POSIX 语义。
+	// 不探本机磁盘、不按本机家目录展开 `~`。只有 read 白名单的 native 绝对路径保持本机身份。
 	const pathHost = remotePosixToolPathHost;
+	const readPathHost = createSshReadPathHost(options.localReadRoots);
 	const lsOperations = createSshLsOperations(connection);
 	const isDirectory = async (absolutePath: string): Promise<boolean> =>
 		(await lsOperations.stat(absolutePath)).isDirectory();
@@ -109,7 +111,7 @@ export function createSshCodingToolEnvironment(options: SshCodingToolEnvironment
 		registrations: [
 			createReadToolRegistration(remoteCwd, {
 				...options.readOptions,
-				pathHost,
+				pathHost: readPathHost,
 				operations: createSshReadOperations(connection, { localReadRoots: options.localReadRoots }),
 			}),
 			createEditToolRegistration(remoteCwd, {

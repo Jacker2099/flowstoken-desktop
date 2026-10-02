@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { access, readFile } from "node:fs/promises";
-import { isAbsolute, relative, resolve } from "node:path";
+import nativePath from "node:path";
 import {
 	detectSupportedImageMimeTypeFromBuffer,
 	detectSupportedImageMimeTypeFromFile,
@@ -9,6 +9,9 @@ import {
 	IMAGE_SNIFF_BYTES,
 	type LsOperations,
 	type ReadOperations,
+	remotePosixToolPathHost,
+	type ToolPathHost,
+	type ToolPathSyntax,
 	type WriteOperations,
 } from "@vetta/runtime-node/coding";
 import { type SshConnection, SshHelperClosedError, SshHelperError } from "@vetta/ssh-transport";
@@ -40,18 +43,40 @@ export interface SshReadOperationsOptions {
 	readonly localReadRoots?: readonly string[];
 }
 
+export function createLocalReadPathMatcher(
+	localReadRoots: readonly string[] = [],
+	paths: Pick<ToolPathSyntax, "isAbsolute" | "relative" | "resolve"> = nativePath,
+): (path: string) => boolean {
+	const roots = localReadRoots.filter((root) => paths.isAbsolute(root)).map((root) => paths.resolve(root));
+	return (path) =>
+		paths.isAbsolute(path) &&
+		roots.some((root) => {
+			const offset = paths.relative(root, paths.resolve(path));
+			return offset === "" || (!offset.startsWith("..") && !paths.isAbsolute(offset));
+		});
+}
+
+/** Keep only whitelisted native read paths absolute before the POSIX tool resolver can prefix the remote cwd. */
+export function createSshReadPathHost(
+	localReadRoots: readonly string[] = [],
+	paths: Pick<ToolPathSyntax, "isAbsolute" | "relative" | "resolve"> = nativePath,
+): ToolPathHost {
+	const isLocal = createLocalReadPathMatcher(localReadRoots, paths);
+	return {
+		...remotePosixToolPathHost,
+		path: {
+			...remotePosixToolPathHost.path,
+			isAbsolute: (path) => isLocal(path) || remotePosixToolPathHost.path.isAbsolute(path),
+		},
+	};
+}
+
 export function createSshReadOperations(
 	connection: SshConnection,
 	options: SshReadOperationsOptions = {},
 ): ReadOperations {
 	const expand: Expand = (path) => connection.expandRemotePath(path);
-	const roots = (options.localReadRoots ?? []).filter((root) => isAbsolute(root)).map((root) => resolve(root));
-	const isLocal = (path: string): boolean =>
-		isAbsolute(path) &&
-		roots.some((root) => {
-			const offset = relative(root, resolve(path));
-			return offset === "" || (!offset.startsWith("..") && !isAbsolute(offset));
-		});
+	const isLocal = createLocalReadPathMatcher(options.localReadRoots);
 	return {
 		readFile: async (absolutePath) =>
 			isLocal(absolutePath)

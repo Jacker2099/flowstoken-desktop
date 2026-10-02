@@ -2,6 +2,12 @@
 
 SSH 项目的 Coding Agent 工具环境。远端文件、命令和搜索作用于 POSIX 服务端；客户端的工具构造和路径归属合同适用于 Windows、macOS 和 Linux。
 
+远程会话的 `read` 可读取宿主明确列入 `localReadRoots` 的本机附件。原生绝对路径先按宿主
+语法核对目录归属，再交给工具解析，因此 Windows drive/UNC 路径不会被拼到远端 cwd 下。
+白名单外、相似目录前缀、`..` 越界和 drive-relative 路径仍按远端 POSIX 语义处理；
+`write`、`edit` 和搜索始终作用在远端。纯 Win32 路径语法回归不代替 Windows 上实际本机
+文件读取的验收。
+
 ## 测试平台合同
 
 `bun run test` 保持静态 Bun/Vitest 入口，由 `vitest.config.ts` 按实际宿主选择明确文件清单。新增、遗漏、重复或未分类测试，以及未知宿主平台，都直接失败。没有用 helper 缺失时跳过来获得绿色结果。
