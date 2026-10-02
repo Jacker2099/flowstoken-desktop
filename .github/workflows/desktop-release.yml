@@ -125,6 +125,10 @@ jobs:
         with:
           fetch-depth: 0
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
       - name: Resolve original source and immutable recovery plan
         id: identity
         env:
@@ -250,6 +254,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      # Resolve the controller action before a recovery checks out an older source tree.
+      - name: Prepare native client test tools
+        uses: ./.github/actions/setup-native-ssh-test-tools
 
       - name: Stage recovery controller outside the source checkout
         if: needs.prepare.outputs.recovery == 'true'
@@ -398,6 +406,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
 
       - name: Prepare Windows sandbox
         if: runner.os == 'Windows' && needs.prepare.outputs.recovery != 'true'
@@ -707,6 +719,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
       - name: Stage recovery controller outside the source checkout
         if: needs.prepare.outputs.recovery == 'true'
         shell: bash
@@ -892,6 +908,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
         with:
@@ -958,6 +978,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
         with:
@@ -1008,6 +1032,9 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
         with:
@@ -1032,6 +1059,9 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
         with:

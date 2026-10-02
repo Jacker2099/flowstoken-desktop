@@ -1,8 +1,9 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import {
 	chmodSync,
 	mkdirSync,
 	mkdtempSync,
+	readdirSync,
 	readFileSync,
 	readlinkSync,
 	rmSync,
@@ -12,7 +13,7 @@ import {
 } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const workflow = readFileSync(join(import.meta.dirname, "../../.github/workflows/desktop-release.yml"), "utf8");
@@ -32,6 +33,123 @@ const packagedJobs = parse(packagedWorkflow).jobs;
 function actionSteps(name) {
 	return parse(readFileSync(join(import.meta.dirname, `../../.github/actions/${name}/action.yml`), "utf8")).runs.steps;
 }
+
+describe("Native SSH test tool prerequisites", () => {
+	const sourceRunner = /test-(?:flowstoken-related|release-source|pr-source)\.mjs/;
+	const workflowDirectory = join(import.meta.dirname, "../../.github/workflows");
+	const callerWorkflows = readdirSync(workflowDirectory).filter((name) => {
+		if (!/\.ya?ml$/.test(name)) return false;
+		const config = parse(readFileSync(join(workflowDirectory, name), "utf8"));
+		return Object.values(config.jobs).some((job) => job.steps?.some((step) => sourceRunner.test(step.run ?? "")));
+	});
+	it.each(callerWorkflows)("prepares tools before every actual source-test caller in %s", (name) => {
+		const config = parse(readFileSync(join(workflowDirectory, name), "utf8"));
+		let callers = 0;
+		for (const job of Object.values(config.jobs)) {
+			const steps = job.steps ?? [];
+			const indices = steps.flatMap((step, index) => (sourceRunner.test(step.run ?? "") ? [index] : []));
+			if (!indices.length) continue;
+			callers += indices.length;
+			const setup = steps.findIndex((step) => step.uses === "./.github/actions/setup-native-ssh-test-tools");
+			expect(setup).toBeGreaterThanOrEqual(0);
+			for (const index of indices) expect(setup).toBeLessThan(index);
+			const install = steps.findIndex((step) => step.uses === "./.github/actions/install-bun-dependencies");
+			if (install >= 0) expect(setup).toBeLessThan(install);
+			const originalCheckout = steps.findIndex((step) => step.with?.ref?.includes("source"));
+			if (originalCheckout >= 0) expect(setup).toBeLessThan(originalCheckout);
+			if (name === "flowstoken-upstream-sync.yml") expect(steps[setup].if).toBe(steps[indices[0]].if);
+		}
+		expect(callers).toBeGreaterThan(0);
+	});
+
+	it("declares supported Node before every dependency or release script consumer", () => {
+		for (const name of callerWorkflows) {
+			for (const job of Object.values(parse(readFileSync(join(workflowDirectory, name), "utf8")).jobs)) {
+				const steps = job.steps ?? [];
+				const consumer = steps.findIndex(
+					(step) => /\bnode\s/.test(step.run ?? "") || step.uses === "./.github/actions/install-bun-dependencies",
+				);
+				if (consumer < 0) continue;
+				const setup = steps.findIndex(
+					(step) =>
+						step.uses === "actions/setup-node@v4" ||
+						step.uses === "./.github/actions/setup-native-ssh-test-tools",
+				);
+				expect(setup).toBeGreaterThanOrEqual(0);
+				const node =
+					steps[setup].uses === "actions/setup-node@v4"
+						? steps[setup]
+						: actionSteps("setup-native-ssh-test-tools").find((step) => step.uses === "actions/setup-node@v4");
+				expect(Number(node.with["node-version"])).toBeGreaterThanOrEqual(20);
+				expect(setup).toBeLessThan(consumer);
+			}
+		}
+	});
+
+	it.each(["go", "rg", "fd"])("a genuinely absent %s fails before starting a native test", (missing) => {
+		const directory = mkdtempSync(join(tmpdir(), "missing-ssh-tool-"));
+		try {
+			for (const tool of ["go", "rg", "fdfind"]) {
+				if (tool === missing || (missing === "fd" && tool === "fdfind")) continue;
+				writeFileSync(join(directory, tool), "#!/bin/sh\nprintf 'tool version\\n'\n");
+				chmodSync(join(directory, tool), 0o755);
+			}
+			const bash =
+				process.platform === "win32"
+					? execFileSync("where.exe", ["bash"], { encoding: "utf8" }).trim().split(/\r?\n/)[0]
+					: "/bin/bash";
+			const run = actionSteps("setup-native-ssh-test-tools").find(
+				(step) => step.name === "Verify native POSIX tools",
+			).run;
+			const result = spawnSync(bash, ["-e", "-c", run], {
+				env: { ...process.env, PATH: directory },
+				encoding: "utf8",
+			});
+			expect(result.status).not.toBe(0);
+			expect(result.stderr).toContain(missing === "fd" ? "fdfind" : missing);
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
+	});
+
+	it.each(["go", "rg", "fd", null])("strict POSIX executable version preflight: %s", (broken) => {
+		const directory = mkdtempSync(join(tmpdir(), "native-ssh-tools-"));
+		try {
+			const trace = join(directory, "trace");
+			// Use Debian's actual alternative name; no fd alias is required by the native contract.
+			for (const tool of ["go", "rg", "fd", "fdfind"]) {
+				writeFileSync(
+					join(directory, tool),
+					`#!/bin/sh\nprintf '%s:%s\\n' '${tool}' "$*" >> "$TOOL_TRACE"\n${tool === "fd" || broken === tool || (broken === "fd" && tool === "fdfind") ? "exit 23" : "printf 'tool version\\n'"}\n`,
+				);
+				chmodSync(join(directory, tool), 0o755);
+			}
+			const run = actionSteps("setup-native-ssh-test-tools").find(
+				(step) => step.name === "Verify native POSIX tools",
+			).run;
+			const result = spawnSync("bash", ["-e", "-c", run], {
+				env: {
+					...process.env,
+					PATH: `${directory}${delimiter}${process.env.PATH}`,
+					TOOL_TRACE: trace.replaceAll("\\", "/"),
+				},
+				encoding: "utf8",
+			});
+			if (broken) expect(result.status).not.toBe(0);
+			else {
+				expect(result.status).toBe(0);
+				expect(readFileSync(trace, "utf8").trim().split("\n")).toEqual([
+					"go:version",
+					"rg:--version",
+					"fd:--version",
+					"fdfind:--version",
+				]);
+			}
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
+	});
+});
 
 describe("Desktop release workflow contracts", () => {
 	it("saves successful dependency downloads before later build or verification failures", () => {
