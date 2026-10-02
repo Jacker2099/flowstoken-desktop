@@ -1,3 +1,4 @@
+import type { ChildProcess } from "node:child_process";
 import { execFile, spawn } from "node:child_process";
 import { once } from "node:events";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -20,6 +21,104 @@ function scriptArgument(): string {
 	const command = buildKillCommand(token);
 	expect(command.startsWith("/bin/sh -c ")).toBe(true);
 	return command.slice("/bin/sh -c ".length);
+}
+
+function controllerErrorDetails(error: unknown): Record<string, unknown> {
+	if (!error || typeof error !== "object") return { error: String(error) };
+	return Object.fromEntries(
+		["code", "killed", "signal", "stdout", "stderr"].map((key) => [
+			key,
+			key in error ? Reflect.get(error, key) : undefined,
+		]),
+	);
+}
+
+interface PollingProbe {
+	readonly child: ChildProcess;
+	readonly pid: number;
+	readonly error: unknown;
+	readonly log: string;
+	readonly ended: () => boolean;
+	readonly termReceived: () => boolean;
+}
+
+async function withPollingProbe(
+	kind: "p" | "g",
+	{ legacy, ignoreTerm, coldStart }: { legacy: boolean; ignoreTerm: boolean; coldStart: boolean },
+	assertResult: (probe: PollingProbe) => Promise<void>,
+): Promise<void> {
+	const directory = await mkdtemp(join(tmpdir(), "vetta-polling-test-"));
+	const log = join(directory, "signals");
+	const child = spawn(
+		process.execPath,
+		[
+			"-e",
+			`process.on("SIGTERM", () => process.send({ type: "term" }, () => { if (!${ignoreTerm}) process.exit(0); }));
+setInterval(() => {}, 1000);
+process.send({ type: "ready" });`,
+		],
+		{ detached: true, stdio: ["ignore", "ignore", "ignore", "ipc"] },
+	);
+	const exited = once(child, "exit");
+	let ended = false;
+	let termReceived = false;
+	child.once("exit", () => {
+		ended = true;
+	});
+	child.on("message", (message: unknown) => {
+		if (message && typeof message === "object" && "type" in message && message.type === "term") termReceived = true;
+	});
+	try {
+		await once(child, "message");
+		const pid = child.pid;
+		if (pid === undefined || pid <= 1) throw new Error("Test process has no safe PID");
+		const pgid = Number((await execute("ps", ["-o", "pgid=", "-p", String(pid)])).stdout.trim());
+		expect(pgid).toBe(pid);
+		await writeFile(join(directory, token), `${kind}${pid}`);
+		const current = scriptArgument();
+		const argument = legacy
+			? current.replace("[ $i -lt 10 ]", "[ $i -lt 20 ]").replace("do sleep 0.2;", "do sleep 0.1;")
+			: current;
+		if (legacy) expect(argument).not.toBe(current);
+		// Same-shell recorders forward actual signals. Extra startup cost is a real owned sleep,
+		// confined to this fixture; the controller's original four-second deadline is unchanged.
+		const script = `set -- ${argument}
+kill() { printf 'kill:%s\\n' "$*" >> "$SIGNAL_LOG"; command kill "$@"; }
+pkill() { printf 'pkill:%s\\n' "$*" >> "$SIGNAL_LOG"; command pkill "$@"; }
+sleep() {
+  printf 'sleep:%s\\n' "$*" >> "$SIGNAL_LOG"
+  ${coldStart ? "command sleep 0.11" : ":"}
+  command sleep "$@"
+  printf 'slept:%s\\n' "$*" >> "$SIGNAL_LOG"
+}
+eval "$1"`;
+		let error: unknown;
+		try {
+			await execute(shell, ["-c", script], {
+				env: { ...process.env, TMPDIR: directory, SIGNAL_LOG: log },
+				timeout: 4000,
+			});
+		} catch (caught) {
+			error = caught;
+		}
+		const recorded = await readFile(log, "utf8");
+		if (error)
+			console.info("[owned-polling-controller]", {
+				...controllerErrorDetails(error),
+				pid,
+				termReceived,
+				ended,
+				targetExit: child.exitCode,
+				targetSignal: child.signalCode,
+			});
+		// These observations precede finally; its safety cleanup cannot masquerade as production KILL.
+		await assertResult({ child, pid, error, log: recorded, ended: () => ended, termReceived: () => termReceived });
+		await expect(readFile(join(directory, token))).rejects.toMatchObject({ code: "ENOENT" });
+	} finally {
+		if (!ended) child.kill("SIGKILL");
+		await exited;
+		await rm(directory, { recursive: true, force: true });
+	}
 }
 
 describe(`remote process signals through ${shell}`, () => {
@@ -56,10 +155,22 @@ process.send({ type: "ready" });
 					// No negative signal is sent unless the newly spawned process owns this isolated group.
 					expect(pgid).toBe(pid);
 					await writeFile(join(directory, token), `${kind}${pid}`);
-					await execute(shell, ["-c", `${shell} -c ${scriptArgument()}`], {
-						env: { ...process.env, TMPDIR: directory },
-						timeout: 4000,
-					});
+					try {
+						await execute(shell, ["-c", `${shell} -c ${scriptArgument()}`], {
+							env: { ...process.env, TMPDIR: directory },
+							timeout: 4000,
+						});
+					} catch (error) {
+						console.error("[owned-signal-controller]", {
+							...controllerErrorDetails(error),
+							pid,
+							termReceived,
+							ended,
+							targetExit: child.exitCode,
+							targetSignal: child.signalCode,
+						});
+						throw error;
+					}
 					await vi.waitFor(
 						() => {
 							expect(termReceived).toBe(true);
@@ -78,6 +189,52 @@ process.send({ type: "ready" });
 				}
 			});
 		}
+	}
+
+	for (const kind of ["p", "g"] as const) {
+		it(`${kind} legacy polling times out before KILL when each real sleep has startup cost`, async () => {
+			await withPollingProbe(kind, { legacy: true, ignoreTerm: true, coldStart: true }, async (probe) => {
+				expect(probe.error).toMatchObject({ killed: true, signal: "SIGTERM", code: null });
+				expect(probe.termReceived()).toBe(true);
+				expect(probe.ended()).toBe(false);
+				expect(probe.child.signalCode).toBeNull();
+				expect(() => process.kill(probe.pid, 0)).not.toThrow();
+				expect(probe.log).not.toContain("kill:-s KILL");
+				expect(probe.log.split("\n").filter((line) => line.startsWith("slept:")).length).toBeLessThan(20);
+			});
+		});
+
+		it(`${kind} preserves the two-second grace and reaches real KILL within the original deadline despite startup cost`, async () => {
+			await withPollingProbe(kind, { legacy: false, ignoreTerm: true, coldStart: true }, async (probe) => {
+				expect(probe.error).toBeUndefined();
+				await vi.waitFor(() => expect(probe.ended()).toBe(true), { timeout: 500 });
+				expect(probe.termReceived()).toBe(true);
+				expect(probe.child.signalCode).toBe("SIGKILL");
+				expect(probe.log).toContain("kill:-s KILL");
+				const delays = probe.log
+					.split("\n")
+					.filter((line) => line.startsWith("slept:"))
+					.map((line) => Number(line.slice("slept:".length)));
+				expect(delays).toHaveLength(10);
+				expect(delays.reduce((total, delay) => total + delay, 0)).toBeCloseTo(2);
+			});
+		});
+
+		it(`${kind} detects ordinary TERM completion using at most 200ms polling intervals`, async () => {
+			await withPollingProbe(kind, { legacy: false, ignoreTerm: false, coldStart: false }, async (probe) => {
+				expect(probe.error).toBeUndefined();
+				await vi.waitFor(() => expect(probe.ended()).toBe(true), { timeout: 500 });
+				expect(probe.termReceived()).toBe(true);
+				expect(probe.child.exitCode).toBe(0);
+				expect(probe.child.signalCode).toBeNull();
+				const delays = probe.log
+					.split("\n")
+					.filter((line) => line.startsWith("slept:"))
+					.map((line) => Number(line.slice("slept:".length)));
+				expect(delays.length).toBeLessThan(10);
+				for (const delay of delays) expect(delay).toBeLessThanOrEqual(0.2);
+			});
+		});
 	}
 
 	it("invalid markers send no signals, while an already-exited valid target remains a successful no-op", async () => {

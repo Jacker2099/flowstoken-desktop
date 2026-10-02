@@ -516,11 +516,13 @@ describe("affected package selection", () => {
 	});
 
 	it.each([
+		"packages/ssh-transport/src/remote-command.ts",
+		"packages/ssh-transport/src/remote-command-signals.test.ts",
 		"packages/ssh-transport/src/node-process-runner.test.ts",
 		"packages/ssh-transport/src/testing-process-runner.ts",
 		"packages/ssh-transport/src/testing-readonly-endpoint.ts",
 		"packages/ssh-transport/src/testing.ts",
-	])("maps SSH fixture %s to real host consumers and strict native validation", (source) => {
+	])("maps reviewed SSH source %s to real host consumers and strict native validation", (source) => {
 		const plan = createImpactTestPlan([source]);
 		expect(plan.selectionErrors).toEqual([]);
 		expect(plan.sshPlatform).toBe(true);
@@ -716,10 +718,11 @@ describe("CI unit test coverage", () => {
 		expect(workflow.indexOf(name)).toBeLessThan(workflow.indexOf("- name: Test complete release client workspaces"));
 	});
 
-	it("cancels stale PR runs while preserving release validation, fails the matrix fast and uses the exact-lockfile cache", () => {
+	it("cancels stale PR runs while completing every source OS and preserving release validation and exact-lockfile cache", () => {
 		// biome-ignore lint/suspicious/noTemplateCurlyInString: this is a literal GitHub Actions expression.
 		expect(workflow).toContain("cancel-in-progress: ${{ !inputs.source_sha }}");
-		expect(workflow).toContain("fail-fast: true");
+		const unitMatrix = workflow.split("  unit-tests:")[1]?.split("\n    steps:")[0];
+		expect(unitMatrix?.match(/^\s+fail-fast:[^\r\n]+/gm)?.map((line) => line.trim())).toEqual(["fail-fast: false"]);
 		expect(workflow.match(/uses: actions\/checkout@v7/g)).toHaveLength(3);
 		// biome-ignore lint/suspicious/noTemplateCurlyInString: this is a literal GitHub Actions expression.
 		expect(workflow).toContain("ref: ${{ inputs.source_sha }}");

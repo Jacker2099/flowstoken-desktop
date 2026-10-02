@@ -96,7 +96,8 @@ export function buildKillCommand(processToken: string): string {
 		// dash 仅在 -s 的显式信号形式下正确处理 --；负进程组号必须仍作为操作数。
 		`kill -s TERM -- "$t" 2>/dev/null || exit 0`,
 		"i=0",
-		`while [ $i -lt 20 ] && kill -s 0 -- "$t" 2>/dev/null; do sleep 0.1; i=$((i+1)); done`,
+		// Keep the two-second grace while reducing external sleep starts on a busy remote host.
+		`while [ $i -lt 10 ] && kill -s 0 -- "$t" 2>/dev/null; do sleep 0.2; i=$((i+1)); done`,
 		`if [ "$k" != g ]; then pkill -KILL -P "$n" 2>/dev/null; fi`,
 		`kill -s KILL -- "$t" 2>/dev/null`,
 		"exit 0",
