@@ -515,11 +515,13 @@ describe("affected package selection", () => {
 		]);
 	});
 
-	it("maps the two reviewed SSH fixture helpers to real host consumers and strict native platform validation", () => {
-		const plan = createImpactTestPlan([
-			"packages/ssh-transport/src/testing-process-runner.ts",
-			"packages/ssh-transport/src/testing.ts",
-		]);
+	it.each([
+		"packages/ssh-transport/src/node-process-runner.test.ts",
+		"packages/ssh-transport/src/testing-process-runner.ts",
+		"packages/ssh-transport/src/testing-readonly-endpoint.ts",
+		"packages/ssh-transport/src/testing.ts",
+	])("maps SSH fixture %s to real host consumers and strict native validation", (source) => {
+		const plan = createImpactTestPlan([source]);
 		expect(plan.selectionErrors).toEqual([]);
 		expect(plan.sshPlatform).toBe(true);
 		expect(plan.targets).toMatchObject([
@@ -529,6 +531,9 @@ describe("affected package selection", () => {
 				relatedSources: [],
 			},
 		]);
+	});
+
+	it("keeps unknown SSH fixture sources fail-closed", () => {
 		const unknown = createImpactTestPlan(["packages/ssh-transport/src/unmapped-source.ts"], () => true);
 		expect(unknown.selectionErrors).toEqual([
 			"ssh-transport has no targeted test entry point for packages/ssh-transport/src/unmapped-source.ts",
@@ -539,7 +544,7 @@ describe("affected package selection", () => {
 	it.each(["linux", "darwin", "win32"])(
 		"executes the mapped consumers before strict SSH on %s and propagates failure",
 		(platform) => {
-			const plan = createImpactTestPlan(["packages/ssh-transport/src/testing.ts"]);
+			const plan = createImpactTestPlan(["packages/ssh-transport/src/testing-readonly-endpoint.ts"]);
 			const events = [];
 			const code = runImpactTestPlan(plan, {
 				platform,

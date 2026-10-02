@@ -56,7 +56,9 @@ const TEAM_MODEL_SELECTOR_TEST = "src/renderer/domains/conversation/connectors/t
 const desktopTests = (...tests) => ({ workspaceKey: "desktop", tests });
 const sshFixtureTests = { ...desktopTests(...WINDOWS_DESKTOP_SSH_SUITES), sshPlatform: true };
 const EXPLICIT_SOURCE_TESTS = new Map([
+	["packages/ssh-transport/src/node-process-runner.test.ts", sshFixtureTests],
 	["packages/ssh-transport/src/testing-process-runner.ts", sshFixtureTests],
+	["packages/ssh-transport/src/testing-readonly-endpoint.ts", sshFixtureTests],
 	["packages/ssh-transport/src/testing.ts", sshFixtureTests],
 	[
 		"apps/desktop/src/renderer/domains/conversation/connectors/team/TeamModelSelector.tsx",
