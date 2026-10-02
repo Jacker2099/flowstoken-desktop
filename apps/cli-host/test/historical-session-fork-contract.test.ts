@@ -64,7 +64,7 @@ describe("Historical session fork contract", () => {
 				allReferencesResolved: true,
 				branchSummaryFromId: "legacy-custom-hidden",
 				eventCount: 4,
-				operationCount: 1,
+				operationTypes: ["custom.append:vetta.assistant_turn_timing", "active_leaf.set"],
 				parentEntryId: forkEntryId,
 				reason: "fork",
 				sourceEntryId: forkEntryId,
@@ -97,11 +97,25 @@ describe("Historical session fork contract", () => {
 			expect(server.requests[2]?.rawBody).not.toContain("Source response.");
 			expect(await readFile(legacy.sourcePath, "utf8")).toBe(legacy.content);
 			expect(await readFile(parentPath, "utf8")).toBe(parentContentBeforeFork);
-			expect(describeForkFile(await readFile(forkPath, "utf8"))).toMatchObject({
+			const persistedFork = await readFile(forkPath, "utf8");
+			expect(describeForkFile(persistedFork)).toMatchObject({
 				allParentsResolved: true,
 				allReferencesResolved: true,
 				eventCount: 12,
 			});
+			const missingTiming = persistedFork
+				.split(/\r?\n/u)
+				.filter((line) => {
+					if (!line.trim()) return false;
+					const record: unknown = JSON.parse(line);
+					return (
+						!isObject(record) ||
+						!isObject(record.command) ||
+						record.command.customType !== "vetta.assistant_turn_timing"
+					);
+				})
+				.join("\n");
+			expect(describeForkFile(missingTiming).allParentsResolved).toBe(false);
 		} finally {
 			await process.close();
 			await fixture.dispose();
@@ -142,6 +156,7 @@ function describeForkFile(content: string): {
 	readonly branchSummaryFromId: unknown;
 	readonly eventCount: number;
 	readonly operationCount: number;
+	readonly operationTypes: readonly string[];
 	readonly parentEntryId: unknown;
 	readonly reason: unknown;
 	readonly seedText: string;
@@ -170,6 +185,7 @@ function describeForkFile(content: string): {
 	let allParentsResolved = true;
 	for (const entry of entries) {
 		if (!isObject(entry) || typeof entry.id !== "string") continue;
+		if (knownEntryIds.has(entry.id)) allParentsResolved = false;
 		if (typeof entry.parentId === "string" && !knownEntryIds.has(entry.parentId)) allParentsResolved = false;
 		knownEntryIds.add(entry.id);
 	}
@@ -182,12 +198,14 @@ function describeForkFile(content: string): {
 	});
 	let eventCount = 0;
 	let operationCount = 0;
+	const operationTypes: string[] = [];
 	for (const record of records) {
 		if (!isObject(record)) continue;
 		if (record.recordType === "conversation.event") {
 			eventCount += 1;
 			const documentEntry = record.documentEntry;
 			if (!isObject(documentEntry) || typeof documentEntry.id !== "string") continue;
+			if (knownEntryIds.has(documentEntry.id)) allParentsResolved = false;
 			if (typeof documentEntry.parentId === "string" && !knownEntryIds.has(documentEntry.parentId)) {
 				allParentsResolved = false;
 			}
@@ -198,8 +216,20 @@ function describeForkFile(content: string): {
 		if (record.recordType !== "conversation.document.operation") continue;
 		operationCount += 1;
 		const command = record.command;
-		if (!isObject(command) || command.type !== "active_leaf.set") continue;
-		activeLeafId = command.entryId;
+		if (!isObject(command)) throw new Error("Expected a persisted document operation command");
+		if (command.type === "custom.append" && typeof command.entryId === "string") {
+			if (typeof activeLeafId === "string" && !knownEntryIds.has(activeLeafId)) allParentsResolved = false;
+			if (knownEntryIds.has(command.entryId)) allParentsResolved = false;
+			knownEntryIds.add(command.entryId);
+			activeLeafId = command.entryId;
+			operationTypes.push(`custom.append:${String(command.customType)}`);
+		} else if (command.type === "active_leaf.set") {
+			if (command.entryId !== null && typeof command.entryId !== "string")
+				throw new Error("Invalid active leaf operation target");
+			if (typeof command.entryId === "string" && !knownEntryIds.has(command.entryId)) allParentsResolved = false;
+			activeLeafId = command.entryId;
+			operationTypes.push("active_leaf.set");
+		} else throw new Error(`Unsupported persisted document operation: ${String(command.type)}`);
 	}
 	return {
 		activeLeafId,
@@ -208,6 +238,7 @@ function describeForkFile(content: string): {
 		branchSummaryFromId: entries.find((entry) => isObject(entry) && entry.type === "branch_summary")?.fromId,
 		eventCount,
 		operationCount,
+		operationTypes,
 		parentEntryId: header.parentEntryId,
 		reason: seed.reason,
 		seedText: JSON.stringify(seed.entries),

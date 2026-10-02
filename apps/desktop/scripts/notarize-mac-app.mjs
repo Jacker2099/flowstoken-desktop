@@ -226,7 +226,8 @@ export async function notarizeMacApp({
 	delay = (milliseconds) => new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds)),
 	waitTimeoutMs = DEFAULT_WAIT_MS,
 	pollIntervalMs = DEFAULT_POLL_MS,
-	maxNetworkRetries = 4,
+	// 退避上限 60s：约 40 次重试可扛过 ~35 分钟的 runner 断网，而不是 75 秒就放弃（0.6.3 的 -1009 教训）。
+	maxNetworkRetries = 40,
 	platform = process.platform,
 }) {
 	if (platform !== "darwin") throw new Error("[notarize-mac] Notarization requires macOS");

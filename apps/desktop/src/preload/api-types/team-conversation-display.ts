@@ -26,6 +26,14 @@ export interface DesktopTeamToolExecutionProjection {
 	readonly phases?: readonly { readonly label: string; readonly atMs: number }[];
 }
 
+/** Persisted member turn timing attached to its published Team message. */
+export interface DesktopTeamMessageTimingProjection {
+	readonly messageId: string;
+	readonly startedAt: number;
+	readonly endedAt: number;
+	readonly durationMs: number;
+}
+
 /** UI read model assembled by Desktop Main; never persisted or sent to Agent context. */
 export interface DesktopTeamConversationDisplay {
 	readonly memberConversations: readonly DesktopTeamMemberConversation[];
@@ -33,6 +41,8 @@ export interface DesktopTeamConversationDisplay {
 	readonly workingMemberIds?: readonly string[];
 	/** Tool evidence recovered from a member publication and keyed to its public message. */
 	readonly toolExecutions?: readonly DesktopTeamToolExecutionProjection[];
+	/** Turn timing recovered from a member publication and keyed to its public message. */
+	readonly messageTimings?: readonly DesktopTeamMessageTimingProjection[];
 	readonly executionMode?: SessionExecutionMode;
 	/** Context usage for every member runtime, keyed by runtime session identity. */
 	readonly contextUsages?: readonly {
@@ -61,6 +71,16 @@ export interface DesktopTeamContextUsageEvent {
 	readonly runtimeSessionId: string;
 	readonly contextUsage: NonNullable<DesktopTeamConversationDisplay["contextUsage"]>;
 	readonly isCompacting?: boolean;
+}
+
+/** Authoritative boundary: the member Runtime has started the provider request. */
+export interface DesktopTeamModelRequestStartedEvent {
+	readonly type: "desktop.team-model-request-started";
+	readonly conversationId: string;
+	readonly memberId: string;
+	readonly runtimeSessionId: string;
+	readonly requestId: string;
+	readonly timestamp: number;
 }
 
 /** Desktop display delta adapted from a neutral Runtime execution observation. */
@@ -123,4 +143,5 @@ export type DesktopTeamSessionStreamEvent =
 	  })
 	| Exclude<TeamSessionStreamEvent, { type: "session-snapshot" | "session-updated" }>
 	| DesktopTeamToolExecutionEvent
-	| DesktopTeamContextUsageEvent;
+	| DesktopTeamContextUsageEvent
+	| DesktopTeamModelRequestStartedEvent;

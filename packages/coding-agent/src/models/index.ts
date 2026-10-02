@@ -9,6 +9,7 @@ export type {
 export {
 	type CreateCodingAgentModelRuntimeOptions,
 	createCodingAgentModelRuntime,
+	type ModelAccessLease,
 } from "./model-runtime.js";
 export { type ParsedModelResult, parseModelPattern } from "./selection/model-pattern.js";
 export { resolveModelScope, type ScopedModel } from "./selection/model-scope.js";

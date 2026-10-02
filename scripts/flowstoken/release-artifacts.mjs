@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 import { basename, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
+import { assertReleaseSourceEligible } from "./release-source-policy.mjs";
 
 import {
 	assertRecoveryCheckpoint,
@@ -38,6 +39,7 @@ async function inspectFiles(directory, names) {
 }
 
 export async function checkpoint(directory, identity, verify = false, recoveryPlan) {
+	assertReleaseSourceEligible(identity.sha);
 	const names = (await readdir(directory)).filter(
 		(name) => downloadable.test(name) && !name.startsWith("._") && !name.startsWith("default._"),
 	);

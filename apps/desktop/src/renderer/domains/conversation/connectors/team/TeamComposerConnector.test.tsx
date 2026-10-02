@@ -67,6 +67,7 @@ function actions(): TeamChatActions {
 
 function model(overrides: Partial<TeamChatViewModel> = {}): TeamChatViewModel {
 	return {
+		teamId: "team-1",
 		feedKey: "session-1",
 		title: "Team",
 		status: "ready",
@@ -107,13 +108,20 @@ function model(overrides: Partial<TeamChatViewModel> = {}): TeamChatViewModel {
 describe("TeamComposerConnector", () => {
 	it("composes Team state and commands with the existing InputBar contract", () => {
 		const viewActions = actions();
-		render(<TeamComposerConnector model={model()} actions={viewActions} />);
+		render(
+			<TeamComposerConnector
+				model={model()}
+				actions={viewActions}
+				workSurface={null}
+				contentWidth="message"
+			/>,
+		);
 		const inputModel = captured.model;
 		expect(inputModel).toBeDefined();
 		if (!inputModel) throw new Error("InputBar model was not captured");
 
 		expect(inputModel.editor).toMatchObject({ value: "Ship it", history: ["Previous"] });
-		expect(inputModel.modelSelector.updateActiveSession).toBe(false);
+		expect(inputModel.contentWidth).toBe("message");
 		expect(inputModel.editor.persistenceId).toBe("session-1");
 		expect(inputModel.commands).toBeDefined();
 		expect(inputModel.commands?.onOpen).toBeTypeOf("function");
@@ -152,7 +160,6 @@ describe("TeamComposerConnector", () => {
 			expect(inputModel.actions.handleEnter()).toBe(true);
 			inputModel.routing?.participants[0]?.onSelect();
 			inputModel.actions.removeImage("C:/workspace/brief.md");
-			inputModel.modelSelector.scope?.onModelSelect("anthropic/claude", "medium");
 		});
 
 		expect(viewActions.send).toHaveBeenCalledOnce();
@@ -165,12 +172,11 @@ describe("TeamComposerConnector", () => {
 			"@research",
 		);
 		expect(viewActions.removeAttachment).toHaveBeenCalledWith("C:/workspace/brief.md");
-		expect(viewActions.selectModel).toHaveBeenCalledWith("anthropic/claude", "medium");
 	});
 
 	it("maps Ctrl+Enter to steer while keeping Enter as followUp", () => {
 		const viewActions = actions();
-		render(<TeamComposerConnector model={model()} actions={viewActions} />);
+		render(<TeamComposerConnector model={model()} actions={viewActions} workSurface={null} />);
 		const inputModel = captured.model;
 		if (!inputModel) throw new Error("InputBar model was not captured");
 		act(() => {
@@ -181,7 +187,7 @@ describe("TeamComposerConnector", () => {
 
 	it("does not submit the same Ctrl+Enter KeyboardEvent twice", () => {
 		const viewActions = actions();
-		render(<TeamComposerConnector model={model()} actions={viewActions} />);
+		render(<TeamComposerConnector model={model()} actions={viewActions} workSurface={null} />);
 		const inputModel = captured.model;
 		if (!inputModel) throw new Error("InputBar model was not captured");
 		const event = new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true });
@@ -213,7 +219,7 @@ describe("TeamComposerConnector", () => {
 			},
 		});
 		const wrapper = ({ children }: { children: ReactNode }) => <Provider store={store}>{children}</Provider>;
-		render(<TeamComposerConnector model={model()} actions={actions()} />, { wrapper });
+		render(<TeamComposerConnector model={model()} actions={actions()} workSurface={null} />, { wrapper });
 
 		expect(captured.model?.pendingQuestion).toMatchObject({
 			requestId: "question-request",
@@ -224,7 +230,12 @@ describe("TeamComposerConnector", () => {
 	it("reports command panel expansion so the page can fade the hero away", () => {
 		const onExpandedChange = vi.fn();
 		render(
-			<TeamComposerConnector model={model()} actions={actions()} onExpandedChange={onExpandedChange} />,
+			<TeamComposerConnector
+				model={model()}
+				actions={actions()}
+				workSurface={null}
+				onExpandedChange={onExpandedChange}
+			/>,
 		);
 
 		act(() => captured.model?.commands?.onTriggerChange({ kind: "slash", query: "", length: 1 }));
@@ -244,6 +255,7 @@ describe("TeamComposerConnector", () => {
 					],
 				})}
 				actions={actions()}
+				workSurface={null}
 			/>,
 		);
 

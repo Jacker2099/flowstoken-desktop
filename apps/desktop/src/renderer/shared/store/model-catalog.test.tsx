@@ -96,4 +96,34 @@ describe("模型目录与选择器的同步", () => {
 		await waitFor(() => expect(models.fetchRemote).toHaveBeenCalled());
 		expect(result.current.options).toEqual([]);
 	});
+
+	it("a late local read cannot overwrite a direct BYOK settings edit", async () => {
+		let resolve!: (value: typeof LOCAL_CONFIG) => void;
+		models.get.mockImplementationOnce(
+			() =>
+				new Promise((done) => {
+					resolve = done;
+				}),
+		);
+		const pending = modelCatalog.revalidate({ sources: ["local"] });
+		getDefaultStore().set(localModelsConfigAtom, { providers: { personal: { models: [{ id: "custom" }] } } });
+		resolve(LOCAL_CONFIG);
+		await pending;
+		expect(getDefaultStore().get(localModelsConfigAtom)?.providers.personal.models?.[0].id).toBe("custom");
+	});
+
+	it("a late remote read cannot repopulate providers cleared on logout", async () => {
+		let resolve!: (value: { providers: RemoteCatalog }) => void;
+		models.fetchRemote.mockImplementationOnce(
+			() =>
+				new Promise((done) => {
+					resolve = done;
+				}),
+		);
+		const pending = modelCatalog.revalidate({ sources: ["remote"] });
+		getDefaultStore().set(remoteProvidersAtom, {});
+		resolve({ providers: remoteCatalog("retired") });
+		await pending;
+		expect(getDefaultStore().get(remoteProvidersAtom)).toEqual({});
+	});
 });

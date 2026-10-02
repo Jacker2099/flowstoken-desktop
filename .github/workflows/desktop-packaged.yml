@@ -22,7 +22,7 @@ jobs:
         run: node apps/desktop/scripts/verify-packaging-contract.mjs
 
       - name: Test packaging contract helpers
-        run: node --test apps/desktop/scripts/desktop-packaging-layout.test.mjs apps/desktop/scripts/electron-e2e-service-options.node-test.mjs apps/desktop/scripts/packaged-e2e-binary.node-test.mjs apps/desktop/scripts/packaged-native-dependencies.test.mjs
+        run: node --test apps/desktop/scripts/desktop-packaging-layout.test.mjs apps/desktop/scripts/electron-e2e-service-options.node-test.mjs apps/desktop/scripts/packaged-e2e-binary.node-test.mjs apps/desktop/scripts/packaged-native-dependencies.test.mjs apps/desktop/scripts/windows-sandbox-packaging.test.mjs
 
   scope:
     name: Detect packaged smoke scope
@@ -51,6 +51,10 @@ jobs:
     if: needs.scope.outputs.packaged-smoke == 'true'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
+    env:
+      VETTA_PRODUCT_NAME: FlowsToken
+      VETTA_EXECUTABLE_NAME: FlowsToken
+      VETTA_APP_ID: com.flowstoken.desktop
     strategy:
       fail-fast: false
       matrix:
@@ -67,6 +71,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Prepare Windows sandbox
+        if: runner.os == 'Windows'
+        uses: ./.github/actions/prepare-windows-sandbox
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
@@ -109,14 +117,15 @@ jobs:
         working-directory: apps/desktop
         env:
           VETTA_E2E_PACKAGED: "1"
+          VETTA_E2E_UPDATE_FEED: "1"
           VETTA_BUILD_ENV: test
           VETTA_SPEECH_INPUT_ENABLED: "false"
         shell: bash
         run: |
           if [[ "${{ matrix.platform }}" == "Linux" ]]; then
-            xvfb-run --auto-servernum bun run test:e2e:packaged
+            xvfb-run --auto-servernum bun run test:e2e
           else
-            bun run test:e2e:packaged
+            bun run test:e2e
           fi
 
       - name: Upload packaged diagnostics on failure

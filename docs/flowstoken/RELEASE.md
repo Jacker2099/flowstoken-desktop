@@ -34,7 +34,15 @@ gh workflow run flowstoken-release.yml -R Jacker2099/flowstoken-desktop --ref ma
 5. 四个恢复 build 仍实际运行平台安装包校验；随后四个平台 verify/packaged/updater E2E 全部执行。质量检查、四 build、四 verify 共九项必须成功，失败归档不会被改名为正式 checkpoint。
 6. 候选恢复运行全部通过后，从**同一 controller 提交**运行 `flowstoken-release`，填写同一组恢复输入，并把 `reuse_build_run` 设为这次新恢复运行 ID。普通 `reuse_build_run` 不放宽同提交限制，不能填写原失败运行来跳过检查。
 
+恢复 E2E 将应用和验证工具分别固定：应用始终来自原 source SHA 的 checkpoint；WDIO 配置、完整 E2E specs/fixture 和两个运行 helper 来自新的 controller SHA。验证时在 `RUNNER_TEMP` 创建独立 `verification-harness`，复制原 source 的 `package.json` 作为原版本及严格 `test:e2e` 入口元数据，依赖链接到原 source 按锁文件安装的 `node_modules`，通过 `VETTA_E2E_PACKAGED_ROOT` 指向原产物。恢复时不会把新测试覆盖进旧源码，也不会重写原 package.json、修改应用或重新签名。
+
+每个平台另外上传 `verification-tooling-*` 诊断 manifest，记录 controller/tooling SHA、原 source SHA、版本、运行/attempt、测试文件摘要和原依赖锁摘要。其 `phase=prepared` 只表示验证工具已准备，不能作为测试成功证明；真实 verify/E2E 失败仍阻断发布，原 build checkpoint 不被该工具清单改写。这样可以修正测试工具本身的缺陷后，继续严格验证同一个原签名应用。
+
 新 checkpoint / `release-manifest.json` 同时记录 source SHA、controller SHA、新 run/attempt、原 run/attempt、artifact ID/digest、Mac 原 submission 及 Accepted/stapled/CDHash 证明。发布前再次核对来源和原标签。原运行始终保持它真实的失败状态。
+
+恢复 E2E 使用独立 `RUNNER_TEMP/verification-harness`：WDIO 配置、specs/fixture 和两个 helper 来自 controller SHA；版本及严格测试入口元数据复制自原 source 的 package.json，依赖链接到原 source 按锁文件安装的 node_modules。`VETTA_E2E_PACKAGED_ROOT` 仍指向该任务恢复的原应用产物；新测试不会覆盖进旧 source，恢复时只核对原 package.json 版本，不重写它。
+
+每个平台另上传 `verification-tooling-*` 诊断 manifest，记录 controller/tooling SHA、source SHA、原版本、测试文件摘要、原依赖锁摘要以及运行/attempt。`phase=prepared` 只表示工具准备完成，不能代替真实 verify/E2E 的成功结论，也不会改写原 build checkpoint。准备 helper 不修改受追踪 source 或原签名 Mac.app；Linux E2E 保留已有行为，允许清理该 verify job 工作副本中的 package-type marker，AppImage 测试使用临时副本，正式发布资产仍来自不可变 build checkpoint。
 
 CI 使用 Python 3.12 预检查归档成员，真正解包采用平台原生 tar：macOS 使用 `/usr/bin/tar` 合并 AppleDouble 元数据；Windows 固定 `%SystemRoot%\System32\tar.exe`，避免 Git GNU tar 错读盘符路径。本地运行恢复归档测试需提供 Python 3.12+，例如 `RECOVERY_PYTHON=python3.12 node --test branding/flowstoken/tests/recovery-ci.test.mjs`。
 

@@ -27,6 +27,17 @@
 	"search": {
 		"placeholder": "Search abilities"
 	},
+	"filter": {
+		"trigger": "Filter",
+		"type": "Type",
+		"provenance": "Source",
+		"provenanceOption": {
+			"all": "All",
+			"market": "Marketplace",
+			"builtin": "Built-in"
+		},
+		"reset": "Clear filters"
+	},
 	"status": {
 		"setupRequired": "Setup required",
 		"disabled": "Disabled",
@@ -92,7 +103,8 @@
 		"noMatchHint": "Try a different keyword",
 		"discover": "No public abilities yet",
 		"mine": "No personal abilities added yet",
-		"hint": "Refresh later, or import one via \"Add ability\" above"
+		"hint": "Refresh later, or import one via \"Add ability\" above",
+		"filteredHint": "Nothing matches the current filters. Try clearing them"
 	},
 	"error": {
 		"sourcesFailed": "GitHub sources failed to sync (cached content remains available): {{names}}",
@@ -377,6 +389,7 @@
 			"agentSessionWrite": "Changes current Agent session state or content and may affect later conversation behavior.",
 			"agentCommandRun": "Runs Agent commands declared and requested by the plugin through the host.",
 			"agentCommandSpawn": "Starts background processes that can keep running until the plugin or host stops them.",
+			"terminalRun": "Lets the plugin open a terminal in the session's bottom panel and type commands for you. Commands run as you inside the project folder, and everything they do is shown in the terminal.",
 			"captureOffscreen": "Loads content in a hidden page environment and captures an image of it.",
 			"browserRead": "Creates host-managed browser sessions, visits manifest-approved sites, and reads text, structure, and screenshots from signed-in pages.",
 			"browserOpen": "Opens an approved webpage in Vetta's built-in browser without reading or interacting with the page.",
@@ -439,6 +452,7 @@
 		"agentSessionWrite": "Modify agent session",
 		"agentCommandRun": "Run agent commands",
 		"agentCommandSpawn": "Run long-lived background processes",
+		"terminalRun": "Run commands in a terminal",
 		"captureOffscreen": "Capture pages in hidden offscreen windows",
 		"browserRead": "Read browser pages",
 		"browserOpen": "Open a built-in browser page",

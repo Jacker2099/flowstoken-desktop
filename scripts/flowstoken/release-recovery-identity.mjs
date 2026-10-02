@@ -1,7 +1,14 @@
 import { createHash } from "node:crypto";
+import { assertReleaseSourceEligible } from "./release-source-policy.mjs";
 
 export const RECOVERY_PLATFORMS = ["linux", "windows", "macos-arm64", "macos-x64"];
 export const SOURCE_CONFIG_FILES = ["apps/desktop/package.json", "apps/desktop/scripts/prepare-pack.js", "bun.lock"];
+export const VERIFICATION_HARNESS_INPUTS = [
+	"apps/desktop/wdio.conf.ts",
+	"apps/desktop/e2e",
+	"apps/desktop/scripts/electron-e2e-service-options.mjs",
+	"apps/desktop/scripts/packaged-e2e-binary.mjs",
+];
 const shaPattern = /^[a-f\d]{40}$/;
 const digestPattern = /^sha256:[a-f\d]{64}$/;
 const uuidPattern = /^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/i;
@@ -44,6 +51,7 @@ export function validateRecoveryPlan(plan, expected = {}) {
 		!/^\d+\.\d+\.\d+$/.test(source.version)
 	)
 		throw new Error("Invalid original source identity");
+	assertReleaseSourceEligible(source.sha);
 	if (source.run === plan.recoveryRun) throw new Error("Recovery must use a different run from its original source");
 	for (const [key, value] of Object.entries(expected)) {
 		const actual = key.startsWith("source.") ? source[key.slice(7)] : plan[key];
@@ -191,6 +199,7 @@ export function assertRecoveryCheckpoint(saved, expected, plan) {
 }
 
 export function validateManifestLineage(identity) {
+	assertReleaseSourceEligible(identity.sha);
 	const controllerSha = identity.controllerSha ?? identity.sha;
 	if (!identity.recoveryPlan) {
 		if (identity.sha !== controllerSha || identity.lineage?.some((entry) => entry.recovery))

@@ -132,9 +132,6 @@ export class StatelessAgentCoreTurnEngine implements TurnEnginePort {
 					input: request.input,
 				})
 			: undefined;
-		const streamFn: StreamFn = lifecycle
-			? wrapStreamFnWithModelCallLifecycle(lifecycle, this.options.streamFn)
-			: (this.options.streamFn ?? streamSimple);
 		const resolveFrame = async (modelCallIndex: number, frameMessages: readonly Message[], signal: AbortSignal) => {
 			const frame =
 				initialFrame ??
@@ -212,6 +209,16 @@ export class StatelessAgentCoreTurnEngine implements TurnEnginePort {
 					: this.options.resolveApiKey
 						? await this.options.resolveApiKey(model)
 						: await this.options.getApiKey?.(model.provider);
+				const providerStream: StreamFn = async (...args) => {
+					// Context reports and credentials are preparation; only this boundary
+					// means the provider is being invoked. Preserve lifecycle event order.
+					await eventDelivery.waitForCurrentDelivery(signal);
+					signal.throwIfAborted();
+					await request.reportObservation?.({ type: "model.request.started", modelCallIndex, source: "agent" });
+					signal.throwIfAborted();
+					return (this.options.streamFn ?? streamSimple)(...args);
+				};
+				const streamFn = lifecycle ? wrapStreamFnWithModelCallLifecycle(lifecycle, providerStream) : providerStream;
 				const response = await (async () => {
 					try {
 						const source = await streamFn(model, context, {
@@ -364,10 +371,18 @@ export class StatelessAgentCoreTurnEngine implements TurnEnginePort {
 					queueing: true,
 					modelBinding: request.modelBinding,
 				});
-				return prepared.action === "continue" ? prepared.input : undefined;
+				if (prepared.action !== "continue") return undefined;
+				return input.request.messageId && !prepared.input.messageId
+					? { ...prepared.input, messageId: input.request.messageId }
+					: prepared.input;
 			}),
 		);
 		const admittedInputs = preparedInputs.filter((input): input is QueuedSessionInput => input !== undefined);
+		for (const input of admittedInputs) {
+			if (input.message && input.messageId) {
+				identities.set(input.message, { kind: "message", message: input.message, messageId: input.messageId });
+			}
+		}
 		const context = admittedInputs.flatMap((input) => input.context ?? []);
 		if (context.length > 0) await request.appendQueuedContext?.(context);
 		return admittedInputs.flatMap((input) => {
@@ -431,7 +446,7 @@ class AgentEventProjector {
 					type: "message",
 					message: event.message,
 					...(event.failure ? { failure: runtimeFailureFromAI(event.failure) } : {}),
-					...messageOrigin(event.message, this.identities),
+					...messageIdentity(event.message, this.identities),
 				},
 			];
 		}
@@ -450,7 +465,7 @@ class AgentEventProjector {
 							{
 								type: "message",
 								message: event.message,
-								...messageOrigin(event.message, this.identities),
+								...messageIdentity(event.message, this.identities),
 							} as const,
 						]),
 			];
@@ -810,17 +825,21 @@ function hydrateMessages(
 ): Message[] {
 	return envelopes.map((envelope) => {
 		const message = envelopeToPlaceholder(envelope);
-		if (envelope.kind !== "message" || envelope.origin) identities.set(message, envelope);
+		if (envelope.kind !== "message" || envelope.origin || envelope.messageId) identities.set(message, envelope);
 		return message;
 	});
 }
 
-function messageOrigin(
+function messageIdentity(
 	message: Message,
 	identities: WeakMap<object, RuntimeMessageEnvelope>,
-): Pick<Extract<TurnEngineEvent, { readonly type: "message" }>, "origin"> | Record<never, never> {
+): Pick<Extract<TurnEngineEvent, { readonly type: "message" }>, "messageId" | "origin"> {
 	const envelope = identities.get(message);
-	return envelope?.kind === "message" && envelope.origin ? { origin: envelope.origin } : {};
+	if (envelope?.kind !== "message") return {};
+	return {
+		...(envelope.messageId ? { messageId: envelope.messageId } : {}),
+		...(envelope.origin ? { origin: envelope.origin } : {}),
+	};
 }
 
 function isContinuationMessage(

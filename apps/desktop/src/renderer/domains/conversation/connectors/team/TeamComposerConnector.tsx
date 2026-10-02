@@ -1,3 +1,5 @@
+import { InputBarToolbar } from "../../components/input-bar/InputBarToolbarActions";
+import { TeamModelSelector } from "./TeamModelSelector";
 import { type InputSegment, isImagePath, parseInputSegments } from "@shared/lib/input-tokens";
 import { pathBasename, toVettaFileUrl } from "@shared/lib/utils";
 import { filePreviewAtom } from "@shared/store/file-preview-atoms";
@@ -6,10 +8,12 @@ import { useAtom, useSetAtom } from "jotai";
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { publishPluginTurnStart } from "@domains/plugins/runtime/plugin-host-bridge";
+import { useBottomPanelPills } from "@domains/bottom-panel/hooks/useBottomPanelPills";
+import type { WorkSurfaceScope } from "@shared/workspace/work-surface";
 import { InputBar } from "../../components/InputBar";
 import { ContextRing } from "../../components/ContextRing";
 import type { AtPanelItem } from "../../components/AtPanel";
-import type { InputBarModel } from "../../components/input-bar/types";
+import type { InputBarContentWidth, InputBarModel } from "../../components/input-bar/types";
 import { useInputBarContextMenuModel } from "../../components/input-bar/useInputBarContextMenuModel";
 import { useInputBarTriggerModel } from "../../components/input-bar/useInputBarTriggerModel";
 import { useSpeechInput } from "../../components/input-bar/useSpeechInput";
@@ -67,10 +71,14 @@ function projectTeamDraftSegments(model: TeamComposerViewModel): readonly InputS
 export function TeamComposerConnector({
 	model,
 	actions,
+	workSurface,
 	onExpandedChange,
+	contentWidth = "compact",
 }: {
 	readonly model: TeamComposerViewModel;
 	readonly actions: TeamChatActions;
+	readonly workSurface: WorkSurfaceScope | null;
+	readonly contentWidth?: InputBarContentWidth;
 	/** 命令区展开回调：新会话页据此淡出 hero，否则 hero（含装饰件）会压住向上生长的面板。 */
 	readonly onExpandedChange?: (expanded: boolean) => void;
 }): JSX.Element {
@@ -217,19 +225,7 @@ export function TeamComposerConnector({
 				})),
 		[model.attachments, t],
 	);
-	const modelScope = useMemo(
-		() => ({
-			modelKey: model.modelKey,
-			...(model.reasoning ? { reasoning: model.reasoning } : {}),
-			onModelSelect: (modelKey: string, defaultReasoning?: string) => {
-				void actions.selectModel(modelKey, defaultReasoning);
-			},
-			onReasoningSelect: (reasoning: string) => {
-				void actions.selectReasoning(reasoning);
-			},
-		}),
-		[actions, model.modelKey, model.reasoning],
-	);
+	const bottomPanelPills = useBottomPanelPills(workSurface);
 
 	const detectDragKind = useCallback((event: DragEvent): "files" | "internal" | null => {
 		const types = Array.from(event.dataTransfer.types);
@@ -313,6 +309,7 @@ export function TeamComposerConnector({
 	}, [actions, model.labels, model.leaderMemberId, model.members, t]);
 
 	const inputModel: InputBarModel = {
+		contentWidth,
 		dropZone: {
 			dragKind,
 			enabled: model.editorEnabled,
@@ -353,8 +350,7 @@ export function TeamComposerConnector({
 			: [],
 		drawerActiveTab: null,
 		todo: null,
-		// Team 的输入栏不挂底部面板：面板绑在普通会话的 cwd 上。
-		bottomPanelPills: null,
+		bottomPanelPills,
 		speechInput,
 		hasPromptAttachment: Boolean(promptAttachment),
 		promptAttachmentIcon: promptAttachment?.icon,
@@ -390,7 +386,6 @@ export function TeamComposerConnector({
 			onOpen: trigger.handlePlusClick,
 		},
 		routing,
-		modelSelector: { updateActiveSession: false, scope: modelScope },
 		leadingTools: [{ kind: "execution-mode", model: executionModeModel }],
 		trailingTools: contextRingModel ? [{ kind: "context-usage", model: contextRingModel, render: renderContextRing }] : [],
 		sendBehavior: "direct",
@@ -430,5 +425,11 @@ export function TeamComposerConnector({
 		},
 	};
 
-	return <InputBar model={inputModel} />;
+	return (
+		<InputBar model={inputModel}>
+			<InputBarToolbar model={inputModel}>
+				<TeamModelSelector key={`${model.teamId}:${model.activeSessionId ?? "new"}`} model={model} actions={actions} />
+			</InputBarToolbar>
+		</InputBar>
+	);
 }

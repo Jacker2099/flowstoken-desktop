@@ -1,7 +1,9 @@
+import { InputBarToolbar } from "./InputBarToolbarActions";
+import { InputBarModelAction } from "./InputBarToolbar";
 import { useBottomPanelPills } from "@domains/bottom-panel/hooks/useBottomPanelPills";
 import { pathBasename, toVettaFileUrl } from "@shared/lib/utils";
 import type { InputBarContextMenuViewProps } from "@vetta-org/theme-ui/chat";
-import { memo, useMemo } from "react";
+import { Fragment, memo, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { InputBar } from "../InputBar";
 import type { ActiveActionCapsule } from "./ActiveActionCapsules";
@@ -23,6 +25,7 @@ import { useInputActionBarModel } from "../useInputActionBarModel";
 import { useDefaultContextRingModel } from "../../hooks/useContextRingModel";
 import { useDefaultExecutionModeSelectorModel } from "../../hooks/useExecutionModeSelectorModel";
 import { usePlanModeModel } from "../../hooks/usePlanModeModel";
+import { GoalModeDialog } from "../GoalModeDialog";
 
 /** 普通 Chat 的默认配方；每项能力由独立 source/model 提供，其他 Connector 可自行取舍。 */
 export const DefaultInputBarConnector = memo(function DefaultInputBarConnector(props: ConnectedInputBarProps): JSX.Element {
@@ -97,7 +100,7 @@ export const DefaultInputBarConnector = memo(function DefaultInputBarConnector(p
 		}
 		return items;
 	}, [props.onSendQueued, session.activeSession, queue.items.length, queue.paused, interactions.sandboxPermission, t]);
-	const bottomPanelPills = useBottomPanelPills();
+	const bottomPanelPills = useBottomPanelPills(props.workSurface ?? null);
 	const todo = useMemo<InputBarTodoModel | null>(() => todoItems.length > 0 ? { items: todoItems, onOpenPanel: trigger.openTodoPanel } : null, [todoItems, trigger.openTodoPanel]);
 	const defaultPlaceholders = useMemo(() => {
 		const raw = t("inputBar.placeholder.defaults", { returnObjects: true });
@@ -117,6 +120,7 @@ export const DefaultInputBarConnector = memo(function DefaultInputBarConnector(p
 	const contextMenu: InputBarContextMenuViewProps | null = contextMenuModel.contextMenu;
 
 	const model: InputBarModel = {
+		contentWidth: props.contentWidth ?? "compact",
 		dropZone,
 		isStreaming: session.isStreaming,
 		sendPending: props.sendPending,
@@ -165,7 +169,6 @@ export const DefaultInputBarConnector = memo(function DefaultInputBarConnector(p
 		cancelPendingEditLabel: t("messageList.interrupt.cancel"),
 		contextMenu,
 		editor: { namespace: "chat-input" },
-		modelSelector: { updateActiveSession: true },
 		leadingTools: [{ kind: "execution-mode", model: executionModeModel }],
 		trailingTools: contextUsageModel ? [{ kind: "context-usage", model: contextUsageModel }] : [],
 		sendBehavior: "queueable",
@@ -188,5 +191,14 @@ export const DefaultInputBarConnector = memo(function DefaultInputBarConnector(p
 		},
 	};
 
-	return <InputBar model={model} />;
+	return (
+		<Fragment>
+			<InputBar model={model}>
+				<InputBarToolbar model={model}>
+					<InputBarModelAction visible={!model.commands?.slashOpen} />
+				</InputBarToolbar>
+			</InputBar>
+			<GoalModeDialog />
+		</Fragment>
+	);
 });

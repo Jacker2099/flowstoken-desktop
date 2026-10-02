@@ -5,6 +5,7 @@ import { type Api, type AssistantMessage, type AssistantMessageEvent, EventStrea
 import type { CodingAgentKnowledgeRuntime, CodingAgentRuntimeComposition } from "@vetta/coding-agent/composition";
 import type { CodingAgentRuntimeModelSource } from "@vetta/coding-agent/host-services";
 import {
+	CODING_AGENT_GOAL_STATE_READ,
 	CODING_AGENT_SESSION_AGENT_MODE_SET,
 	CODING_AGENT_SESSION_PROFILE_STATE_READ,
 	CODING_AGENT_SUBAGENTS_READ,
@@ -20,6 +21,13 @@ import { FileConversationRepository } from "@vetta/runtime-node/conversation";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createCliPromptRuntimeSources } from "../src/coding-agent-resource-runtime.js";
 import { createCodingAgentRuntimeComposition } from "./fixtures/runtime-composition.js";
+
+const GOAL_CONTROL_TOOLS = ["get_goal", "create_goal", "update_goal"];
+const TOOL_CALL_REASON_SCHEMA = {
+	type: "string",
+	maxLength: 100,
+	description: "Brief user-facing reason for this tool call (max 100 chars).",
+};
 
 describe("Runtime composition contract", () => {
 	const temporaryDirectories: string[] = [];
@@ -448,13 +456,13 @@ describe("Runtime composition contract", () => {
 			},
 			{
 				sessionId: "system-prompt-session",
-				activeToolNames: ["read"],
+				activeToolNames: ["read", ...GOAL_CONTROL_TOOLS],
 				messageRoles: ["user"],
 				modelId: "recorded-model",
 			},
 			{
 				sessionId: "system-prompt-session",
-				activeToolNames: ["read"],
+				activeToolNames: ["read", ...GOAL_CONTROL_TOOLS],
 				messageRoles: ["user", "assistant", "user"],
 				modelId: "recorded-model",
 			},
@@ -481,6 +489,121 @@ describe("Runtime composition contract", () => {
 				description: registeredRead?.description,
 				inputSchema: jsonValue(registeredRead?.inputSchema),
 			},
+			{
+				name: "get_goal",
+				description: expect.stringContaining("Read the current session goal"),
+				inputSchema: {
+					type: "object",
+					properties: { description: TOOL_CALL_REASON_SCHEMA },
+					additionalProperties: false,
+				},
+			},
+			{
+				name: "create_goal",
+				description: expect.stringContaining("only when the user explicitly asks"),
+				inputSchema: {
+					type: "object",
+					properties: {
+						description: TOOL_CALL_REASON_SCHEMA,
+						objective: {
+							type: "string",
+							minLength: 1,
+							description: "The concrete objective explicitly requested by the user.",
+						},
+					},
+					required: ["objective"],
+					additionalProperties: false,
+				},
+			},
+			{
+				name: "update_goal",
+				description: expect.stringContaining("after auditing real progress"),
+				inputSchema: {
+					type: "object",
+					properties: {
+						description: TOOL_CALL_REASON_SCHEMA,
+						goal_id: { type: "string", minLength: 1 },
+						status: {
+							anyOf: [
+								{ const: "complete", type: "string" },
+								{ const: "blocked", type: "string" },
+								{ const: "paused", type: "string" },
+							],
+						},
+						detail: { type: "string" },
+					},
+					required: ["goal_id", "status"],
+					additionalProperties: false,
+				},
+			},
+		]);
+		expect(session.invokeExtensionSync(CODING_AGENT_GOAL_STATE_READ, undefined)).toBeNull();
+		expect(calls[0]?.systemPrompt).not.toContain("# Goal mode is active");
+		await session.dispose();
+	});
+
+	it("executes explicit goal controls through the model loop with instructions only while the goal is active", async () => {
+		const conversations = await createTemporaryDirectory("runtime-goal-controls-");
+		const calls: Array<{ readonly prompt: string | undefined; readonly tools: readonly string[] }> = [];
+		const objective = "Verify the explicitly requested goal controls";
+		const composition = await createCodingAgentRuntimeComposition({
+			conversationDir: conversations,
+			modelRegistry: modelRegistry(),
+			initialModel: MODEL,
+			initialThinkingLevel: "off",
+			enableSubagents: false,
+			activation: { mode: "explicit", toolNames: ["read"] },
+			streamFn: (_model, context) => {
+				const step = calls.length;
+				calls.push({ prompt: context.systemPrompt, tools: (context.tools ?? []).map(({ name }) => name) });
+				if (step === 4) return new RecordedAssistantStream(assistantMessage([{ type: "text", text: "Verified." }]));
+				const goal = session.invokeExtensionSync(CODING_AGENT_GOAL_STATE_READ, undefined);
+				const name = ["get_goal", "create_goal", "get_goal", "update_goal"][step];
+				if (!name) throw new Error("Unexpected extra goal model call");
+				if (step === 3 && !goal) throw new Error("Expected the model's newly created goal");
+				return new RecordedAssistantStream(
+					assistantMessage(
+						[
+							{
+								type: "toolCall",
+								id: `goal-control-${step}`,
+								name,
+								arguments:
+									step === 1 ? { objective } : step === 3 ? { goal_id: goal?.goalId, status: "complete" } : {},
+							},
+						],
+						"toolUse",
+					),
+				);
+			},
+		});
+		compositions.push(composition);
+		const session = await composition.createSession({ sessionId: "goal-control-session" });
+		expect(session.invokeExtensionSync(CODING_AGENT_GOAL_STATE_READ, undefined)).toBeNull();
+		const result = await session.prompt({ text: `Start goal mode for this objective: ${objective}` });
+		expect(result).toMatchObject({ status: "completed" });
+		expect(calls).toHaveLength(5);
+		for (const call of calls) expect(call.tools).toEqual(["read", ...GOAL_CONTROL_TOOLS]);
+		expect(calls[0]?.prompt).not.toContain("# Goal mode is active");
+		expect(calls[1]?.prompt).not.toContain("# Goal mode is active");
+		for (const call of calls.slice(2, 4)) {
+			expect(call.prompt).toContain(`<goal_objective>\n${objective}`);
+			expect(call.prompt).toContain("untrusted user data");
+		}
+		expect(calls[4]?.prompt).not.toContain("# Goal mode is active");
+		expect(session.invokeExtensionSync(CODING_AGENT_GOAL_STATE_READ, undefined)).toMatchObject({
+			objective,
+			status: "complete",
+			continuationCount: 0,
+		});
+		const results = (await session.readMessages()).filter((message) => message.role === "toolResult");
+		expect(results).toHaveLength(4);
+		expect(results.map(({ isError }) => isError)).toEqual([false, false, false, false]);
+		expect(results.map(({ details }) => details)).toMatchObject([
+			{ status: "none" },
+			{ status: "active", objective },
+			{ status: "active", objective },
+			{ status: "complete", objective },
 		]);
 		await session.dispose();
 	});
@@ -810,7 +933,19 @@ describe("Runtime composition contract", () => {
 			},
 			{ type: "message", message: { role: "user" } },
 			{ type: "message", message: { role: "assistant" } },
+			{
+				type: "assistant_turn_timing",
+				timing: {
+					startedAt: expect.any(Number),
+					endedAt: expect.any(Number),
+					durationMs: expect.any(Number),
+				},
+			},
 		]);
+		const timing = session.readHistory().find((entry) => entry.type === "assistant_turn_timing");
+		if (timing?.type !== "assistant_turn_timing") throw new Error("Expected persisted assistant turn timing");
+		expect(timing.timing.endedAt).toBeGreaterThanOrEqual(timing.timing.startedAt);
+		expect(timing.timing.durationMs).toBe(timing.timing.endedAt - timing.timing.startedAt);
 		await session.dispose();
 
 		const resumed = await composition.resumeSession({ sessionId: "prompt-context" });

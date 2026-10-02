@@ -1,6 +1,16 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { appendFileSync, closeSync, cpSync, existsSync, mkdirSync, openSync, readFileSync } from "node:fs";
+import {
+	appendFileSync,
+	closeSync,
+	cpSync,
+	existsSync,
+	lstatSync,
+	mkdirSync,
+	openSync,
+	readFileSync,
+	writeFileSync,
+} from "node:fs";
 import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve, win32 } from "node:path";
@@ -8,18 +18,63 @@ import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { assertTag, githubJson } from "./publish-release.mjs";
 import { checkpoint, digest } from "./release-artifacts.mjs";
+import { assertReleaseSourceEligible } from "./release-source-policy.mjs";
 import {
 	buildRecoveryPlan,
 	originalSubmissionFromLog,
 	RECOVERY_PLATFORMS,
 	recoveryPlanDigest,
 	SOURCE_CONFIG_FILES,
+	VERIFICATION_HARNESS_INPUTS,
 	validateRecoveryPlan,
 	verifyRecoveryPlanOnline,
 } from "./release-recovery-identity.mjs";
 
 function run(file, args, options = {}) {
 	return execFileSync(file, args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, ...options });
+}
+
+export function stageController(
+	destination,
+	{ sourceRoot = process.cwd(), controllerSha = process.env.GITHUB_SHA, envFile = process.env.GITHUB_ENV } = {},
+) {
+	if (
+		!/^[a-f\d]{40}$/.test(controllerSha) ||
+		run("git", ["rev-parse", "HEAD"], { cwd: sourceRoot }).trim() !== controllerSha
+	)
+		throw new Error("Controller checkout differs from the workflow commit");
+	run("git", ["diff", "--exit-code", "HEAD", "--", ...VERIFICATION_HARNESS_INPUTS], { cwd: sourceRoot });
+	const files = run("git", ["ls-files", "-z", "--", ...VERIFICATION_HARNESS_INPUTS], { cwd: sourceRoot })
+		.split("\0")
+		.filter(Boolean)
+		.sort();
+	if (!files.includes("apps/desktop/wdio.conf.ts") || !files.some((file) => file.endsWith(".e2e.ts")))
+		throw new Error("Controller verification harness is incomplete");
+	for (const file of files)
+		if (!lstatSync(join(sourceRoot, file)).isFile())
+			throw new Error(`Verification tool must be a regular tracked file: ${file}`);
+	for (const name of [
+		"scripts/flowstoken",
+		"scripts/release",
+		"apps/desktop/scripts",
+		"apps/desktop/package.json",
+		"apps/desktop/wdio.conf.ts",
+		"apps/desktop/e2e",
+		"branding/flowstoken",
+		".github/workflows",
+	])
+		cpSync(join(sourceRoot, name), join(destination, name), { recursive: true });
+	const manifest = {
+		schema: 1,
+		controllerSha,
+		files: files.map((file) => {
+			const body = readFileSync(join(destination, file));
+			return { path: file, size: body.length, sha256: createHash("sha256").update(body).digest("hex") };
+		}),
+	};
+	writeFileSync(join(destination, "controller-verification.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+	appendFileSync(envFile, `VETTA_RELEASE_CONTROLLER_DIR=${destination}\nVETTA_RELEASE_SOURCE_ROOT=${sourceRoot}\n`);
+	return manifest;
 }
 
 export function assertSourceCheckout(plan, sourceRoot) {
@@ -108,6 +163,7 @@ async function planRecovery(output) {
 			process.env.RECOVERY_X64_SUBMISSION
 		)
 			throw new Error("Incomplete recovery inputs");
+		assertReleaseSourceEligible(controllerSha);
 		appendOutputs({
 			recovery: "false",
 			source_sha: controllerSha,
@@ -125,6 +181,7 @@ async function planRecovery(output) {
 		sourceAttempt < 1
 	)
 		throw new Error("Recovery requires an exact original run, attempt and source SHA");
+	assertReleaseSourceEligible(sourceSha);
 	const sourceRun = await githubJson(`repos/${repo}/actions/runs/${sourceRunId}`);
 	const { jobs } = await githubJson(
 		`repos/${repo}/actions/runs/${sourceRunId}/attempts/${sourceAttempt}/jobs?per_page=100`,
@@ -149,7 +206,13 @@ async function planRecovery(output) {
 	for (const job of jobs) {
 		const platform = job.name?.replace(/^build /, "");
 		if (["macos-arm64", "macos-x64"].includes(platform) && job.conclusion !== "success") {
-			const log = run("gh", ["api", `repos/${repo}/actions/jobs/${job.id}/logs`]);
+			// Newer gh refuses log bodies that contain terminal escapes; fetch the text directly (redirect drops auth).
+			const logResponse = await fetch(`https://api.github.com/repos/${repo}/actions/jobs/${job.id}/logs`, {
+				headers: { Authorization: `Bearer ${process.env.GH_TOKEN}`, "X-GitHub-Api-Version": "2022-11-28" },
+				signal: AbortSignal.timeout(120_000),
+			});
+			if (!logResponse.ok) throw new Error(`GitHub job log request failed (${logResponse.status})`);
+			const log = await logResponse.text();
 			submissionIdsByJob[job.id] = originalSubmissionFromLog(log, submissions[platform]);
 		}
 	}
@@ -369,19 +432,7 @@ async function main() {
 	if (values.mode === "plan") return planRecovery(values.out);
 	if (values.mode === "stage") {
 		const destination = resolve(values.out);
-		for (const name of [
-			"scripts/flowstoken",
-			"scripts/release",
-			"apps/desktop/scripts",
-			"apps/desktop/package.json",
-			"branding/flowstoken",
-			".github/workflows",
-		])
-			cpSync(name, join(destination, name), { recursive: true });
-		appendFileSync(
-			process.env.GITHUB_ENV,
-			`VETTA_RELEASE_CONTROLLER_DIR=${destination}\nVETTA_RELEASE_SOURCE_ROOT=${process.cwd()}\n`,
-		);
+		stageController(destination);
 		return;
 	}
 	if (values.mode === "load-plan")

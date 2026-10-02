@@ -3,18 +3,19 @@
 ## 1. 数据流和责任边界
 
 ```text
-手机控制通道
-  └─ Cloudflare Relay /v1/relay
-       └─ Desktop Connector、设备列表、对话请求
+手机引导控制通道
+  └─ 局域网 / Cloudflare Relay /v2/relay（端到端加密）
+       └─ 配对、在线发现、WebRTC 启动与失败回退
 
 手机 WebRTC viewer                         Desktop WebRTC host
-  └─ /v1/desktop/:pairingId/viewer   ←→   /v1/desktop/:pairingId/host
+  └─ /v2/desktop/:pairingId/viewer   ←→   /v2/desktop/:pairingId/host
        └─ SDP / ICE 信令经过 Worker 转发
        └─ 屏幕像素点对点传输，不经过 Worker
        └─ 输入事件通过 WebRTC DataChannel 发送
+       └─ 对话、状态和诊断通过可靠的控制 DataChannel 发送
 ```
 
-控制通道在线只证明手机和 Desktop 的远程协议已经连接，不能证明 WebRTC 已收到视频帧。
+控制链路显示 P2P 只证明控制 DataChannel 已完成远程协议握手，不能证明 WebRTC 已收到视频帧；显示局域网或中继则表示 P2P 尚未建立或已回退。
 
 ## 2. 黑屏的判定方法
 
@@ -31,7 +32,7 @@ Rendered: 0
 
 | 现象 | 优先检查 | 结论方向 |
 | --- | --- | --- |
-| 设备列表都没有 Desktop | bootstrap/resume、控制 Relay、业务登录 | 还没有进入 WebRTC 页面 |
+| 设备列表都没有 Desktop | v2 二维码、身份密钥、控制 Relay、业务登录 | 还没有进入 WebRTC 页面 |
 | 设备在线但没有 `signaling connected` | viewer URL、Pairing Secret、Worker WebSocket | Android 信令连接失败 |
 | 有 signaling connected，但没有 `offer received` | Desktop 是否捕获到屏幕、host 是否等待 viewer、Worker 是否已部署新版本 | 屏幕权限、信令顺序或旧 Desktop 进程 |
 | 有 offer，但没有 remote description set | Android SDP 设置失败 | 查看 `native WebRTC SDP set failed` |
@@ -175,4 +176,4 @@ Invoke-WebRequest -UseBasicParsing `
 - Desktop 诊断响应包含 `osLabel`、`cpu` 和 `ram`，手机按“操作系统 / 处理器 / 内存”展示。
 - `device.host` 只用于构造 WebRTC viewer 地址，不属于系统信息，不能渲染到系统信息卡片。
 
-如果详情页显示“连接中”但预览仍有最后一帧，说明媒体链路尚在而控制通道正在重连；此时应等待控制通道恢复，或断开后用最新 Resume Secret 重新连接。测试时可以用 UI 树确认 `连接时长`、`延迟`、`操作系统`、`处理器`、`内存` 节点，而无需输出包含配对信息的完整 URI。
+如果详情页显示“连接中”但预览仍有最后一帧，说明媒体链路尚在而控制通道正在重连；此时应等待控制通道恢复，或断开后重新扫描最新二维码。测试时可以用 UI 树确认 `连接时长`、`延迟`、`操作系统`、`处理器`、`内存` 节点，而无需输出包含配对信息的完整 URI。

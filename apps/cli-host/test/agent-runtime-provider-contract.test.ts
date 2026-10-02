@@ -580,6 +580,20 @@ describe("Agent Runtime Provider contract", { timeout: 30_000 }, () => {
 						sourceUnchanged: (await readFile(sourcePath, "utf8")) === sourceContent,
 					},
 					persistence: describeContinuedConversation(persistedContent),
+					persistenceWithoutTiming: describeContinuedConversation(
+						persistedContent
+							.split(/\r?\n/u)
+							.filter((line) => {
+								if (!line.trim()) return false;
+								const record: unknown = JSON.parse(line);
+								return (
+									!isRecord(record) ||
+									!isRecord(record.command) ||
+									record.command.customType !== "vetta.assistant_turn_timing"
+								);
+							})
+							.join("\n"),
+					),
 					providerInputs,
 					resumedIdentityStable:
 						readSessionFile(resumedState) === sessionPath && readSessionId(resumedState) === sessionId,
@@ -631,6 +645,10 @@ describe("Agent Runtime Provider contract", { timeout: 30_000 }, () => {
 		expect(observation.contextObserved[0]).toContain(LEGACY_EXECUTION_MARKERS.hiddenBash);
 		expect(observation.contextObserved[0]).toContain(LEGACY_EXECUTION_MARKERS.hiddenCustom);
 		expect(observation.contextObserved[0]).not.toContain(LEGACY_EXECUTION_MARKERS.abandonedBranch);
+		expect(observation.persistenceWithoutTiming).toMatchObject({
+			allParentsResolved: false,
+			activeTailLinked: false,
+		});
 	}, 40_000);
 
 	it("preserves dynamic image blocking at the final Provider boundary without rewriting history", async () => {
@@ -1182,39 +1200,79 @@ function describeContinuedConversation(content: string): Readonly<Record<string,
 		.split(/\r?\n/u)
 		.map((line) => JSON.parse(line) as unknown);
 	const entries: PersistedEntryReference[] = [];
+	let activeLeafId: string | null = null;
+	let operationsResolved = true;
+	const append = (entry: PersistedEntryReference) => {
+		entries.push(entry);
+		activeLeafId = entry.id;
+	};
 	for (const record of records) {
 		if (!isRecord(record)) continue;
 		if (record.recordType === "conversation.import.seed" && Array.isArray(record.entries)) {
 			for (const entry of record.entries) {
 				const reference = readPersistedEntryReference(entry);
-				if (reference) entries.push(reference);
+				if (reference) append(reference);
+			}
+			if (record.activeLeafId === null || typeof record.activeLeafId === "string")
+				activeLeafId = record.activeLeafId;
+			continue;
+		}
+		if (record.recordType === "conversation.document.operation" && isRecord(record.command)) {
+			const command = record.command;
+			if (command.type === "custom.append" && typeof command.entryId === "string") {
+				append({ id: command.entryId, parentId: activeLeafId });
+			} else if (
+				command.type === "active_leaf.set" &&
+				(command.entryId === null || typeof command.entryId === "string")
+			) {
+				if (command.entryId !== null && !entries.some((entry) => entry.id === command.entryId))
+					operationsResolved = false;
+				activeLeafId = command.entryId;
+			} else {
+				throw new Error(`Unsupported persisted document operation: ${String(command.type)}`);
 			}
 			continue;
 		}
 		if (isRecord(record.documentEntry)) {
 			const reference = readPersistedEntryReference(record.documentEntry, readStoredEventRole(record.event));
-			if (reference) entries.push(reference);
+			if (reference) append(reference);
 			continue;
 		}
 		const reference = readPersistedEntryReference(record);
-		if (reference) entries.push(reference);
+		if (reference) append(reference);
 	}
 	const knownIds = new Set<string>();
-	let allParentsResolved = true;
+	let allParentsResolved = operationsResolved;
 	for (const entry of entries) {
-		if (entry.parentId !== null && !knownIds.has(entry.parentId)) allParentsResolved = false;
+		if (knownIds.has(entry.id) || (entry.parentId !== null && !knownIds.has(entry.parentId)))
+			allParentsResolved = false;
 		knownIds.add(entry.id);
 	}
 	const messageEntries = entries.filter(
 		(entry): entry is PersistedEntryReference & { readonly role: string } => entry.role !== undefined,
 	);
 	const activeTail = messageEntries.slice(-4);
+	const byId = new Map(entries.map((entry) => [entry.id, entry]));
+	// Timing metadata occupies a real document node between messages; it must resolve
+	// in the graph even though it is absent from the provider's message projection.
+	const linksPreviousMessage = (entry: PersistedEntryReference, previousId: string | undefined): boolean => {
+		const visited = new Set<string>();
+		let parentId = entry.parentId;
+		while (parentId !== null && !visited.has(parentId)) {
+			if (parentId === previousId) return true;
+			visited.add(parentId);
+			const parent = byId.get(parentId);
+			if (!parent || parent.role !== undefined) return false;
+			parentId = parent.parentId;
+		}
+		return false;
+	};
 	return {
 		activeTailRoles: activeTail.map(({ role }) => role),
 		allParentsResolved,
 		activeTailLinked:
 			activeTail.length === 4 &&
-			activeTail.slice(1).every((entry, index) => entry.parentId === activeTail[index]?.id),
+			activeTail.slice(1).every((entry, index) => linksPreviousMessage(entry, activeTail[index]?.id)),
 	};
 }
 

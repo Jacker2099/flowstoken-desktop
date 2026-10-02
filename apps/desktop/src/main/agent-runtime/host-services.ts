@@ -18,12 +18,14 @@ import {
 	nodeSyncTextFileSource,
 } from "@vetta/runtime-node/host";
 import { DEFAULT_SERVER_URL } from "../constants.js";
+import { assertFlowstokenModelAccess } from "../flowstoken/catalog-access.js";
 import { getDesktopModelCredentialStore, type ModelCredentialStore } from "../models/model-credential-store.js";
-import { readModelsConfigSync } from "../models/model-settings-service.js";
+import { type ProviderConfig, readModelsConfigSync } from "../models/model-settings-service.js";
 
 let sharedModelRuntime: CodingAgentModelRuntime | undefined;
 let sharedModelAuth: CodingAgentAuthRuntime | undefined;
 let syncedCredentialProviderIds = new Set<string>();
+let managedGroupBindings: Readonly<Record<string, ProviderConfig["managedGroup"]>> = {};
 
 export function getOrCreateSharedModelRuntime(): CodingAgentModelRuntime {
 	if (sharedModelRuntime) return sharedModelRuntime;
@@ -37,6 +39,13 @@ export function getOrCreateSharedModelRuntime(): CodingAgentModelRuntime {
 		modelsJsonPath: join(agentDir, "models.json"),
 		configFileSource: nodeSyncTextFileSource,
 		configurationValueResolver: nodeConfigurationValueResolver,
+		validateModelAccess: (model) =>
+			assertFlowstokenModelAccess(model.provider, model.id, managedGroupBindings[model.provider], model.modelId, {
+				baseUrl: model.baseUrl,
+				headers: model.headers,
+			}),
+		validateProviderAccess: (provider) =>
+			assertFlowstokenModelAccess(provider, undefined, managedGroupBindings[provider]),
 	});
 	runtime.setServerUrl(DEFAULT_SERVER_URL);
 	runtime.setServerToken(readServerTokenFromDisk());
@@ -48,9 +57,12 @@ export function getOrCreateSharedModelRuntime(): CodingAgentModelRuntime {
 
 export function syncSharedModelRuntimeCredentials(
 	credentials: ModelCredentialStore,
-	providers: Record<string, { credentialRef?: string }>,
+	providers: Record<string, { credentialRef?: string; managedGroup?: ProviderConfig["managedGroup"] }>,
 ): void {
 	const auth = sharedModelAuth;
+	managedGroupBindings = Object.fromEntries(
+		Object.entries(providers).map(([id, provider]) => [id, provider.managedGroup]),
+	);
 	if (!auth) return;
 	const nextProviderIds = new Set<string>();
 	for (const [providerId, provider] of Object.entries(providers)) {

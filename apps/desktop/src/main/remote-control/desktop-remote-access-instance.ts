@@ -1,0 +1,118 @@
+import { realpath } from "node:fs/promises";
+import { homedir } from "node:os";
+import path, { basename } from "node:path";
+import { getAppMonitorSnapshot } from "../app-monitor/app-monitor-service.js";
+import { DEFAULT_CONVERSATION_CWD, readDesktopConfig, updateDesktopConfig } from "../config/desktop-config-store.js";
+import { onConversationListChanged } from "../conversations/conversation-list-events.js";
+import { getDesktopConversationService } from "../conversations/desktop-conversation-service.js";
+import { createDesktopSessionCommands } from "../conversations/desktop-session-commands.js";
+import { isConversationCwd } from "../conversations/session-paths.js";
+import { listSessionPins, onSessionPinsChanged, pinSession } from "../conversations/session-pins-store.js";
+import { getDesktopUserQuestionBroker } from "../conversations/user-question-broker.js";
+import { getDesktopCredentialVault } from "../credentials/desktop-credential-vault.js";
+import { openPreviewSource, readFilesystemDirectory } from "../filesystem/filesystem-service.js";
+import { mainT } from "../i18n/index.js";
+import { forgetMessageAnnotations } from "../message-annotations/host.js";
+import { notify } from "../notifications/index.js";
+import { getDesktopProjectService } from "../projects/project-service-instance.js";
+import { getSharedRuntime } from "../runtime.js";
+import { notifyAutomationSessionsDeleted } from "../scheduler/session-deletion.js";
+import { getDesktopSkillService } from "../skills/skill-service.js";
+import { desktopDeviceId, desktopDisplayName, desktopHardware, formatOsLabel } from "./desktop-host-info.js";
+import type { DesktopRemoteDesktopController } from "./desktop-remote-access-manager.js";
+import { DesktopRemoteAccessManager } from "./desktop-remote-access-manager.js";
+import { DesktopRemoteMirror } from "./desktop-remote-mirror.js";
+import { readMacCursor } from "./mac-cursor.js";
+import { RemoteDeviceStore } from "./remote-device-store.js";
+import { RemoteFiles } from "./remote-files.js";
+import { scaleImageForPhone } from "./remote-image-scale.js";
+import { desktopScreenPermissions } from "./remote-screen-permissions.js";
+import { toRemoteSkillOptions } from "./remote-skills.js";
+import { saveRemoteUpload } from "./remote-upload-store.js";
+
+let manager: DesktopRemoteAccessManager | undefined;
+
+/**
+ * Wires the remote access manager to the real desktop services. Constructing
+ * it is cheap and side-effect free; `restore()` decides whether anything
+ * actually starts based on whether phones are paired.
+ */
+export function getDesktopRemoteAccessManager(
+	defaultRelayBaseUrl?: string,
+	remoteDesktop?: DesktopRemoteDesktopController,
+): DesktopRemoteAccessManager {
+	manager ??= new DesktopRemoteAccessManager({
+		store: new RemoteDeviceStore({
+			readConfig: readDesktopConfig,
+			updateConfig: updateDesktopConfig,
+			vault: getDesktopCredentialVault(),
+			defaultRelayBaseUrl,
+		}),
+		deviceId: desktopDeviceId(),
+		deviceName: desktopDisplayName(),
+		osLabel: formatOsLabel(),
+		remoteDesktop,
+		screenPermissions: desktopScreenPermissions,
+		readCursor: process.platform === "darwin" ? readMacCursor : undefined,
+		runningSessionCount: () => getSharedRuntime().getRunningSessionPaths().length,
+		notifications: {
+			deviceConnected: ({ name }) => void notify({ type: "remote-device-connected", deviceName: name }),
+			pairingRequested: ({ deviceName, code }) => void notify({ type: "remote-pairing-request", deviceName, code }),
+			screenPermissionMissing: ({ deviceName, screen, input }) =>
+				void notify({ type: "remote-screen-permission", deviceName, screen, input }),
+		},
+		createMirror: (emit, deviceStatus) =>
+			new DesktopRemoteMirror({
+				runtime: getSharedRuntime(),
+				conversations: getDesktopConversationService(),
+				questions: getDesktopUserQuestionBroker(),
+				listProjects: async () => {
+					const snapshot = await getDesktopProjectService().list();
+					return snapshot.projects.map((project) => ({
+						cwd: project.path,
+						name: project.name?.trim() || basename(project.path) || project.path,
+					}));
+				},
+				listSkills: async (cwd) =>
+					toRemoteSkillOptions(
+						await getDesktopSkillService().list(cwd),
+						getAppMonitorSnapshot().inputPromptRefs.byRef,
+					),
+				conversationCwd: DEFAULT_CONVERSATION_CWD,
+				conversationLabel: mainT("remote.conversationProject"),
+				isConversationCwd,
+				emit,
+				deviceStatus,
+				saveUpload: saveRemoteUpload,
+				files: new RemoteFiles({
+					fs: {
+						readDirectory: readFilesystemDirectory,
+						openSource: openPreviewSource,
+						realpath: (target) => realpath(target).catch(() => target),
+						scaleImage: scaleImageForPhone,
+					},
+					home: homedir(),
+					path,
+				}),
+				sessionCommands: createDesktopSessionCommands({
+					runtime: getSharedRuntime(),
+					onSessionsDeleted: notifyAutomationSessionsDeleted,
+					forgetAnnotations: forgetMessageAnnotations,
+				}),
+				pins: {
+					list: () => listSessionPins(),
+					set: (path, pinned) => void pinSession({ path, pinned }),
+					onChanged: (listener) => onSessionPinsChanged(() => listener()),
+				},
+				onCatalogChanged: (listener) => onConversationListChanged(() => listener()),
+				hardware: desktopHardware,
+			}),
+	});
+	return manager;
+}
+
+export async function shutdownDesktopRemoteAccess(): Promise<void> {
+	const current = manager;
+	manager = undefined;
+	await current?.shutdown();
+}

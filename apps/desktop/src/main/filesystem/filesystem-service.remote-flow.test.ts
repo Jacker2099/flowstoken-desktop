@@ -10,10 +10,18 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createLoopbackSshConnection } from "@vetta/ssh-transport/testing";
+import { createLoopbackSshConnection, loopbackRemotePath } from "@vetta/ssh-transport/testing";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const connection = createLoopbackSshConnection();
+// Observe the real cp boundary: NTFS cannot represent POSIX executable bits, but the
+// client must still request preservation when its remote host writes the real bytes.
+const commandDirectory = realpathSync(mkdtempSync(join(tmpdir(), "vetta-remote-copy-")));
+writeFileSync(
+	join(commandDirectory, "cp"),
+	["#!/bin/sh", 'printf "%s\\n" "$@" > "$(dirname "$0")/copy-arguments"', 'exec /bin/cp "$@"', ""].join("\n"),
+);
+chmodSync(join(commandDirectory, "cp"), 0o755);
+const connection = createLoopbackSshConnection("build-01", { commandDirectory });
 vi.mock("../ssh/ssh-runtime.js", () => ({ getSshConnection: () => connection }));
 
 const service = await import("./filesystem-service.js");
@@ -35,7 +43,7 @@ describe("远程项目的文件树：用户在面板里的一串常见操作", (
 		writeFileSync(join(remoteRoot, "node_modules/pkg/index.js"), "");
 		writeFileSync(join(remoteRoot, "logo.png"), PNG_1X1);
 		writeFileSync(join(remoteRoot, "LICENSE"), "MIT\n");
-		root = `ssh://build-01${remoteRoot}`;
+		root = `ssh://build-01${loopbackRemotePath(remoteRoot)}`;
 		service.allowProjectRoot(root);
 	});
 
@@ -54,7 +62,7 @@ describe("远程项目的文件树：用户在面板里的一串常见操作", (
 
 		await service.deleteFilesystemPath(`${root}/docs`);
 		expect(existsSync(join(remoteRoot, "docs"))).toBe(false);
-	});
+	}, 20_000);
 
 	it("无扩展名的文本、图片都能预览，呈现判断与本地项目同一套", async () => {
 		await expect(service.readTextPreviewFile(`${root}/LICENSE`)).resolves.toMatchObject({
@@ -78,12 +86,26 @@ describe("远程项目的文件树：用户在面板里的一串常见操作", (
 		expect(files.find((file) => file.relPath === "src/main.ts")?.path).toBe(`${root}/src/main.ts`);
 	});
 
+	it("按文件名筛选的递归列举只给出命中的远端文件", async () => {
+		const files = await service.listFilesystemFilesRecursive(root, { names: ["LICENSE", "index.js"] });
+		expect(files.map((file) => file.relPath)).toEqual(["LICENSE"]);
+	});
+
 	it("写文件保留远端文件原有的可执行位", async () => {
 		writeFileSync(join(remoteRoot, "run.sh"), "old");
 		chmodSync(join(remoteRoot, "run.sh"), 0o755);
 		await service.writeFilesystemFile(`${root}/run.sh`, "new");
 		expect(readFileSync(join(remoteRoot, "run.sh"), "utf8")).toBe("new");
-		expect(statSync(join(remoteRoot, "run.sh")).mode & 0o777).toBe(0o755);
+		const remoteFile = `${loopbackRemotePath(remoteRoot)}/run.sh`;
+		expect(readFileSync(join(commandDirectory, "copy-arguments"), "utf8").trim().split("\n")).toEqual([
+			"-p",
+			"--",
+			remoteFile,
+			expect.stringContaining(`${remoteFile}.`),
+		]);
+		// POSIX hosts additionally prove the resulting filesystem mode. On Windows the
+		// command boundary above proves -p was requested; do not pretend NTFS has 0755.
+		if (process.platform !== "win32") expect(statSync(join(remoteRoot, "run.sh")).mode & 0o777).toBe(0o755);
 	});
 
 	it("插件文件能力用的授权检查认得远程路径：项目内放行，项目外拒绝", async () => {

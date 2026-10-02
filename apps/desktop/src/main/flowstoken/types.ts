@@ -1,4 +1,4 @@
-import type { FlowstokenGroupId } from "./constants.js";
+import type { FlowstokenModelKind, FlowstokenReasoningLevel } from "../../shared/flowstoken-catalog-policy.js";
 
 export interface FlowstokenUserSnapshot {
 	id: number;
@@ -24,13 +24,14 @@ export interface FlowstokenUsageRow {
 }
 
 export interface FlowstokenGroupKeyState {
-	groupId: FlowstokenGroupId;
+	groupId: string;
 	providerId: string;
 	labelZh: string;
 	tokenName: string;
 	tokenId?: number;
 	wired: boolean;
 	enabled: boolean;
+	requiresManualSetup?: boolean;
 }
 
 export interface FlowstokenAccountSnapshot {
@@ -61,7 +62,7 @@ export interface FlowstokenEnsureKeysResult {
 	reused: string[];
 }
 
-/** Model entry inside a catalog vendor (`desktop-catalog.json`, schema 1). */
+/** Display and supported model capabilities; contains no credentials or executable configuration. */
 export interface FlowstokenCatalogModel {
 	id: string;
 	name: string;
@@ -69,6 +70,13 @@ export interface FlowstokenCatalogModel {
 	tags: string[];
 	vision: boolean;
 	image: boolean;
+	kind?: FlowstokenModelKind;
+	reasoningLevels?: FlowstokenReasoningLevel[];
+	defaultReasoningLevel?: FlowstokenReasoningLevel;
+	recommended?: boolean;
+	reasoning?: boolean;
+	contextWindow?: number;
+	maxTokens?: number;
 }
 
 export interface FlowstokenCatalogVendor {
@@ -80,9 +88,11 @@ export interface FlowstokenCatalogVendor {
 }
 
 export interface FlowstokenCatalogGroup {
-	id: "smart" | "default" | "vip";
+	/** Immutable NewAPI billing group key, independent from its display title. */
+	id: string;
 	providerId: string;
 	title: string;
+	titles?: { zh?: string; en?: string };
 	subtitle: string;
 	defaultModel?: string;
 	highlight?: { title: string; badge: string; description: string };
@@ -91,7 +101,11 @@ export interface FlowstokenCatalogGroup {
 
 /** Whole server-delivered catalog — the only source for order, names, vendors and badges. */
 export interface FlowstokenCatalog {
-	schema: 1;
+	schema: 1 | 2;
+	/** Opaque schema-2 content revision. Valid earlier revisions can be restored for rollback. */
+	revision?: string;
+	source?: "network" | "cache" | "fallback";
+	fetchedAt?: number;
 	generated: number;
 	pricingVersion: string;
 	newWindowDays: number;

@@ -9,24 +9,60 @@ export type RemoteDesktopSignalSender = (signal: RemoteDesktopSignal) => void | 
 export interface RemoteDesktopHostStartOptions {
 	/** Wait for the relay to confirm that a viewer is online before creating an offer. */
 	readonly waitForPeerReady?: boolean;
+	/**
+	 * A viewer came online after this host already offered to one. Each viewer is a new
+	 * peer connection, which this one cannot reach again (its DTLS is spent, or its offer
+	 * went to a viewer that is gone), so the host should start over. Without it the host
+	 * offers again with an ICE restart.
+	 *
+	 * While the peer connection is up, a `peer_ready` is taken as the same viewer
+	 * rejoining signaling (after a relay restart, say) and the connection is kept; only
+	 * if the connection then drops is the viewer treated as replaced.
+	 */
+	readonly onViewerReplaced?: () => void;
+	/** Every change of the peer connection's state, e.g. to decide what a signaling drop means. */
+	readonly onConnectionStateChange?: (state: RTCPeerConnectionState) => void;
 }
+
+/**
+ * A reliable ordered text channel that applications may use alongside screen
+ * media. This package deliberately treats its payload as opaque text so the
+ * remote-control protocol keeps ownership of validation and encryption.
+ */
+export interface RemoteDesktopTextChannelHandlers {
+	onOpen?(): void;
+	onMessage(message: string): void;
+	onClose?(reason?: string): void;
+}
+
+export const REMOTE_DESKTOP_CONTROL_CHANNEL = "vetta-control-v2";
+const MAX_CONTROL_MESSAGE_CHARS = 1_500_000;
 
 export class RemoteDesktopHost {
 	private readonly peer: RTCPeerConnection;
 	private readonly logger;
 	private readonly pendingIce: RTCIceCandidateInit[] = [];
 	private inputChannel: RTCDataChannel | undefined;
+	private controlChannel: RTCDataChannel | undefined;
+	/** Set when started without a stream: the screen comes and goes through `replaceScreen`. */
+	private screenSender: RTCRtpSender | undefined;
 	private lastInputSequence = 0;
 	private closed = false;
 	private started = false;
 	private peerReady = false;
 	private hasNegotiated = false;
 	private negotiation: Promise<void> | undefined;
+	private offered = false;
+	private onViewerReplaced: (() => void) | undefined;
+	private onConnectionStateChange: ((state: RTCPeerConnectionState) => void) | undefined;
+	/** A viewer came online while connected: it rejoined, unless the connection drops after all. */
+	private viewerRejoined = false;
 
 	constructor(
 		private readonly options: RemoteDesktopPeerOptions,
 		private readonly sendSignal: RemoteDesktopSignalSender,
 		private readonly onInput: (message: RemoteInputMessage) => void | Promise<void>,
+		private readonly control?: RemoteDesktopTextChannelHandlers,
 	) {
 		this.logger = options.logger ?? NOOP_REMOTE_DESKTOP_LOGGER;
 		this.peer = createPeer(options);
@@ -42,21 +78,46 @@ export class RemoteDesktopHost {
 			});
 		};
 		this.peer.onconnectionstatechange = () => {
-			this.logger.info("remote desktop host peer state", {
-				sessionId: options.sessionId,
-				state: this.peer.connectionState,
-			});
+			const state = this.peer.connectionState;
+			this.logger.info("remote desktop host peer state", { sessionId: options.sessionId, state });
+			this.onConnectionStateChange?.(state);
+			if (this.viewerRejoined && state !== "connected" && this.onViewerReplaced && !this.closed) {
+				this.viewerRejoined = false;
+				this.logger.info("remote desktop viewer replaced", { sessionId: options.sessionId, state });
+				this.onViewerReplaced();
+			}
 		};
 	}
 
-	async start(stream: MediaStream, startOptions: RemoteDesktopHostStartOptions = {}): Promise<void> {
+	/**
+	 * With a stream, the screen is shared for the whole session. Without one, the
+	 * session opens with an empty video slot so the data channels work while nobody
+	 * watches, and `replaceScreen` fills it on demand without renegotiating (ADR-0140).
+	 */
+	async start(stream?: MediaStream, startOptions: RemoteDesktopHostStartOptions = {}): Promise<void> {
 		if (this.closed) throw new Error("remote desktop host is closed");
 		if (this.started) throw new Error("remote desktop host is already started");
-		if (stream.getVideoTracks().length === 0) throw new Error("screen stream must contain a video track");
-		for (const track of stream.getTracks()) this.peer.addTrack(track, stream);
+		if (stream) {
+			if (stream.getVideoTracks().length === 0) throw new Error("screen stream must contain a video track");
+			for (const track of stream.getTracks()) {
+				if (track.kind === "video") track.contentHint = "detail";
+				this.peer.addTrack(track, stream);
+			}
+			for (const transceiver of this.peer.getTransceivers?.() ?? []) preferHardwareCodec(transceiver);
+		} else {
+			const transceiver = this.peer.addTransceiver("video", { direction: "sendonly" });
+			preferHardwareCodec(transceiver);
+			this.screenSender = transceiver.sender;
+		}
 		this.inputChannel = this.peer.createDataChannel("vetta-input-v1", { ordered: true });
 		this.configureInputChannel(this.inputChannel);
+		if (this.control) {
+			this.controlChannel = this.peer.createDataChannel(REMOTE_DESKTOP_CONTROL_CHANNEL, { ordered: true });
+			this.configureControlChannel(this.controlChannel);
+		}
 		this.started = true;
+		this.onViewerReplaced = startOptions.onViewerReplaced;
+		this.onConnectionStateChange = startOptions.onConnectionStateChange;
 		if (startOptions.waitForPeerReady !== true || this.peerReady) await this.negotiate();
 	}
 
@@ -64,13 +125,29 @@ export class RemoteDesktopHost {
 		const frame = decodeRemoteDesktopSignal(signal);
 		if (frame.type === "peer_ready") {
 			this.peerReady = true;
+			if (this.offered && this.peer.connectionState === "connected") {
+				// The direct connection never went through the relay, so it outlives signaling.
+				this.viewerRejoined = true;
+				this.logger.info("remote desktop viewer rejoined signaling", { sessionId: this.options.sessionId });
+				return;
+			}
+			if (this.offered && this.onViewerReplaced) {
+				this.logger.info("remote desktop viewer replaced", { sessionId: this.options.sessionId });
+				this.onViewerReplaced();
+				return;
+			}
 			if (this.started) await this.negotiate();
 			return;
 		}
 		if (frame.sessionId !== this.options.sessionId) throw new Error("remote desktop signal session mismatch");
 		if (frame.type === "answer") {
-			await this.peer.setRemoteDescription({ type: "answer", sdp: frame.sdp });
+			await this.peer.setRemoteDescription({ type: "answer", sdp: answerForHardwareEncoding(frame.sdp) });
 			await this.flushPendingIce();
+			this.logger.info("remote desktop answer applied", { sessionId: this.options.sessionId });
+			// Encodings exist only once negotiated: a screen shared for the whole session is tuned here.
+			for (const sender of this.peer.getSenders?.() ?? []) {
+				if (sender.track?.kind === "video") await tuneScreenSender(sender);
+			}
 			return;
 		}
 		if (frame.type === "ice") {
@@ -84,6 +161,7 @@ export class RemoteDesktopHost {
 		if (this.closed) return;
 		this.closed = true;
 		this.inputChannel?.close();
+		this.controlChannel?.close();
 		for (const sender of this.peer.getSenders()) sender.track?.stop();
 		this.peer.close();
 		void this.sendSignal({
@@ -96,6 +174,46 @@ export class RemoteDesktopHost {
 
 	get connectionState(): RTCPeerConnectionState {
 		return this.peer.connectionState;
+	}
+
+	/** The connection's statistics, for diagnostics: counts, codec names and timing only. */
+	getStats(): Promise<RTCStatsReport> {
+		return this.peer.getStats();
+	}
+
+	/** Puts a new screen track in the video slot, or empties it with null; the previous track is stopped. */
+	async replaceScreen(track: MediaStreamTrack | null): Promise<void> {
+		if (this.closed) {
+			track?.stop();
+			return;
+		}
+		if (!this.screenSender) throw new Error("remote desktop host shares a fixed screen stream");
+		const previous = this.screenSender.track;
+		if (track) track.contentHint = "detail";
+		await this.screenSender.replaceTrack(track);
+		if (previous && previous !== track) previous.stop();
+		if (track) await tuneScreenSender(this.screenSender);
+	}
+
+	sendControl(message: string): void {
+		if (!this.controlChannel || this.controlChannel.readyState !== "open") {
+			throw new Error("remote control channel is not open");
+		}
+		this.controlChannel.send(message);
+	}
+
+	private configureControlChannel(channel: RTCDataChannel): void {
+		channel.onopen = () => this.control?.onOpen?.();
+		channel.onclose = () => this.control?.onClose?.("data channel closed");
+		channel.onerror = () => this.control?.onClose?.("data channel failed");
+		channel.onmessage = (event) => {
+			if (typeof event.data !== "string" || event.data.length > MAX_CONTROL_MESSAGE_CHARS) {
+				this.logger.warn("remote desktop invalid control payload rejected", { sessionId: this.options.sessionId });
+				channel.close();
+				return;
+			}
+			this.control?.onMessage(event.data);
+		};
 	}
 
 	private configureInputChannel(channel: RTCDataChannel): void {
@@ -144,6 +262,7 @@ export class RemoteDesktopHost {
 			});
 			return;
 		}
+		this.offered = true;
 		const negotiation = (async () => {
 			const offer = await this.peer.createOffer(this.hasNegotiated ? { iceRestart: true } : undefined);
 			await this.peer.setLocalDescription(offer);
@@ -153,6 +272,10 @@ export class RemoteDesktopHost {
 				protocolVersion: REMOTE_DESKTOP_PROTOCOL_VERSION,
 				sessionId: this.options.sessionId,
 				sdp: offer.sdp,
+			});
+			this.logger.info("remote desktop offer sent", {
+				sessionId: this.options.sessionId,
+				restart: this.hasNegotiated,
 			});
 			this.hasNegotiated = true;
 		})();
@@ -277,6 +400,56 @@ export class RemoteDesktopViewer {
 
 	private async flushPendingIce(): Promise<void> {
 		for (const candidate of this.pendingIce.splice(0)) await this.peer.addIceCandidate(candidate);
+	}
+}
+
+/**
+ * H.264 first: desktops and phones encode and decode it in hardware, where VP8, the
+ * default, is encoded in software and falls behind on a large screen, dropping frames
+ * while the picture moves. Other codecs stay as fallbacks.
+ */
+function preferHardwareCodec(transceiver: RTCRtpTransceiver): void {
+	if (typeof transceiver.setCodecPreferences !== "function" || typeof RTCRtpReceiver === "undefined") return;
+	// Chromium checks preferences against what it can receive, even for a send-only slot.
+	const codecs = RTCRtpReceiver.getCapabilities?.("video")?.codecs;
+	if (!codecs?.length) return;
+	const h264 = codecs.filter((codec) => codec.mimeType.toLowerCase() === "video/h264");
+	if (h264.length === 0) return;
+	try {
+		transceiver.setCodecPreferences([...h264, ...codecs.filter((codec) => !h264.includes(codec))]);
+	} catch {
+		// Left to the browser's default order.
+	}
+}
+
+/**
+ * Phones accept H.264 only as constrained baseline (42e0..), which Chromium on macOS
+ * encodes in software (OpenH264): a large screen then manages a dozen frames a second
+ * and the picture falls behind. As baseline (4200..) it goes to the hardware encoder.
+ * The encoder uses no tool constrained baseline forbids, so the phone decodes it as before.
+ */
+function answerForHardwareEncoding(sdp: string): string {
+	return sdp.replace(/(profile-level-id=)42e0([0-9a-f]{2})/gi, "$14200$2");
+}
+
+/** The most the screen may spend: sharp text at a large capture, still well within a LAN. */
+const SCREEN_MAX_BITRATE = 12_000_000;
+
+/**
+ * A phone zooms in to read the screen and drags things across it, so text should stay
+ * sharp and motion smooth. "balanced" trades a little of each under load instead of
+ * dropping frames to hold full resolution, which made dragging stutter (ADR-0140).
+ * Best effort; a browser without these parameters keeps its defaults.
+ */
+async function tuneScreenSender(sender: RTCRtpSender): Promise<void> {
+	if (typeof sender.getParameters !== "function") return;
+	try {
+		const parameters = sender.getParameters();
+		parameters.degradationPreference = "balanced";
+		for (const encoding of parameters.encodings ?? []) encoding.maxBitrate = SCREEN_MAX_BITRATE;
+		await sender.setParameters(parameters);
+	} catch {
+		// Unsupported here: the defaults still work.
 	}
 }
 

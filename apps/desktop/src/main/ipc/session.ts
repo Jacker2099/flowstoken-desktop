@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import { type Dirent, type FSWatcher, watch } from "node:fs";
 import { mkdir, readdir, rm } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
-import { codingAgentSessionShardPath } from "@vetta/coding-agent/bootstrap";
 import type {
 	CodingAgentQuestionFunctionRequest,
 	CodingAgentQuestionResult,
@@ -47,8 +46,9 @@ import { stopSessionBackgroundWork } from "../agent-runtime/stop-session-work.js
 import { agentTeamSessionService } from "../agent-teams/team-session-service.js";
 import { stopMonitoringRuntimeSession } from "../app-monitor/app-monitor-service.js";
 import { onConversationListChanged } from "../conversations/conversation-list-events.js";
-import { assertOrdinaryConversationPath } from "../conversations/conversation-ownership-guard.js";
 import { getDesktopConversationService } from "../conversations/desktop-conversation-service.js";
+import { DesktopGoalController } from "../conversations/desktop-goal-controller.js";
+import { createDesktopSessionCommands } from "../conversations/desktop-session-commands.js";
 import { desktopSessionSearch } from "../conversations/desktop-session-search.js";
 import {
 	collectRunningInteractiveSessionIds,
@@ -57,7 +57,6 @@ import {
 } from "../conversations/idle-session-residency.js";
 import { getDesktopMcpElicitationBroker } from "../conversations/mcp-elicitation-broker.js";
 import { getDesktopPlanReviewBroker } from "../conversations/plan-review-broker.js";
-import { purgeProjectSessions } from "../conversations/project-session-purge.js";
 import { parsePromptRequest } from "../conversations/prompt-request-schema.js";
 import type { DesktopCodingAgentSessionConfig } from "../conversations/resolve-session-config.js";
 import { getDesktopSandboxAuthorizationBroker } from "../conversations/sandbox-authorization-broker.js";
@@ -70,9 +69,10 @@ import { type DebugRequestData, writeDebugRequest } from "../debug-writer.js";
 import { getAppLogger } from "../logger.js";
 import { getDesktopMcpAppRegistry } from "../mcp/mcp-app-runtime.js";
 import { getDesktopMcpTaskCoordinator, getDesktopMcpTaskRegistry } from "../mcp/mcp-task-runtime.js";
+import { forgetMessageAnnotations } from "../message-annotations/host.js";
 import { notify } from "../notifications/index.js";
-import { createPetBubbleCommand } from "../pet/pet-bubble-command.js";
-import { mapSessionEventToPetPresentation } from "../pet/session-event-action-policy.js";
+import { SessionTurnNotificationController } from "../notifications/session-turn-notification-controller.js";
+import { PetSessionPresentationController } from "../pet/pet-session-presentation-controller.js";
 import { sendPetCommandToWindow } from "../pet-window.js";
 import { setDesktopPluginHookInvoker } from "../plugins/coding-agent-hook-invocation.js";
 import { listPlugins, pluginAgentContributionService } from "../plugins/plugin-catalog.js";
@@ -85,7 +85,7 @@ import {
 } from "../plugins/system-prompt-operations.js";
 import { getSharedRuntime } from "../runtime.js";
 import { assertSandboxAvailableForMode } from "../sandbox/capability.js";
-import { getDesktopSchedulerServiceIfReady } from "../scheduler/scheduler-service.js";
+import { notifyAutomationSessionsDeleted } from "../scheduler/session-deletion.js";
 import {
 	DEFAULT_CONVERSATION_CWD,
 	DEFAULT_CONVERSATION_SESSION_DIR,
@@ -93,7 +93,7 @@ import {
 	DEFAULT_IM_CONVERSATION_SESSION_DIR,
 	readConfigSync,
 	readDesktopConfig,
-	writeDesktopConfig,
+	updateDesktopConfig,
 } from "./fs.js";
 import { parseSessionTraceContext } from "./session-trace-context.js";
 import { readSettings, updateSettings } from "./settings.js";
@@ -182,8 +182,6 @@ const CHANNELS = {
 	GET_STATE: "vetta:session:get-state",
 	GET_MESSAGES: "vetta:session:get-messages",
 	DELETE: "vetta:session:delete",
-	/** 项目硬删除时清空该 cwd 名下的会话存储；会话不在项目目录内，见 project-session-purge。 */
-	DELETE_ALL_FOR_CWD: "vetta:session:delete-all-for-cwd",
 	RENAME: "vetta:session:rename",
 	AUTO_TITLE: "vetta:session:auto-title",
 	NEXT_PROMPT_SUGGESTIONS: "vetta:session:next-prompt-suggestions",
@@ -208,6 +206,11 @@ const CHANNELS = {
 	QUESTION_RESPONSE: "vetta:session:question-response",
 	PLAN_MODE_GET_STATE: "vetta:session:plan-mode-get-state",
 	PLAN_MODE_SET_PERMISSION_MODE: "vetta:session:plan-mode-set-permission-mode",
+	GOAL_GET_STATE: "vetta:session:goal-get-state",
+	GOAL_START: "vetta:session:goal-start",
+	GOAL_PAUSE: "vetta:session:goal-pause",
+	GOAL_RESUME: "vetta:session:goal-resume",
+	GOAL_CLEAR: "vetta:session:goal-clear",
 	PLAN_REVIEW_REQUEST: "vetta:session:plan-review-request",
 	PLAN_REVIEW_LIST_PENDING: "vetta:session:plan-review-list-pending",
 	PLAN_REVIEW_RESOLVED: "vetta:session:plan-review-resolved",
@@ -381,13 +384,6 @@ function assertMcpAppSender(sender: WebContents, expected: WebContents): void {
 	if (sender !== expected || sender.isDestroyed()) throw new Error("Untrusted MCP App IPC sender");
 }
 
-/** 会话被删除后通知自动化：解绑并暂停相关任务、清理执行记录（ADR-0127）。失败不影响删除本身。 */
-function notifyAutomationSessionsDeleted(isDeleted: (sessionPath: string) => boolean): void {
-	void getDesktopSchedulerServiceIfReady()
-		?.handleSessionsDeleted(isDeleted)
-		.catch((error) => sessionLog.error("failed to update automations after session deletion", error));
-}
-
 export function registerSessionIpc(webContents: WebContents): () => void {
 	const resolveDefaultExecutionMode = async (): Promise<SessionExecutionMode> => {
 		const config = await readDesktopConfig();
@@ -395,6 +391,12 @@ export function registerSessionIpc(webContents: WebContents): () => void {
 	};
 
 	const runtime = getSharedRuntime();
+	const goalController = new DesktopGoalController(runtime);
+	const sessionCommands = createDesktopSessionCommands({
+		runtime,
+		onSessionsDeleted: notifyAutomationSessionsDeleted,
+		forgetAnnotations: forgetMessageAnnotations,
+	});
 	const pluginRuntimeSource = getDesktopCodingAgentPluginRuntimeSource();
 	const conversationService = getDesktopConversationService();
 	const questionBroker = getDesktopUserQuestionBroker();
@@ -403,6 +405,7 @@ export function registerSessionIpc(webContents: WebContents): () => void {
 	const mcpTaskCoordinator = getDesktopMcpTaskCoordinator();
 	const mcpAppRegistry = getDesktopMcpAppRegistry();
 	const sandboxAuthorizationBroker = getDesktopSandboxAuthorizationBroker();
+	const petPresentationController = new PetSessionPresentationController({ send: sendPetCommandToWindow });
 	const unsubscribeConversationListChanged = onConversationListChanged((event) => {
 		broadcastToAllWindows(CHANNELS.SESSIONS_CHANGED, event);
 	});
@@ -432,54 +435,18 @@ export function registerSessionIpc(webContents: WebContents): () => void {
 	/** 给某交互式 session 挂常驻通知订阅；已挂则跳过。 */
 	const attachNotificationSub = (sessionId: string, cwd: string): void => {
 		if (notificationSubs.has(sessionId)) return;
-		// 逐轮跟踪终结状态：message.final 带 stopReason，error 事件、aborted
-		// lifecycle 各自独立。agent_end 时按累积状态判定该不该通知。
-		let lastStopReason: string | undefined;
-		let aborted = false;
-		let lastPetActionId: string | undefined;
-		let hasFinalPetBody = false;
+		const notificationController = new SessionTurnNotificationController();
 		const unsubscribe = runtime.subscribe(sessionId, (ev: SessionEvent) => {
-			const petPresentation = mapSessionEventToPetPresentation(ev);
-			const petActionId = petPresentation?.actionId;
-			if (petActionId && petActionId !== lastPetActionId) {
-				lastPetActionId = petActionId;
-				sendPetCommandToWindow({ type: "set-action", actionId: petActionId, source: "app" });
-			}
-			const petBubble = petPresentation?.bubble;
-			const isRedundantGenericCompletion =
-				ev.type === "session.lifecycle" && ev.phase === "agent_end" && hasFinalPetBody;
-			if (petBubble && !isRedundantGenericCompletion) {
-				const command = createPetBubbleCommand(petBubble, sessionId);
-				if (command) sendPetCommandToWindow(command);
-			}
-
-			if (ev.type === "message.final") {
-				if (petBubble?.body) hasFinalPetBody = true;
-				const sr = (ev.message as unknown as { stopReason?: unknown }).stopReason;
-				if (typeof sr === "string") lastStopReason = sr;
-			} else if (ev.channel === "assistant" && (ev.type === "done" || ev.type === "error")) {
-				if (petBubble?.body) hasFinalPetBody = true;
-				lastStopReason = ev.type === "done" ? ev.message.stopReason : "error";
-			} else if (ev.channel !== "assistant" && ev.type === "error") {
-				lastStopReason = "error";
-			} else if (ev.type === "session.lifecycle") {
-				if (ev.phase === "agent_start") {
-					hasFinalPetBody = false;
-				} else if (ev.phase === "aborted") {
-					aborted = true;
-					hasFinalPetBody = false;
-				} else if (ev.phase === "agent_end") {
-					const wasAborted = aborted || lastStopReason === "aborted";
-					const outcome = lastStopReason === "error" ? "error" : "completed";
-					const sessionPath = runtime.getSessionPath(sessionId);
-					lastStopReason = undefined;
-					aborted = false;
-					hasFinalPetBody = false;
-					// 中断不通知；正常完成 / 出错才通知（见 CONTEXT.md「agent 完成通知」）。
-					if (!wasAborted && sessionPath) {
-						void notify({ type: "agent-turn-complete", sessionPath, cwd, outcome });
-					}
-				}
+			petPresentationController.handleSessionEvent(ev);
+			const outcome = notificationController.handle(ev);
+			const sessionPath = outcome ? runtime.getSessionPath(sessionId) : undefined;
+			if (outcome && sessionPath) {
+				void notify({
+					type: "agent-turn-complete",
+					sessionPath,
+					cwd,
+					outcome: outcome === "failed" ? "error" : "completed",
+				});
 			}
 		});
 		notificationSubs.set(sessionId, unsubscribe);
@@ -500,6 +467,7 @@ export function registerSessionIpc(webContents: WebContents): () => void {
 		debugSeqMap.delete(sessionId);
 		turnStartMap.delete(sessionId);
 		detachNotificationSub(sessionId);
+		petPresentationController.forgetSession(sessionId);
 		stopMonitoringRuntimeSession(sessionId);
 	};
 
@@ -535,9 +503,11 @@ export function registerSessionIpc(webContents: WebContents): () => void {
 		if (webContents.isDestroyed()) return Promise.resolve(CANCELLED_QUESTION);
 		return new Promise<CodingAgentQuestionResult>((resolve) => {
 			const sessionPath = runtime.getSessionPath(request.sessionId);
+			const waitingKey = `question:${request.requestId}`;
 			const finish = (result: CodingAgentQuestionResult): void => {
 				questionMap.delete(request.requestId);
 				if (signal) signal.removeEventListener("abort", onAbort);
+				petPresentationController.endWaiting(request.sessionId, waitingKey);
 				// 问答结束（提交/取消/中断）后清掉「待答」标记并广播。
 				if (sessionPath) setPendingQuestion(sessionPath, false);
 				resolve(result);
@@ -549,6 +519,7 @@ export function registerSessionIpc(webContents: WebContents): () => void {
 			}
 			if (signal) signal.addEventListener("abort", onAbort, { once: true });
 			questionMap.set(request.requestId, finish);
+			petPresentationController.beginWaiting(request.sessionId, waitingKey, "notice.waiting.question");
 			webContents.send(CHANNELS.QUESTION_REQUEST, request);
 			// 广播「待答」给所有窗口（侧栏 + 快捷面板）。
 			if (sessionPath) setPendingQuestion(sessionPath, true);
@@ -581,6 +552,11 @@ export function registerSessionIpc(webContents: WebContents): () => void {
 				planReviewBroker.respond(request.requestId, undefined);
 				return;
 			}
+			petPresentationController.beginWaiting(
+				request.sessionId,
+				`plan-review:${request.requestId}`,
+				"notice.waiting.planReview",
+			);
 			webContents.send(CHANNELS.PLAN_REVIEW_REQUEST, request);
 			const sessionPath = runtime.getSessionPath(request.sessionId);
 			const cwd = sessionCwdMap.get(request.sessionId);
@@ -588,6 +564,7 @@ export function registerSessionIpc(webContents: WebContents): () => void {
 			if (sessionPath && cwd) void notify({ type: "agent-question-pending", sessionPath, cwd });
 		},
 		resolved: (event) => {
+			petPresentationController.endWaiting(event.sessionId, `plan-review:${event.requestId}`);
 			const sessionPath = runtime.getSessionPath(event.sessionId);
 			if (sessionPath) setPendingQuestion(sessionPath, false);
 			if (!webContents.isDestroyed()) webContents.send(CHANNELS.PLAN_REVIEW_RESOLVED, event);
@@ -597,9 +574,11 @@ export function registerSessionIpc(webContents: WebContents): () => void {
 	const unregisterMcpElicitationHandler = mcpElicitationBroker.setInteractiveHandler((request, signal) => {
 		if (webContents.isDestroyed()) return Promise.resolve({ action: "cancel" });
 		return new Promise<DesktopMcpElicitationResponse>((resolve) => {
+			const waitingKey = `mcp-elicitation:${request.requestId}`;
 			const finish = (result: DesktopMcpElicitationResponse): void => {
 				mcpElicitationMap.delete(request.requestId);
 				signal?.removeEventListener("abort", onAbort);
+				petPresentationController.endWaiting(request.sessionId, waitingKey);
 				resolve(result);
 			};
 			const onAbort = (): void => finish({ action: "cancel" });
@@ -609,7 +588,11 @@ export function registerSessionIpc(webContents: WebContents): () => void {
 			}
 			signal?.addEventListener("abort", onAbort, { once: true });
 			mcpElicitationMap.set(request.requestId, finish);
+			petPresentationController.beginWaiting(request.sessionId, waitingKey, "notice.waiting.mcp");
 			webContents.send(CHANNELS.MCP_ELICITATION_REQUEST, request);
+			const sessionPath = runtime.getSessionPath(request.sessionId);
+			const cwd = sessionCwdMap.get(request.sessionId);
+			if (sessionPath && cwd) void notify({ type: "agent-question-pending", sessionPath, cwd });
 		});
 	});
 	const unregisterMcpElicitationResolved = mcpElicitationBroker.onResolved((event) => {
@@ -625,9 +608,11 @@ export function registerSessionIpc(webContents: WebContents): () => void {
 	): Promise<CodingAgentSandboxAuthorizationDecision> => {
 		if (webContents.isDestroyed()) return Promise.resolve("deny");
 		return new Promise<CodingAgentSandboxAuthorizationDecision>((resolve) => {
+			const waitingKey = `sandbox:${request.requestId}`;
 			const finish = (decision: CodingAgentSandboxAuthorizationDecision): void => {
 				sandboxGrantMap.delete(request.requestId);
 				if (signal) signal.removeEventListener("abort", onAbort);
+				petPresentationController.endWaiting(request.sessionId, waitingKey);
 				resolve(decision);
 			};
 			const onAbort = (): void => finish("deny");
@@ -637,7 +622,11 @@ export function registerSessionIpc(webContents: WebContents): () => void {
 			}
 			if (signal) signal.addEventListener("abort", onAbort, { once: true });
 			sandboxGrantMap.set(request.requestId, finish);
+			petPresentationController.beginWaiting(request.sessionId, waitingKey, "notice.waiting.permission");
 			webContents.send(CHANNELS.SANDBOX_GRANT_REQUEST, request);
+			const sessionPath = runtime.getSessionPath(request.sessionId);
+			const cwd = sessionCwdMap.get(request.sessionId);
+			if (sessionPath && cwd) void notify({ type: "agent-question-pending", sessionPath, cwd });
 		});
 	};
 	const unregisterSandboxAuthorizationHandler =
@@ -1084,9 +1073,10 @@ export function registerSessionIpc(webContents: WebContents): () => void {
 	ipcMain.handle(CHANNELS.SET_GLOBAL_EXECUTION_MODE, async (_event, mode: unknown) => {
 		assertExecutionMode(mode);
 		await assertSandboxAvailableForMode(mode as SessionExecutionMode, resolveDefaultExecutionMode);
-		const settings = await readDesktopConfig();
-		settings.defaultExecutionMode = mode as SessionExecutionMode;
-		await writeDesktopConfig(settings);
+		await updateDesktopConfig((settings) => ({
+			...settings,
+			defaultExecutionMode: mode as SessionExecutionMode,
+		}));
 	});
 
 	// 只更新「新会话默认工作模式」。工作模式在会话创建时固化、会话内不可变，
@@ -1095,9 +1085,7 @@ export function registerSessionIpc(webContents: WebContents): () => void {
 	// 广播仅用于各窗口新会话页 toggle 的显示同步。
 	ipcMain.handle(CHANNELS.SET_GLOBAL_AGENT_MODE, async (_event, mode: unknown) => {
 		const next = isAgentMode(mode) ? mode : DEFAULT_AGENT_MODE;
-		const settings = await readDesktopConfig();
-		settings.defaultAgentMode = next;
-		await writeDesktopConfig(settings);
+		await updateDesktopConfig((settings) => ({ ...settings, defaultAgentMode: next }));
 		for (const win of BrowserWindow.getAllWindows()) {
 			win.webContents.send(CHANNELS.AGENT_MODE_CHANGED, next);
 		}
@@ -1219,43 +1207,13 @@ export function registerSessionIpc(webContents: WebContents): () => void {
 
 	ipcMain.handle(CHANNELS.DELETE, async (_event, sessionPath: unknown) => {
 		assertNonEmptyString(sessionPath, "sessionPath");
-		await assertOrdinaryConversationPath(sessionPath);
-		// ADR-0007: 「对话」项目下的 session cwd 是独立子目录；删除 session 时
-		// 连带回收子目录里的产物。读 header 先取 cwd，再 delete，最后 rm 子目录。
-		const cwdFromHeader = await readSessionCwdFromHeader(sessionPath);
-		await runtime.deleteSession(sessionPath);
-		notifyAutomationSessionsDeleted((path) => path === sessionPath);
-		if (cwdFromHeader && isConversationSubCwd(cwdFromHeader)) {
-			await rm(resolve(cwdFromHeader), { recursive: true, force: true }).catch((err) => {
-				sessionLog.error("failed to remove conversation sub cwd", cwdFromHeader, err);
-			});
-		}
-	});
-
-	ipcMain.handle(CHANNELS.DELETE_ALL_FOR_CWD, async (_event, cwd: unknown) => {
-		assertNonEmptyString(cwd, "cwd");
-		const purged = new Set<string>();
-		const result = await purgeProjectSessions(cwd, {
-			listSessions: (target) => listSessionHistory(target),
-			deleteSession: async (sessionPath) => {
-				await runtime.deleteSession(sessionPath);
-				purged.add(sessionPath);
-			},
-			// 分片目录是新会话的落点；`<项目>/.vetta/sessions` 是存量兼容位置，随项目目录
-			// 一起消失，这里不重复处理（见 composition.resolveDesktopRuntimeSessionRoots）。
-			resolveSessionDirs: (target) => [codingAgentSessionShardPath(target)],
-			removeDirectory: (dir) => rm(dir, { recursive: true, force: true }),
-			logError: (message, ...args) => sessionLog.error(message, ...args),
-		});
-		notifyAutomationSessionsDeleted((path) => purged.has(path));
-		return result;
+		await sessionCommands.delete(sessionPath);
 	});
 
 	ipcMain.handle(CHANNELS.RENAME, async (_event, sessionPath: unknown, name: unknown) => {
 		assertNonEmptyString(sessionPath, "sessionPath");
 		assertNonEmptyString(name, "name");
-		await assertOrdinaryConversationPath(sessionPath);
-		await runtime.renameSession(sessionPath, name);
+		await sessionCommands.rename(sessionPath, name);
 	});
 
 	ipcMain.handle(
@@ -1452,6 +1410,30 @@ export function registerSessionIpc(webContents: WebContents): () => void {
 		assertNonEmptyString(sessionId, "sessionId");
 		if (!isCodingAgentPermissionMode(permissionMode)) throw new Error("Invalid permission mode");
 		return runtime.invokeSessionExtensionSync(sessionId, CODING_AGENT_PERMISSION_MODE_SET, { permissionMode });
+	});
+	ipcMain.handle(CHANNELS.GOAL_GET_STATE, (_event, sessionId: unknown) => {
+		assertNonEmptyString(sessionId, "sessionId");
+		return goalController.read(sessionId);
+	});
+	ipcMain.handle(CHANNELS.GOAL_START, (_event, sessionId: unknown, objective: unknown) => {
+		assertNonEmptyString(sessionId, "sessionId");
+		assertNonEmptyString(objective, "objective");
+		return goalController.start(sessionId, objective);
+	});
+	ipcMain.handle(CHANNELS.GOAL_PAUSE, (_event, sessionId: unknown, goalId: unknown) => {
+		assertNonEmptyString(sessionId, "sessionId");
+		assertNonEmptyString(goalId, "goalId");
+		return goalController.pause(sessionId, goalId);
+	});
+	ipcMain.handle(CHANNELS.GOAL_RESUME, (_event, sessionId: unknown, goalId: unknown) => {
+		assertNonEmptyString(sessionId, "sessionId");
+		assertNonEmptyString(goalId, "goalId");
+		return goalController.resume(sessionId, goalId);
+	});
+	ipcMain.handle(CHANNELS.GOAL_CLEAR, (_event, sessionId: unknown, goalId: unknown) => {
+		assertNonEmptyString(sessionId, "sessionId");
+		assertNonEmptyString(goalId, "goalId");
+		return goalController.clear(sessionId, goalId);
 	});
 
 	ipcMain.handle(CHANNELS.MCP_ELICITATION_RESPONSE, (_event, requestId: unknown, result: unknown) => {
@@ -1817,6 +1799,7 @@ export function registerSessionIpc(webContents: WebContents): () => void {
 			unsubscribe();
 		}
 		notificationSubs.clear();
+		petPresentationController.dispose();
 		for (const unsubscribe of subscriptionMap.values()) {
 			unsubscribe();
 		}

@@ -1,0 +1,6 @@
+{
+  "schema": 1,
+  "deniedSources": {
+    "c144a9b47d1d5d49a802a9a3a3a2cdbbcdf09323": "Confirmed SSH stop defect: dash rejects the implicit signal form and the command reports success while the remote process remains alive. Rebuild from the fixed source; the original notarization cannot approve changed application bytes."
+  }
+}

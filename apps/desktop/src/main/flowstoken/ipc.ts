@@ -1,15 +1,17 @@
 import { BrowserWindow, ipcMain, shell } from "electron";
+import { mainT } from "../i18n/index.js";
 import {
 	ensureGroupKeysAndProviders,
 	getAccountSnapshot,
 	getCatalogAndRefreshProviders,
+	getCatalogSnapshot,
 	loginWithBrowser,
 	loginWithCredentials,
 	logoutAccount,
 	refreshAccount,
 	setSnapshotBroadcastListener,
 } from "./account-service.js";
-import type { FlowstokenGroupId } from "./constants.js";
+import { isValidBillingGroupId } from "./group-catalog.js";
 import type { FlowstokenAccountSnapshot } from "./types.js";
 
 const CHANNELS = {
@@ -22,6 +24,7 @@ const CHANNELS = {
 	OPEN_EXTERNAL: "flowstoken:account:open-external",
 	ACCOUNT_CHANGED: "flowstoken:account:changed",
 	GET_CATALOG: "flowstoken:catalog:get",
+	GET_CATALOG_SNAPSHOT: "flowstoken:catalog:get-snapshot",
 } as const;
 
 function broadcastAccountSnapshot(snapshot: FlowstokenAccountSnapshot): void {
@@ -35,7 +38,16 @@ function broadcastAccountSnapshot(snapshot: FlowstokenAccountSnapshot): void {
 export function registerFlowstokenAccountIpc(): () => void {
 	setSnapshotBroadcastListener(broadcastAccountSnapshot);
 	ipcMain.handle(CHANNELS.GET_SNAPSHOT, async () => getAccountSnapshot({ includeUsage: true }));
-	ipcMain.handle(CHANNELS.GET_CATALOG, async () => getCatalogAndRefreshProviders());
+	ipcMain.handle(CHANNELS.GET_CATALOG, async (_event, options: unknown) =>
+		getCatalogAndRefreshProviders({
+			force: typeof options === "object" && options !== null && "force" in options && options.force === true,
+		}),
+	);
+	ipcMain.handle(CHANNELS.GET_CATALOG_SNAPSHOT, async (_event, options: unknown) =>
+		getCatalogSnapshot({
+			force: typeof options === "object" && options !== null && "force" in options && options.force === true,
+		}),
+	);
 	ipcMain.handle(CHANNELS.LOGIN_BROWSER, async () => {
 		const result = await loginWithBrowser();
 		if (result.snapshot) broadcastAccountSnapshot(result.snapshot);
@@ -55,10 +67,10 @@ export function registerFlowstokenAccountIpc(): () => void {
 		return snapshot;
 	});
 	ipcMain.handle(CHANNELS.ENSURE_KEYS, async (_event, groupIds: unknown) => {
-		const ids = Array.isArray(groupIds)
-			? (groupIds.filter((id): id is FlowstokenGroupId => typeof id === "string") as FlowstokenGroupId[])
-			: undefined;
-		const result = await ensureGroupKeysAndProviders(ids);
+		if (groupIds !== undefined && (!Array.isArray(groupIds) || !groupIds.every(isValidBillingGroupId)))
+			return { ok: false, created: [], reused: [], error: mainT("flowstoken.errors.groupUnavailable") };
+		const ids = groupIds === undefined ? undefined : (groupIds as string[]);
+		const result = await ensureGroupKeysAndProviders(ids, { allowManualOverride: true });
 		if (result.snapshot) broadcastAccountSnapshot(result.snapshot);
 		return result;
 	});

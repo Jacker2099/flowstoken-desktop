@@ -11,7 +11,8 @@ export function createFlowstokenApi(ipc: IpcRenderer): Pick<DesktopApi, "flowsto
 			ensureKeys: (groupIds) => ipc.invoke("flowstoken:account:ensure-keys", groupIds),
 			refresh: () => ipc.invoke("flowstoken:account:refresh"),
 			openExternal: (url) => ipc.invoke("flowstoken:account:open-external", url),
-			getCatalog: () => ipc.invoke("flowstoken:catalog:get"),
+			getCatalog: (options) => ipc.invoke("flowstoken:catalog:get", options),
+			getCatalogSnapshot: (options) => ipc.invoke("flowstoken:catalog:get-snapshot", options),
 			onAccountChanged: (listener) => {
 				const handler = (_event: unknown, snapshot: any) => listener(snapshot);
 				ipc.on("flowstoken:account:changed", handler);

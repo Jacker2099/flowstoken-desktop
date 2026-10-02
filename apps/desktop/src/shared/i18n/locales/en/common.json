@@ -1,4 +1,15 @@
 {
+	"flowstokenAccount": {
+		"title": "FlowsToken account", "description": "Sign in once to access the website's model catalog.",
+		"status": "Account", "signedIn": "Signed in", "signedOut": "Sign in to access your available groups",
+		"refresh": "Refresh", "logout": "Sign out", "balance": "Balance", "used": "Used",
+		"username": "Username or email", "password": "Password", "browserLogin": "Sign in with FlowsToken",
+		"passwordLogin": "Sign in with password", "loginFailed": "Sign-in failed", "syncFailed": "Unable to synchronize account access",
+		"groups": "Model groups", "groupHint": "Group access follows your account. Model updates follow the website.",
+		"sync": "Synchronize access", "ready": "Ready", "pending": "Not synchronized", "unavailable": "Unavailable for this account",
+		"topup": "Add credit", "console": "Open console", "usage": "Recent usage", "noUsage": "No recent usage",
+		"unknownModel": "Unknown model", "models": "{{count}} chat models", "emptyGroups": "No groups are currently available"
+	},
 	"appName": "Vetta",
 	"actions": {
 		"cancel": "Cancel",
@@ -957,6 +968,15 @@
 		}
 	},
 	"modelSelect": {
+		"unavailableBadge": "Unavailable",
+		"unavailableHint": "This selection is no longer available. Choose another model; your conversation and billing group have been preserved.",
+		"emptyGroup": "No available models in this group",
+		"emptyGroupHint": "Choose another group or refresh the catalog.",
+		"syncCatalog": "Refresh model catalog",
+		"catalogCached": "Cached catalog",
+		"catalogFallback": "Default offline catalog",
+		"catalogRefreshFailed": "Refresh failed; the previous catalog has been kept.",
+		"catalogSynced": "Website catalog",
 		"placeholder": "Select model",
 		"searchPlaceholder": "Search models or providers",
 		"clearSearch": "Clear search",

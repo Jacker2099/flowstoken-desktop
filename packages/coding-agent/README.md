@@ -64,6 +64,11 @@ Registry、Backend admission 和 Conversation Session 生命周期根只有 `run
 平台能力必须通过 Runtime Port 注入。可移植产品域不得重新引入文件系统、进程、凭证、下载器或平台生命周期实现；
 兼容 Host 的 Node 默认值只允许位于显式命名的 Host 文件，并由架构守卫保护。
 
+共享模型 Runtime 可通过 `createCodingAgentModelRuntime` 的 `validateModelAccess` / `validateProviderAccess`
+注入宿主访问策略。策略在读取凭据与远程模型元数据前运行，可返回 `ModelAccessLease`，在异步查询后重新检查
+账号或权限状态，并用 `assertCredential` 核对最终解析的真实凭据。未配置策略的宿主保持原行为；策略拒绝时保留
+调用方原模型选择，不自动换到另一服务商或计费组。策略和凭据权威由宿主持有，公共模型目录不能授予账户权限。
+
 工具与 MCP 的大结果投影也遵循同一边界：本包定义 Coding Agent 的截断策略，平台宿主通过
 `codingToolResultPolicy` / `McpToolResultPolicy` 选择 Artifact Store。未注入时保留完整结果，不隐式写入本地文件。
 

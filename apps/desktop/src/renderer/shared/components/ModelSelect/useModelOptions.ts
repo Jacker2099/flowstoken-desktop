@@ -8,9 +8,15 @@ import {
 	remoteProvidersAtom,
 	revalidateFlowstokenCatalog,
 } from "@shared/store/atoms";
+import { catalogGroupTitle } from "@shared/store/flowstoken-catalog";
 import { modelCatalog } from "@shared/store/model-catalog";
 import { useAtomValue } from "jotai";
-import { useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
+import { useTranslation } from "react-i18next";
+import {
+	canonicalFlowstokenProviderId,
+	isManagedFlowstokenProviderId,
+} from "../../../../shared/flowstoken-catalog-policy";
 
 export interface ModelOption {
 	provider: string;
@@ -95,23 +101,26 @@ export interface UseModelOptionsResult {
  * 保存本地 provider）会立刻反映到所有已挂载的选择器上，无需重启应用。
  */
 export function useModelOptions(): UseModelOptionsResult {
+	const { i18n: languageSource } = useTranslation("common");
+	const language = languageSource?.resolvedLanguage ?? languageSource?.language ?? "zh";
 	const remoteProviders = useAtomValue(remoteProvidersAtom);
 	const config = useAtomValue(localModelsConfigAtom);
 	const flowstokenCatalog = useAtomValue(flowstokenCatalogAtom);
 
 	// 挂载即校验一次；TTL 内命中缓存不会真的打接口，所以多个选择器同时挂载也只有一次请求。
 	useEffect(() => {
-		void modelCatalog.revalidate();
-		void revalidateFlowstokenCatalog();
+		void modelCatalog.revalidate().then(() => revalidateFlowstokenCatalog());
 	}, []);
 
 	const localModels = useMemo(() => {
 		if (!config) return [];
 		return flattenModels(config).flatMap((option) => {
 			const entry = catalogModelEntry(flowstokenCatalog, option.provider, option.modelId);
+			// Preserve configuration/history, but do not offer retired managed models as new choices.
+			if (flowstokenCatalog && isManagedFlowstokenProviderId(option.provider) && !entry) return [];
 			if (!entry) return [option];
 			// Image-generation endpoints are not chat completion models.
-			if (entry.image) return [];
+			if (entry.image || (entry.kind && entry.kind !== "chat")) return [];
 			const displayName = entry.name || option.displayName;
 			return [
 				{
@@ -138,8 +147,20 @@ export function useModelOptions(): UseModelOptionsResult {
 	);
 
 	const options = useMemo(() => {
-		const localKeys = new Set(localModels.map((m) => m.key));
-		return [...localModels, ...remoteModels.filter((m) => !localKeys.has(m.key))];
+		const unique = new Map<string, ModelOption>();
+		for (const model of [...localModels, ...remoteModels]) {
+			const identity = `${canonicalFlowstokenProviderId(model.provider)}/${model.modelId}`;
+			const previous = unique.get(identity);
+			if (
+				!previous ||
+				(!model.remote &&
+					(previous.remote ||
+						(previous.provider === "flowstoken-normal" && model.provider === "flowstoken-default")))
+			) {
+				unique.set(identity, model);
+			}
+		}
+		return [...unique.values()];
 	}, [localModels, remoteModels]);
 
 	const grouped = useMemo(() => {
@@ -149,12 +170,26 @@ export function useModelOptions(): UseModelOptionsResult {
 			list.push(m);
 			groups.set(m.provider, list);
 		}
-		// Sort providers so FlowsToken groups are always first in order: smart, default, official
-		const priorityOrder = ["flowstoken-smart", "flowstoken-default", "flowstoken-normal", "flowstoken-official"];
+		// Group order is presentation data from the same catalog as the website.
+		const priorityOrder = flowstokenCatalog?.groups.flatMap((group) =>
+			group.id === "default" ? [group.providerId, "flowstoken-normal"] : [group.providerId],
+		) ?? ["flowstoken-smart", "flowstoken-default", "flowstoken-normal", "flowstoken-official"];
 		const sorted = new Map<string, ModelOption[]>();
 		for (const p of priorityOrder) {
 			if (groups.has(p)) {
-				sorted.set(p, groups.get(p)!);
+				const models = groups.get(p)!;
+				const catalogGroup = catalogGroupForProvider(flowstokenCatalog, canonicalFlowstokenProviderId(p));
+				if (catalogGroup) {
+					const order = new Map(
+						catalogGroup.vendors.flatMap((vendor) => vendor.models).map((model, index) => [model.id, index]),
+					);
+					models.sort(
+						(a, b) =>
+							(order.get(a.modelId) ?? Number.MAX_SAFE_INTEGER) -
+							(order.get(b.modelId) ?? Number.MAX_SAFE_INTEGER),
+					);
+				}
+				sorted.set(p, models);
 				groups.delete(p);
 			}
 		}
@@ -162,28 +197,34 @@ export function useModelOptions(): UseModelOptionsResult {
 			sorted.set(k, v);
 		}
 		return sorted;
-	}, [options]);
+	}, [options, flowstokenCatalog]);
 
-	const iconFor = (provider: string): string | undefined => {
-		const local = config?.providers[provider] as { icon?: string } | undefined;
-		const remote = (remoteProviders as Record<string, { icon?: string }>)[provider];
-		return local?.icon ?? remote?.icon ?? "openai";
-	};
+	const iconFor = useCallback(
+		(provider: string): string | undefined => {
+			const local = config?.providers[provider] as { icon?: string } | undefined;
+			const remote = (remoteProviders as Record<string, { icon?: string }>)[provider];
+			return local?.icon ?? remote?.icon ?? "openai";
+		},
+		[config, remoteProviders],
+	);
 
-	const labelFor = (provider: string): string => {
-		const group = catalogGroupForProvider(flowstokenCatalog, provider);
-		if (group) return `FlowsToken ${group.title}`;
-		if (provider === "flowstoken-smart") return i18n.t("common:modelSelect.groupSmart");
-		if (provider === "flowstoken-default" || provider === "flowstoken-normal")
-			return i18n.t("common:modelSelect.groupDefault");
-		if (provider === "flowstoken-official") return i18n.t("common:modelSelect.groupOfficial");
-		const local = config?.providers[provider] as { displayName?: string } | undefined;
-		const remote = (remoteProviders as Record<string, { displayName?: string }>)[provider];
-		if (local?.displayName) return local.displayName;
-		if (remote?.displayName) return remote.displayName;
-		if (provider === "vetta-go") return "FlowsToken Go";
-		return provider;
-	};
+	const labelFor = useCallback(
+		(provider: string): string => {
+			const group = catalogGroupForProvider(flowstokenCatalog, provider);
+			if (group) return catalogGroupTitle(group, language);
+			if (provider === "flowstoken-smart") return i18n.t("common:modelSelect.groupSmart");
+			if (provider === "flowstoken-default" || provider === "flowstoken-normal")
+				return i18n.t("common:modelSelect.groupDefault");
+			if (provider === "flowstoken-official") return i18n.t("common:modelSelect.groupOfficial");
+			const local = config?.providers[provider] as { displayName?: string } | undefined;
+			const remote = (remoteProviders as Record<string, { displayName?: string }>)[provider];
+			if (local?.displayName) return local.displayName;
+			if (remote?.displayName) return remote.displayName;
+			if (provider === "vetta-go") return "FlowsToken Go";
+			return provider;
+		},
+		[config, remoteProviders, flowstokenCatalog, language],
+	);
 
 	return { options, grouped, defaultKey: config?.defaultModel, iconFor, labelFor };
 }

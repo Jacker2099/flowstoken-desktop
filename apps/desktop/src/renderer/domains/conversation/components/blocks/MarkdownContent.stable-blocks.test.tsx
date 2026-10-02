@@ -46,7 +46,7 @@ describe("MarkdownContent 稳定块冻结", () => {
 		expect(screen.getByText(/Beta continues now/)).toBeTruthy();
 	});
 
-	it("流式结束后冻结块节点保持身份，已展示文本不再重新包成淡入片段", () => {
+	it("流式结束仅取消暗色，冻结块与尾部分段节点保持身份", () => {
 		const prefix = "Hello frozen paragraph.\n\n```js\nconst a = 1;\n```\n\n";
 		const text = `${prefix}Beta continues now.`;
 		const view = render(<MarkdownContent {...environment} text={text} isStreamingTail />);
@@ -56,23 +56,31 @@ describe("MarkdownContent 稳定块冻结", () => {
 		const frozen = screen.getByText("Hello frozen paragraph.");
 		const frozenCode = view.container.querySelector("pre, code");
 		const tail = screen.getByText(/Beta continues now/);
-		const chunksBefore = view.container.querySelectorAll(".streaming-chunk").length;
-		expect(chunksBefore).toBeGreaterThan(0);
+		const chunksBefore = Array.from(view.container.querySelectorAll(".streaming-chunk"));
+		const displayedText = view.container.textContent;
+		expect(chunksBefore.length).toBeGreaterThan(0);
 
 		// 尾块翻为非流式的那一刻：settle 尚未到期，animateChunks 仍为 true。
 		view.rerender(<MarkdownContent {...environment} text={text} isStreamingTail={false} />);
 		expect(screen.getByText("Hello frozen paragraph.")).toBe(frozen);
 		expect(view.container.querySelector("pre, code")).toBe(frozenCode);
 		expect(screen.getByText(/Beta continues now/)).toBe(tail);
-		expect(view.container.querySelectorAll(".streaming-chunk").length).toBe(chunksBefore);
+		expect(view.container.querySelectorAll(".streaming-chunk").length).toBe(chunksBefore.length);
+		expect(view.container.querySelector(".markdown-streaming-tail")).not.toBeNull();
 
-		// settle 之后撤掉分段，冻结块依旧是同一实例。
+		// settle 仅撤掉控制暗色的包裹类；已有分段不能移除或重建，否则尾块会闪动。
 		act(() => {
 			vi.advanceTimersByTime(4000);
 		});
 		expect(screen.getByText("Hello frozen paragraph.")).toBe(frozen);
 		expect(view.container.querySelector("pre, code")).toBe(frozenCode);
-		expect(view.container.querySelector(".streaming-chunk")).toBeNull();
+		expect(screen.getByText(/Beta continues now/)).toBe(tail);
+		const chunksAfter = view.container.querySelectorAll(".streaming-chunk");
+		expect(chunksAfter.length).toBe(chunksBefore.length);
+		for (const [index, chunk] of chunksBefore.entries()) {
+			expect(chunksAfter[index]).toBe(chunk);
+		}
+		expect(view.container.textContent).toBe(displayedText);
 		expect(view.container.querySelector(".markdown-streaming-tail")).toBeNull();
 	});
 

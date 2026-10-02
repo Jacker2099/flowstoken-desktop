@@ -1,5 +1,8 @@
+import { createHash } from "node:crypto";
 import { net, type Session } from "electron";
-import { FLOWSTOKEN_API_ORIGIN, FLOWSTOKEN_GROUPS, type FlowstokenGroupId } from "./constants.js";
+import { mainT } from "../i18n/index.js";
+import { FLOWSTOKEN_API_ORIGIN, FLOWSTOKEN_GROUPS } from "./constants.js";
+import { isValidBillingGroupId } from "./group-catalog.js";
 import type { FlowstokenUsageRow, FlowstokenUserSnapshot } from "./types.js";
 
 interface ApiEnvelope<T> {
@@ -28,18 +31,41 @@ export class FlowstokenApiError extends Error {
  * never resolved after the popup reached the console.
  */
 let cachedAccessToken: string | null = null;
+let cachedAccountId: number | null = null;
+let authRevision = 0;
+let refreshRequest: {
+	session: Session;
+	revision: number;
+	promise: Promise<{ accessToken: string; user: FlowstokenUserSnapshot }>;
+} | null = null;
 
 export function clearCachedAccessToken(): void {
 	cachedAccessToken = null;
+	cachedAccountId = null;
+	authRevision++;
 }
 
 export function getCachedAccessToken(): string | null {
 	return cachedAccessToken;
 }
 
+export function getFlowstokenAuthRevision(): number {
+	return authRevision;
+}
+
+export function getFlowstokenAccountId(): number | null {
+	return cachedAccountId;
+}
+
 export function setCachedAccessToken(token: string | null | undefined): void {
 	const trimmed = typeof token === "string" ? token.trim() : "";
 	cachedAccessToken = trimmed || null;
+	cachedAccountId = null;
+	authRevision++;
+}
+
+function assertCurrentAuth(revision: number): void {
+	if (revision !== authRevision) throw new FlowstokenApiError(mainT("flowstoken.errors.accountChanged"));
 }
 
 type RefreshPayload = {
@@ -56,8 +82,10 @@ function pickAccessToken(data: RefreshPayload | null | undefined): string | null
 }
 
 function mapUser(data: Record<string, unknown>): FlowstokenUserSnapshot {
+	const id = Number(data.id);
+	if (!Number.isSafeInteger(id) || id <= 0) throw new FlowstokenApiError(mainT("flowstoken.errors.invalidAccount"));
 	return {
-		id: Number(data.id),
+		id,
 		username: String(data.username ?? ""),
 		displayName: String(data.display_name || data.username || ""),
 		email: data.email ? String(data.email) : undefined,
@@ -69,40 +97,67 @@ function mapUser(data: Record<string, unknown>): FlowstokenUserSnapshot {
 }
 
 async function sessionFetch(session: Session, url: string, init: RequestInit): Promise<Response> {
-	const headers = new Headers(init.headers);
-	try {
-		const cookies = await session.cookies.get({ url });
-		const cookieStr = cookies.map((c) => `${c.name}=${c.value}`).join("; ");
-		if (cookieStr && !headers.has("Cookie")) {
-			headers.set("Cookie", cookieStr);
+	const revision = authRevision;
+	const controller = new AbortController();
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	const expired = new Promise<never>((_resolve, reject) => {
+		timer = setTimeout(() => {
+			const error = new FlowstokenApiError(mainT("flowstoken.errors.requestTimeout"));
+			controller.abort(error);
+			reject(error);
+		}, 15_000);
+	});
+	const request = (async () => {
+		const headers = new Headers(init.headers);
+		try {
+			const cookies = await session.cookies.get({ url });
+			const cookieStr = cookies.map((c) => `${c.name}=${c.value}`).join("; ");
+			if (cookieStr && !headers.has("Cookie")) {
+				headers.set("Cookie", cookieStr);
+			}
+		} catch {
+			// Non-blocking
 		}
-	} catch {
-		// Non-blocking
-	}
+		assertCurrentAuth(revision);
+		controller.signal.throwIfAborted();
 
-	if (!headers.has("Origin")) {
-		headers.set("Origin", FLOWSTOKEN_API_ORIGIN);
-	}
-	if (!headers.has("Referer")) {
-		headers.set("Referer", `${FLOWSTOKEN_API_ORIGIN}/`);
-	}
+		if (!headers.has("Origin")) {
+			headers.set("Origin", FLOWSTOKEN_API_ORIGIN);
+		}
+		if (!headers.has("Referer")) {
+			headers.set("Referer", `${FLOWSTOKEN_API_ORIGIN}/`);
+		}
 
-	if (typeof session.fetch === "function") {
-		return session.fetch(url, {
+		const options = {
 			...init,
 			headers,
+			signal: controller.signal,
 			credentials: init.credentials ?? "include",
+		};
+		const response =
+			typeof session.fetch === "function"
+				? await session.fetch(url, options)
+				: await net.fetch(url, { ...options, ...({ session } as object) } as RequestInit);
+		const body = await response.arrayBuffer();
+		controller.signal.throwIfAborted();
+		assertCurrentAuth(revision);
+		return new Response([204, 205, 304].includes(response.status) ? null : body, {
+			status: response.status,
+			statusText: response.statusText,
+			headers: response.headers,
 		});
+	})();
+	try {
+		return await Promise.race([request, expired]);
+	} finally {
+		if (timer !== undefined) clearTimeout(timer);
 	}
-	return net.fetch(url, {
-		...init,
-		headers,
-		credentials: init.credentials ?? "include",
-		...({ session } as object),
-	} as RequestInit);
 }
 
-export async function refreshAuth(session: Session): Promise<{
+async function performRefresh(
+	session: Session,
+	revision: number,
+): Promise<{
 	accessToken: string;
 	user: FlowstokenUserSnapshot;
 }> {
@@ -116,6 +171,7 @@ export async function refreshAuth(session: Session): Promise<{
 	});
 
 	const text = await response.text();
+	assertCurrentAuth(revision);
 	let json: ApiEnvelope<RefreshPayload> | null = null;
 	try {
 		json = text ? (JSON.parse(text) as ApiEnvelope<RefreshPayload>) : null;
@@ -124,25 +180,41 @@ export async function refreshAuth(session: Session): Promise<{
 	}
 
 	if (!response.ok || json?.success === false) {
-		clearCachedAccessToken();
+		cachedAccessToken = null;
+		cachedAccountId = null;
 		throw new FlowstokenApiError(json?.message || `刷新会话失败（HTTP ${response.status}）`, response.status);
 	}
 
 	const data = (json?.data ?? null) as RefreshPayload | null;
 	const accessToken = pickAccessToken(data);
 	if (!accessToken) {
-		clearCachedAccessToken();
+		cachedAccessToken = null;
+		cachedAccountId = null;
 		throw new FlowstokenApiError("刷新会话未返回 access_token", response.status);
 	}
-	setCachedAccessToken(accessToken);
-
+	let user: FlowstokenUserSnapshot;
 	if (data?.user && typeof data.user === "object") {
-		return { accessToken, user: mapUser(data.user) };
+		user = mapUser(data.user);
+	} else if (data && data.id !== undefined) {
+		user = mapUser(data);
+	} else {
+		user = await fetchSelfWithBearer(session, accessToken, revision, false);
 	}
-	if (data && data.id !== undefined) {
-		return { accessToken, user: mapUser(data) };
-	}
-	return { accessToken, user: await fetchSelfWithBearer(session, accessToken) };
+	assertCurrentAuth(revision);
+	if (cachedAccountId !== null && cachedAccountId !== user.id) authRevision++;
+	cachedAccessToken = accessToken;
+	cachedAccountId = user.id;
+	return { accessToken, user };
+}
+
+export function refreshAuth(session: Session): Promise<{ accessToken: string; user: FlowstokenUserSnapshot }> {
+	if (refreshRequest?.session === session && refreshRequest.revision === authRevision) return refreshRequest.promise;
+	const revision = authRevision;
+	const promise = performRefresh(session, revision).finally(() => {
+		if (refreshRequest?.promise === promise) refreshRequest = null;
+	});
+	refreshRequest = { session, revision, promise };
+	return promise;
 }
 
 async function ensureAccessToken(session: Session): Promise<string> {
@@ -155,6 +227,7 @@ async function apiFetch<T>(
 	path: string,
 	init: RequestInit & { query?: Record<string, string | number | undefined> } = {},
 ): Promise<T> {
+	const revision = authRevision;
 	const url = new URL(path, FLOWSTOKEN_API_ORIGIN);
 	if (init.query) {
 		for (const [key, value] of Object.entries(init.query)) {
@@ -164,6 +237,7 @@ async function apiFetch<T>(
 	}
 
 	const send = async (accessToken: string): Promise<Response> => {
+		assertCurrentAuth(revision);
 		const headers = new Headers(init.headers);
 		if (init.body && !headers.has("Content-Type")) {
 			headers.set("Content-Type", "application/json");
@@ -179,13 +253,15 @@ async function apiFetch<T>(
 
 	let accessToken = await ensureAccessToken(session);
 	let response = await send(accessToken);
+	assertCurrentAuth(revision);
 	if (response.status === 401) {
-		clearCachedAccessToken();
+		cachedAccessToken = null;
 		accessToken = (await refreshAuth(session)).accessToken;
 		response = await send(accessToken);
 	}
 
 	const text = await response.text();
+	assertCurrentAuth(revision);
 	let json: ApiEnvelope<T> | null = null;
 	try {
 		json = text ? (JSON.parse(text) as ApiEnvelope<T>) : null;
@@ -201,7 +277,13 @@ async function apiFetch<T>(
 	return (json?.data ?? (json as unknown as T)) as T;
 }
 
-async function fetchSelfWithBearer(session: Session, accessToken: string): Promise<FlowstokenUserSnapshot> {
+async function fetchSelfWithBearer(
+	session: Session,
+	accessToken: string,
+	revision = authRevision,
+	commitIdentity = true,
+): Promise<FlowstokenUserSnapshot> {
+	assertCurrentAuth(revision);
 	const url = new URL("/api/user/self", FLOWSTOKEN_API_ORIGIN).toString();
 	const response = await sessionFetch(session, url, {
 		method: "GET",
@@ -211,6 +293,7 @@ async function fetchSelfWithBearer(session: Session, accessToken: string): Promi
 		},
 	});
 	const text = await response.text();
+	assertCurrentAuth(revision);
 	let json: ApiEnvelope<Record<string, unknown>> | null = null;
 	try {
 		json = text ? (JSON.parse(text) as ApiEnvelope<Record<string, unknown>>) : null;
@@ -220,18 +303,27 @@ async function fetchSelfWithBearer(session: Session, accessToken: string): Promi
 	if (!response.ok || json?.success === false) {
 		throw new FlowstokenApiError(json?.message || `HTTP ${response.status}`, response.status);
 	}
-	return mapUser((json?.data ?? json) as Record<string, unknown>);
+	const user = mapUser((json?.data ?? json) as Record<string, unknown>);
+	if (commitIdentity) {
+		if (cachedAccountId !== null && cachedAccountId !== user.id) authRevision++;
+		cachedAccountId = user.id;
+	}
+	return user;
 }
 
 export async function fetchSelf(session: Session): Promise<FlowstokenUserSnapshot> {
+	const revision = authRevision;
 	try {
 		return (await refreshAuth(session)).user;
 	} catch (refreshError) {
+		assertCurrentAuth(revision);
 		if (cachedAccessToken) {
 			try {
-				return await fetchSelfWithBearer(session, cachedAccessToken);
+				return await fetchSelfWithBearer(session, cachedAccessToken, revision);
 			} catch {
-				clearCachedAccessToken();
+				assertCurrentAuth(revision);
+				cachedAccessToken = null;
+				cachedAccountId = null;
 			}
 		}
 		throw refreshError;
@@ -244,6 +336,7 @@ export async function loginWithPassword(
 	password: string,
 	turnstileToken: string,
 ): Promise<FlowstokenUserSnapshot> {
+	const revision = authRevision;
 	const url = new URL("/api/user/login", FLOWSTOKEN_API_ORIGIN);
 	url.searchParams.set("turnstile", turnstileToken);
 	const response = await sessionFetch(session, url.toString(), {
@@ -255,6 +348,7 @@ export async function loginWithPassword(
 		body: JSON.stringify({ username, password }),
 	});
 	const json = (await response.json()) as ApiEnvelope<RefreshPayload>;
+	assertCurrentAuth(revision);
 	if (!response.ok || json.success === false) {
 		throw new FlowstokenApiError(json.message || "登录失败", response.status);
 	}
@@ -278,7 +372,11 @@ export async function loginWithPassword(
 		}
 	}
 
-	if (userRaw) return mapUser(userRaw);
+	if (userRaw) {
+		const user = mapUser(userRaw);
+		cachedAccountId = user.id;
+		return user;
+	}
 	return fetchSelf(session);
 }
 
@@ -294,17 +392,54 @@ interface PageInfo<T> {
 	data?: T[];
 }
 
-export async function listTokens(session: Session, page = 0, pageSize = 100): Promise<NewApiTokenRow[]> {
-	const data = await apiFetch<PageInfo<NewApiTokenRow> | NewApiTokenRow[]>(session, "/api/token/", {
-		query: { p: page, page_size: pageSize },
-	});
-	if (Array.isArray(data)) return data;
-	if (Array.isArray(data.items)) return data.items;
-	if (Array.isArray(data.data)) return data.data;
-	return [];
+export async function listTokens(session: Session, page?: number, pageSize = 100): Promise<NewApiTokenRow[]> {
+	const size = Math.min(100, Math.max(1, pageSize));
+	const result: NewApiTokenRow[] = [];
+	const seen = new Set<number>();
+	for (let currentPage = page ?? 1; ; currentPage++) {
+		const data = await apiFetch<(PageInfo<NewApiTokenRow> & { total?: number }) | NewApiTokenRow[]>(
+			session,
+			"/api/token/",
+			{
+				query: { p: currentPage, page_size: size },
+			},
+		);
+		const rows = Array.isArray(data) ? data : Array.isArray(data.items) ? data.items : data.data;
+		if (!Array.isArray(rows)) throw new FlowstokenApiError(mainT("flowstoken.errors.tokenInventoryUnavailable"));
+		const before = result.length;
+		for (const row of rows)
+			if (!seen.has(row.id)) {
+				seen.add(row.id);
+				result.push(row);
+			}
+		const total = Array.isArray(data) ? undefined : data.total;
+		if (page !== undefined || rows.length < size || (typeof total === "number" && result.length >= total))
+			return result;
+		if (result.length === before) throw new FlowstokenApiError(mainT("flowstoken.errors.tokenInventoryUnavailable"));
+	}
 }
 
-export async function createToken(session: Session, input: { name: string; group: FlowstokenGroupId }): Promise<void> {
+/** Entitlements come from the authenticated account API, never from the public model catalog. */
+export async function fetchUsableGroups(session: Session): Promise<ReadonlySet<string>> {
+	const data = await apiFetch<unknown>(session, "/api/user/self/groups");
+	if (typeof data !== "object" || data === null || Array.isArray(data))
+		throw new FlowstokenApiError(mainT("flowstoken.errors.entitlementsUnavailable"));
+	const groups = new Set<string>();
+	for (const [id, value] of Object.entries(data)) {
+		if (!isValidBillingGroupId(id) || typeof value !== "object" || value === null || Array.isArray(value))
+			throw new FlowstokenApiError(mainT("flowstoken.errors.invalidEntitlements"));
+		groups.add(id);
+	}
+	return groups;
+}
+
+/** Legacy names stay intact; new names remain stable and below NewAPI's 50-byte limit. */
+export function managedTokenName(groupId: string): string {
+	const legacy = FLOWSTOKEN_GROUPS.find((group) => group.id === groupId);
+	return legacy?.tokenName ?? `FlowsToken-Desktop-${createHash("sha256").update(groupId).digest("hex").slice(0, 30)}`;
+}
+
+export async function createToken(session: Session, input: { name: string; group: string }): Promise<void> {
 	await apiFetch(session, "/api/token/", {
 		method: "POST",
 		body: JSON.stringify({
@@ -350,12 +485,13 @@ export async function fetchSelfLogs(session: Session, pageSize = 30): Promise<Fl
 	}));
 }
 
-export function findManagedToken(tokens: NewApiTokenRow[], groupId: FlowstokenGroupId): NewApiTokenRow | undefined {
+export function findManagedToken(tokens: NewApiTokenRow[], groupId: string): NewApiTokenRow | undefined {
 	const meta = FLOWSTOKEN_GROUPS.find((g) => g.id === groupId);
-	if (!meta) return undefined;
-	const usable = tokens.filter((token) => token.group === groupId && token.status === 1);
+	const usable = tokens.filter(
+		(token) => token.group === groupId && token.status === 1 && Number.isSafeInteger(token.id) && token.id > 0,
+	);
 	return (
-		usable.find((token) => token.name === meta.tokenName) ??
-		usable.find((token) => String(token.name).includes("FlowsToken-Desktop"))
+		usable.find((token) => token.name === managedTokenName(groupId)) ??
+		(meta ? usable.find((token) => String(token.name).includes("FlowsToken-Desktop")) : undefined)
 	);
 }

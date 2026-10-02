@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
-import { revalidateFlowstokenCatalog } from "@shared/store/flowstoken-catalog";
 import { SELECTED_MODEL_STORAGE_KEY, selectedModelAtom } from "@shared/store/atoms";
+import { revalidateFlowstokenCatalog } from "@shared/store/flowstoken-catalog";
 import { act, renderHook } from "@testing-library/react";
 import { createStore, Provider } from "jotai";
 import type { ReactNode } from "react";
@@ -67,14 +67,13 @@ it("remembers a model picked in a scoped composer as the global new-session pref
 	expect(localStorage.getItem(SELECTED_MODEL_STORAGE_KEY)).toBe("cli-proxy-api.google/gemini-3.8-flash-high");
 });
 
-
-it("refreshes the FlowsToken server catalog when the existing chat model menu opens", () => {
+it("refreshes the FlowsToken server catalog when the existing chat model menu opens", async () => {
 	const store = createStore();
 	const wrapper = ({ children }: { children: ReactNode }) => <Provider store={store}>{children}</Provider>;
 	const { result } = renderHook(() => useModelSelectorModel({ updateActiveSession: false }), { wrapper });
 	vi.mocked(revalidateFlowstokenCatalog).mockClear();
-	act(() => result.current.viewProps.onOpenChange?.(true));
+	await act(async () => result.current.viewProps.onOpenChange?.(true));
 	expect(revalidateFlowstokenCatalog).toHaveBeenCalledTimes(1);
-	act(() => result.current.viewProps.onOpenChange?.(false));
+	await act(async () => result.current.viewProps.onOpenChange?.(false));
 	expect(revalidateFlowstokenCatalog).toHaveBeenCalledTimes(1);
 });

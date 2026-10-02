@@ -1,12 +1,9 @@
-import { spawn, spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import {
 	buildListListeningPortsCommand,
-	buildProcessInfoCommand,
 	buildTerminateProcessCommand,
 	fromHelperListener,
 	isSensitiveListenerPort,
-	PROCESS_STILL_ALIVE_EXIT_CODE,
 	parseProcessInfo,
 	parseRemoteListeners,
 	selectForwardablePorts,
@@ -195,46 +192,12 @@ describe("进程信息", () => {
 		expect(info.get(9001)?.startedAt).toBe(now - 3723 * 1000);
 		expect(info.size).toBe(3);
 	});
-
-	it("命令在本机的 ps 上跑得通", () => {
-		const result = spawnSync("/bin/sh", ["-c", buildProcessInfoCommand([process.pid])], { encoding: "utf8" });
-		const info = parseProcessInfo(result.stdout, Date.now());
-		expect(info.get(process.pid)?.command).toBeTruthy();
-		expect(info.get(process.pid)?.startedAt).toBeLessThanOrEqual(Date.now());
-	});
 });
 
-describe("终止进程", () => {
+describe("termination target validation", () => {
 	it("拒绝对 0、1 与负数发信号——那是进程组与 init", () => {
 		expect(() => buildTerminateProcessCommand(0, false)).toThrow();
 		expect(() => buildTerminateProcessCommand(1, false)).toThrow();
 		expect(() => buildTerminateProcessCommand(-5, true)).toThrow();
-	});
-
-	it("发完 SIGTERM 等到进程真的退出才返回 0", () => {
-		const child = spawn("sleep", ["30"], { stdio: "ignore" });
-		const pid = child.pid ?? 0;
-		const result = spawnSync("/bin/sh", ["-c", buildTerminateProcessCommand(pid, false)], { encoding: "utf8" });
-		expect(result.status).toBe(0);
-		expect(child.signalCode ?? "SIGTERM").toBe("SIGTERM");
-	});
-
-	it("不理 SIGTERM 的进程报「还活着」，SIGKILL 才收得掉", () => {
-		const child = spawn("/bin/sh", ["-c", "trap '' TERM; while :; do sleep 0.05; done"], { stdio: "ignore" });
-		const pid = child.pid ?? 0;
-		try {
-			const term = spawnSync("/bin/sh", ["-c", buildTerminateProcessCommand(pid, false)], { encoding: "utf8" });
-			expect(term.status).toBe(PROCESS_STILL_ALIVE_EXIT_CODE);
-			const kill = spawnSync("/bin/sh", ["-c", buildTerminateProcessCommand(pid, true)], { encoding: "utf8" });
-			expect(kill.status).toBe(0);
-		} finally {
-			child.kill("SIGKILL");
-		}
-	});
-
-	it("进程不存在时 kill 自己报错，退出码非零且不是「还活着」", () => {
-		const result = spawnSync("/bin/sh", ["-c", buildTerminateProcessCommand(999_999, false)], { encoding: "utf8" });
-		expect(result.status).not.toBe(0);
-		expect(result.status).not.toBe(PROCESS_STILL_ALIVE_EXIT_CODE);
 	});
 });

@@ -1,4 +1,12 @@
+import type { DesktopNotificationPreferences } from "../../shared/notification-preferences.js";
 import type { ProjectEntry } from "./shared.js";
+
+export type {
+	BuiltinNotificationSoundId,
+	DesktopNotificationPreferences,
+	NotificationDeliveryScope,
+	NotificationEventType,
+} from "../../shared/notification-preferences.js";
 
 export type DesktopProxyProtocol = "http" | "https";
 
@@ -23,6 +31,7 @@ export interface DesktopProxyConfigPatchData {
 }
 
 export interface DesktopConfigData {
+	schemaVersion: number;
 	projects: ProjectEntry[];
 	archivedProjects: ProjectEntry[];
 	workspacePath: string;
@@ -60,6 +69,8 @@ export interface DesktopConfigData {
 	debugMode?: boolean;
 	/** 系统通知总开关（「通用设置」）。缺省视为开启。 */
 	notificationsEnabled?: boolean;
+	/** Agent 事件的系统横幅、内置提示音与显示时机。 */
+	notificationPreferences: DesktopNotificationPreferences;
 	/** 实验性功能开关分组（「Agent配置 → 扩展功能」）。缺省视为全部开启。 */
 	experimental?: {
 		/** Vetta CLI 提示词开关。仅对桌面端对话会话生效，缺省开。 */
@@ -119,10 +130,21 @@ export interface DesktopConfigData {
 		/** 发送后行为：foreground=打开主窗定位新会话；background=后台运行仅关面板。缺省 foreground。 */
 		postSendBehavior?: "foreground" | "background";
 	};
+	/** 手机遥控本机：设备列表、云端中继开关与局域网端口。渲染层只读，改动走 remotePairing API。 */
 	remoteControl?: {
 		relayBaseUrl?: string;
-		pairingId?: string;
-		inputEnabled?: boolean;
+		cloudEnabled: boolean;
+		lanPort?: number;
+		devices: Array<{
+			id: string;
+			name: string;
+			renamed?: boolean;
+			desktopControl?: boolean;
+			mobileSecretHash: string;
+			mobileIdentityKey?: string;
+			createdAt: number;
+			lastSeenAt?: number;
+		}>;
 	};
 	/** 应用代理（「通用设置 → 网络代理」）。缺省不启用。 */
 	proxy?: DesktopProxyConfigData;

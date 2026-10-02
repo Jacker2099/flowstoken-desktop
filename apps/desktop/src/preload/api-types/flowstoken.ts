@@ -1,3 +1,6 @@
+import type { FlowstokenModelKind, FlowstokenReasoningLevel } from "../../shared/flowstoken-catalog-policy.js";
+import type { ModelsConfigData } from "./models.js";
+
 export interface FlowstokenUserSnapshot {
 	id: number;
 	username: string;
@@ -22,13 +25,14 @@ export interface FlowstokenUsageRow {
 }
 
 export interface FlowstokenGroupKeyState {
-	groupId: "default" | "smart" | "vip";
+	groupId: string;
 	providerId: string;
 	labelZh: string;
 	tokenName: string;
 	tokenId?: number;
 	wired: boolean;
 	enabled: boolean;
+	requiresManualSetup?: boolean;
 }
 
 export interface FlowstokenAccountSnapshot {
@@ -64,14 +68,20 @@ export interface DesktopFlowstokenApi {
 	loginWithBrowser: () => Promise<FlowstokenLoginResult>;
 	loginWithPassword: (username: string, password: string) => Promise<FlowstokenLoginResult>;
 	logout: () => Promise<FlowstokenAccountSnapshot>;
-	ensureKeys: (groupIds?: Array<"default" | "smart" | "vip">) => Promise<FlowstokenEnsureKeysResult>;
+	ensureKeys: (groupIds?: string[]) => Promise<FlowstokenEnsureKeysResult>;
 	refresh: () => Promise<FlowstokenAccountSnapshot>;
 	openExternal: (url: string) => Promise<void>;
 	onAccountChanged: (listener: (snapshot: FlowstokenAccountSnapshot) => void) => () => void;
-	getCatalog: () => Promise<FlowstokenCatalog>;
+	getCatalog: (options?: { force?: boolean }) => Promise<FlowstokenCatalog>;
+	getCatalogSnapshot: (options?: { force?: boolean }) => Promise<FlowstokenCatalogSnapshot>;
 }
 
-/** Mirror of main/flowstoken/types.ts — the server-delivered desktop model catalog (schema 1). */
+export interface FlowstokenCatalogSnapshot {
+	catalog: FlowstokenCatalog;
+	config: ModelsConfigData;
+}
+
+/** Mirror of main/flowstoken/types.ts — validated server model catalog (schema 1 or 2). */
 export interface FlowstokenCatalogModel {
 	id: string;
 	name: string;
@@ -79,6 +89,13 @@ export interface FlowstokenCatalogModel {
 	tags: string[];
 	vision: boolean;
 	image: boolean;
+	kind?: FlowstokenModelKind;
+	reasoningLevels?: FlowstokenReasoningLevel[];
+	defaultReasoningLevel?: FlowstokenReasoningLevel;
+	recommended?: boolean;
+	reasoning?: boolean;
+	contextWindow?: number;
+	maxTokens?: number;
 }
 
 export interface FlowstokenCatalogVendor {
@@ -90,9 +107,11 @@ export interface FlowstokenCatalogVendor {
 }
 
 export interface FlowstokenCatalogGroup {
-	id: "smart" | "default" | "vip";
+	/** Immutable NewAPI billing group key, independent from its display title. */
+	id: string;
 	providerId: string;
 	title: string;
+	titles?: { zh?: string; en?: string };
 	subtitle: string;
 	defaultModel?: string;
 	highlight?: { title: string; badge: string; description: string };
@@ -100,7 +119,11 @@ export interface FlowstokenCatalogGroup {
 }
 
 export interface FlowstokenCatalog {
-	schema: 1;
+	schema: 1 | 2;
+	/** Opaque schema-2 content revision. Valid earlier revisions can be restored for rollback. */
+	revision?: string;
+	source?: "network" | "cache" | "fallback";
+	fetchedAt?: number;
 	generated: number;
 	pricingVersion: string;
 	newWindowDays: number;

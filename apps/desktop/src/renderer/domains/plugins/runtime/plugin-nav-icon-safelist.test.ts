@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { classifyPluginNavIcon } from "./plugin-nav-icon";
@@ -22,6 +22,13 @@ const presetsDir = join(repoRoot, "packages/plugins/presets");
 const stylesPath = join(repoRoot, "apps/desktop/src/renderer/styles.css");
 
 const ICON_LITERAL = /icon:\s*"([^"]+)"/g;
+
+function declaredPresetDirectories(): string[] {
+	return readdirSync(presetsDir, { withFileTypes: true })
+		.filter((entry) => entry.isDirectory())
+		.map((entry) => join(presetsDir, entry.name))
+		.filter((directory) => existsSync(join(directory, "plugin.json")));
+}
 
 function readSourceFiles(dir: string, files: string[] = []): string[] {
 	for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -75,10 +82,9 @@ describe("preset sidebar nav icons", () => {
 	it("are all safelisted in renderer/styles.css", () => {
 		const styles = readFileSync(stylesPath, "utf8");
 		const missing: string[] = [];
-		for (const entry of readdirSync(presetsDir, { withFileTypes: true })) {
-			if (!entry.isDirectory()) continue;
-			for (const className of navIconClassesOf(join(presetsDir, entry.name))) {
-				if (!styles.includes(`@source inline("${className}")`)) missing.push(`${entry.name}: ${className}`);
+		for (const directory of declaredPresetDirectories()) {
+			for (const className of navIconClassesOf(directory)) {
+				if (!styles.includes(`@source inline("${className}")`)) missing.push(`${directory}: ${className}`);
 			}
 		}
 		expect(missing).toEqual([]);
@@ -86,9 +92,7 @@ describe("preset sidebar nav icons", () => {
 
 	it("covers at least the presets that contribute a workspace view", () => {
 		// 上面那条断言在「一个都没扫到」时也会通过；这里确保扫描真的看到了东西。
-		const covered = readdirSync(presetsDir, { withFileTypes: true })
-			.filter((entry) => entry.isDirectory())
-			.flatMap((entry) => navIconClassesOf(join(presetsDir, entry.name)));
+		const covered = declaredPresetDirectories().flatMap(navIconClassesOf);
 		expect(covered.length).toBeGreaterThan(0);
 	});
 });

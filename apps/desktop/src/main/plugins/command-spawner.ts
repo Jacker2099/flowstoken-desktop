@@ -27,7 +27,8 @@ interface SpawnRecord {
 	file: string;
 	process: SpawnedProcess;
 	port?: number;
-	cancelForward?: () => void;
+	cancelForward?: () => Promise<void>;
+	forwardCleanup?: Promise<void>;
 	output: string[];
 	outputBytes: number;
 	exit?: { exitCode: number | null; signal: string | null };
@@ -165,7 +166,7 @@ export async function spawnPluginCommand(
 	// 远端分配、`{{PORT}}` 替换成远端那个，再把它转发回本机；插件不必知道这些。
 	const remote = options?.allocatePort === true && cwd !== undefined && isSshProjectUri(cwd) ? cwd : undefined;
 	let port: number | undefined;
-	let cancelForward: (() => void) | undefined;
+	let cancelForward: (() => Promise<void>) | undefined;
 	if (options?.allocatePort === true) {
 		port = await allocateFreePort();
 		const processPort = remote ? await allocateRemotePort(remote) : port;
@@ -179,7 +180,14 @@ export async function spawnPluginCommand(
 		if (remote) cancelForward = await forwardRemotePort(remote, port, processPort);
 	}
 
-	const spawned = startProcess({ file, args: normalizedArgs, cwd, env });
+	let spawned: SpawnedProcess;
+	try {
+		spawned = startProcess({ file, args: normalizedArgs, cwd, env });
+	} catch (error) {
+		// Keep startup failure primary; the cancellation callback reports its own failure.
+		await cancelForward?.().catch(() => undefined);
+		throw error;
+	}
 
 	const spawnId = `spawn-${++counter}-${Date.now().toString(36)}`;
 	const record: SpawnRecord = {
@@ -197,7 +205,7 @@ export async function spawnPluginCommand(
 	spawned.onOutput((chunk: Buffer) => appendOutput(record, chunk));
 	spawned.onExit((exitCode, signal) => {
 		record.exit = { exitCode, signal };
-		record.cancelForward?.();
+		record.forwardCleanup = record.cancelForward?.();
 		spawnLog.info("plugin spawn exited", { pluginId, spawnId, file, exitCode, signal });
 		broadcastSpawnExit(record);
 		record.cleanupTimer = setTimeout(() => records.delete(spawnId), EXITED_RECORD_TTL_MS);
@@ -208,7 +216,7 @@ export async function spawnPluginCommand(
 		await spawned.whenStarted();
 	} catch (error) {
 		records.delete(spawnId);
-		cancelForward?.();
+		await cancelForward?.().catch(() => undefined);
 		spawnLog.warn("plugin spawn failed", { pluginId, file, error: String(error) });
 		throw error;
 	}
@@ -220,7 +228,10 @@ export async function spawnPluginCommand(
 export async function stopPluginCommandSpawn(pluginId: string, spawnId: string): Promise<void> {
 	const record = records.get(spawnId);
 	if (!record || record.pluginId !== pluginId) return;
-	if (record.exit !== undefined) return;
+	if (record.exit !== undefined) {
+		await record.forwardCleanup;
+		return;
+	}
 	await new Promise<void>((resolveStop) => {
 		const killTimer = setTimeout(() => record.process.kill("SIGKILL"), KILL_GRACE_MS);
 		killTimer.unref();
@@ -230,6 +241,7 @@ export async function stopPluginCommandSpawn(pluginId: string, spawnId: string):
 		});
 		record.process.kill("SIGTERM");
 	});
+	await record.forwardCleanup;
 }
 
 export function getPluginCommandSpawnStatus(pluginId: string, spawnId: string): PluginCommandSpawnStatus {
@@ -250,7 +262,9 @@ export function getPluginCommandSpawnStatus(pluginId: string, spawnId: string): 
 export function stopAllSpawnsForPlugin(pluginId: string): void {
 	for (const record of records.values()) {
 		if (record.pluginId !== pluginId || record.exit !== undefined) continue;
-		void stopPluginCommandSpawn(pluginId, record.spawnId);
+		void stopPluginCommandSpawn(pluginId, record.spawnId).catch((error: unknown) => {
+			spawnLog.warn("plugin spawn cleanup failed", { pluginId, spawnId: record.spawnId, error: String(error) });
+		});
 	}
 }
 

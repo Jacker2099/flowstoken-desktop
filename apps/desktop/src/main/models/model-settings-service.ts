@@ -33,6 +33,10 @@ export interface ProviderConfig {
 	icon?: string;
 	/** 预设服务商模型列表最近一次从上游 /models 同步的时间(ISO)。 */
 	modelsSyncedAt?: string;
+	catalogVersion?: string;
+	/** Account ownership is bound by authenticated token provisioning, never by public catalog JSON. */
+	managedGroup?: { source: "flowstoken"; groupId: string; accountId: number; tokenId: number };
+	managedGroupOverride?: boolean;
 	/**
 	 * 该服务商的模型请求是否经应用代理出网。缺省(undefined)跟随全局，即代理
 	 * 开启后默认走代理；显式 false 才排除。应用代理未启用时本字段无效。
@@ -112,17 +116,32 @@ function maskSecret(value: string | undefined): string | undefined {
 	return MASKED_MODEL_API_KEY;
 }
 
-function redactRecordSecrets(
-	record: Record<string, string> | undefined,
-	secretKeys: readonly string[] = ["authorization", "api-key", "apikey", "x-api-key", "token", "secret", "password"],
-): Record<string, string> | undefined {
+function redactRecordSecrets(record: Record<string, string> | undefined): Record<string, string> | undefined {
 	if (!record) return undefined;
 	const next: Record<string, string> = {};
 	for (const [key, value] of Object.entries(record)) {
-		const lower = key.toLowerCase();
-		next[key] = secretKeys.some((secretKey) => lower.includes(secretKey)) ? "***" : value;
+		next[key] = isSecretHeaderKey(key) ? MASKED_MODEL_API_KEY : value;
 	}
 	return next;
+}
+
+function isSecretHeaderKey(key: string): boolean {
+	const lower = key.toLowerCase();
+	return ["authorization", "api-key", "apikey", "x-api-key", "token", "secret", "password", "cookie"].some((part) =>
+		lower.includes(part),
+	);
+}
+
+function restoreMaskedHeaders(provider: ProviderConfig, current: ProviderConfig | undefined): void {
+	if (!provider.headers) return;
+	for (const [key, value] of Object.entries(provider.headers)) {
+		if (value !== MASKED_MODEL_API_KEY || !isSecretHeaderKey(key)) continue;
+		const previous = Object.entries(current?.headers ?? {}).find(
+			([oldKey]) => oldKey.toLowerCase() === key.toLowerCase(),
+		);
+		if (previous && previous[1] !== MASKED_MODEL_API_KEY) provider.headers[key] = previous[1];
+		else delete provider.headers[key];
+	}
 }
 
 function copyModel(model: ModelDefinition): ModelDefinitionDetail {
@@ -229,6 +248,7 @@ function rendererConfig(config: ModelsConfig): ModelsConfig {
 		if (provider.credentialRef || (provider.apiKey && !normalizeExternalApiKeySource(provider.apiKey))) {
 			provider.apiKey = MASKED_MODEL_API_KEY;
 		}
+		provider.headers = redactRecordSecrets(provider.headers);
 	}
 	return next;
 }
@@ -248,9 +268,19 @@ export class ModelSettingsService {
 	}
 
 	async getRendererConfig(): Promise<ModelsConfig> {
-		await this.mutationQueue;
-		await this.ensureLegacyCredentialsMigrated();
-		return rendererConfig(await this.options.readConfig());
+		return this.readRendererSnapshot((config) => config);
+	}
+
+	/** Read and synchronously project a secret-free snapshot on the existing configuration queue. */
+	async readRendererSnapshot<Result>(read: (config: ModelsConfig) => Result): Promise<Result> {
+		return this.runMutation(async () => {
+			await this.ensureLegacyCredentialsMigrated();
+			const result = read(rendererConfig(await this.options.readConfig()));
+			if (result !== null && typeof result === "object" && "then" in result && typeof result.then === "function") {
+				throw new TypeError("A renderer snapshot projection must be synchronous");
+			}
+			return result;
+		});
 	}
 
 	/** Main-process only. IPC callers must not return this value to the renderer. */
@@ -262,6 +292,20 @@ export class ModelSettingsService {
 		await this.runMutation(async () => {
 			await this.ensureLegacyCredentialsMigrated();
 			await this.persist(config, await this.options.readConfig(), "renderer");
+		});
+	}
+
+	/** Main-process updates read and commit under the same queue; the guard runs before credential writes. */
+	async updateConfig(
+		update: (current: ModelsConfig) => ModelsConfig | undefined,
+		beforeCommit?: () => void,
+	): Promise<void> {
+		await this.runMutation(async () => {
+			await this.ensureLegacyCredentialsMigrated();
+			const current = await this.options.readConfig();
+			beforeCommit?.();
+			const next = update(this.resolveCredentials(current));
+			if (next) await this.persist(next, current, "resolved", beforeCommit);
 		});
 	}
 
@@ -405,7 +449,12 @@ export class ModelSettingsService {
 		);
 	}
 
-	private async persist(config: ModelsConfig, current: ModelsConfig, mode: PersistInputMode): Promise<ModelsConfig> {
+	private async persist(
+		config: ModelsConfig,
+		current: ModelsConfig,
+		mode: PersistInputMode,
+		beforeCommit?: () => void,
+	): Promise<ModelsConfig> {
 		const persisted = cloneModelsConfig(config);
 		const writes = new Map<string, string>();
 		const nextRefs = new Map<string, string>();
@@ -413,8 +462,34 @@ export class ModelSettingsService {
 
 		for (const [providerId, provider] of Object.entries(persisted.providers)) {
 			const currentProvider = current.providers[providerId];
+			if (mode === "renderer") restoreMaskedHeaders(provider, currentProvider);
 			const value = provider.apiKey;
 			const currentRef = provider.credentialRef ?? currentProvider?.credentialRef;
+			if (!beforeCommit) {
+				delete provider.managedGroup;
+				provider.managedGroupOverride = currentProvider?.managedGroupOverride;
+				const binding = currentProvider?.managedGroup;
+				if (binding) {
+					const currentKey = currentProvider.credentialRef
+						? this.options.credentials.get(currentProvider.credentialRef)
+						: currentProvider.apiKey;
+					const nextKey =
+						value === MASKED_MODEL_API_KEY
+							? currentRef
+								? this.options.credentials.get(currentRef)
+								: currentKey
+							: value === undefined && mode === "resolved"
+								? currentKey
+								: value;
+					if (
+						nextKey === currentKey &&
+						provider.baseUrl === currentProvider.baseUrl &&
+						currentRef === currentProvider.credentialRef
+					)
+						provider.managedGroup = binding;
+					else provider.managedGroupOverride = true;
+				}
+			} else if (provider.managedGroup) delete provider.managedGroupOverride;
 
 			if (mode === "renderer" && value === MASKED_MODEL_API_KEY) {
 				if (currentRef) {
@@ -471,15 +546,32 @@ export class ModelSettingsService {
 			snapshots.set(credentialRef, this.options.credentials.get(credentialRef));
 		}
 
+		beforeCommit?.();
+		let configWritten = false;
+		let registryRefreshStarted = false;
 		try {
 			for (const [credentialRef, value] of writes) this.options.credentials.set(credentialRef, value);
 			for (const credentialRef of removals) this.options.credentials.remove(credentialRef);
 			await this.options.writeConfig(persisted);
+			configWritten = true;
+			beforeCommit?.();
+			registryRefreshStarted = true;
+			await this.options.refreshRegistry();
+			beforeCommit?.();
 		} catch (error) {
-			this.restoreCredentials(snapshots);
+			let canceled = false;
+			try {
+				beforeCommit?.();
+			} catch {
+				canceled = true;
+			}
+			if (!configWritten || canceled) this.restoreCredentials(snapshots);
+			if (configWritten && canceled) {
+				await this.options.writeConfig(current);
+				if (registryRefreshStarted) await this.options.refreshRegistry();
+			}
 			throw error;
 		}
-		await this.options.refreshRegistry();
 		const accessChangedProviders = Object.keys(persisted.providers).filter(
 			(providerId) =>
 				credentialWriteProviders.has(providerId) ||

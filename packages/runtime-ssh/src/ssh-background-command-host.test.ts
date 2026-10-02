@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createSshBackgroundCommandHost } from "./ssh-background-command-host.js";
 
 const helperBinary = buildSshHelperForTests();
+if (!helperBinary) throw new Error("Native runtime-ssh background contract requires a successful Go helper build");
 
 function start(connection: ReturnType<typeof createLoopbackSshConnection>, command: string) {
 	const output: string[] = [];
@@ -36,7 +37,7 @@ describe("远端后台任务：没有 helper 时绑在 SSH 通道上", () => {
 	});
 });
 
-describe.skipIf(!helperBinary)("远端后台任务：由 helper 托管", () => {
+describe("远端后台任务：由 helper 托管", () => {
 	const connect = () => createLoopbackSshConnection("loopback", { helper: { resolveBinary: () => helperBinary } });
 
 	it("输出与退出码照常回来", async () => {

@@ -27,8 +27,11 @@
 			"import": "./dist/file-migrations.js"
 		}
 	},
-	"files": ["dist"],
+	"files": [
+		"dist"
+	],
 	"scripts": {
+		"test": "bun ../../scripts/quality/run-vitest.mjs --run",
 		"clean": "rm -rf dist",
 		"build": "tsgo -p tsconfig.build.json"
 	},

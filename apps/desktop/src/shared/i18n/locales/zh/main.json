@@ -1,99 +1,129 @@
 {
-  "tray": {
-    "showWindow": "显示窗口",
-    "hideWindow": "隐藏窗口",
-    "quitVetta": "退出 FlowsToken",
-    "quit": "退出",
-    "hideToTray": "隐藏到托盘"
-  },
-  "menu": {
-    "app": {
-      "title": "FlowsToken",
-      "about": "关于 FlowsToken",
-      "services": "服务",
-      "hide": "隐藏 FlowsToken",
-      "hideOthers": "隐藏其他",
-      "unhide": "全部显示",
-      "quit": "退出 FlowsToken"
-    },
-    "edit": {
-      "title": "编辑",
-      "undo": "撤销",
-      "redo": "重做",
-      "cut": "剪切",
-      "copy": "复制",
-      "paste": "粘贴",
-      "pasteAndMatchStyle": "粘贴并匹配样式",
-      "delete": "删除",
-      "selectAll": "全选"
-    },
-    "view": {
-      "title": "视图",
-      "reload": "重新加载",
-      "forceReload": "强制重新加载",
-      "toggleDevTools": "切换开发者工具",
-      "resetZoom": "实际大小",
-      "zoomIn": "放大",
-      "zoomOut": "缩小",
-      "toggleFullScreen": "进入全屏幕"
-    },
-    "window": {
-      "title": "窗口",
-      "minimize": "最小化",
-      "zoom": "缩放",
-      "front": "前置全部窗口",
-      "close": "关闭窗口"
-    }
-  },
-  "notification": {
-    "turnComplete": "已完成回答",
-    "turnError": "本轮回答出错",
-    "questionPending": "有问题待确认，点击查看",
-    "sessionFallback": "新会话"
-  },
-  "pet": {
-    "openDevTools": "打开桌宠开发者工具"
-  },
-  "pluginPackage": {
-    "confirmTitle": "安装 Vetta 插件",
-    "confirmMessage": "安装并启用 {{name}} {{version}}？",
-    "confirmDetail": "文件：{{file}}\n插件 ID：{{id}}\n版本：{{version}}\n\n将授予的权限：\n{{permissions}}\n\n将启用的命令：\n{{commands}}\n\n插件代码会在 Vetta 中运行，请只安装你信任的文件。",
-    "none": "无",
-    "install": "安装并启用",
-    "cancel": "取消",
-    "done": "完成",
-    "installedTitle": "插件安装完成",
-    "installedMessage": "{{name}} {{version}} 已安装并启用。",
-    "failedTitle": "无法安装插件",
-    "failedMessage": "{{file}} 不是有效的 Vetta 插件包，或与当前版本不兼容。"
-  },
-  "mcpOAuth": {
-    "authorizationSuccessful": "授权成功",
-    "authorizationFailed": "授权失败",
-    "returnToVetta": "你可以关闭此窗口并返回 FlowsToken。",
-    "closeAndRetry": "你可以关闭此窗口并返回 FlowsToken 重试。",
-    "missingAuthorizationCode": "缺少授权码",
-    "callbackAlreadySettled": "OAuth 回调已经结束",
-    "callbackTimedOut": "等待浏览器 OAuth 授权超时",
-    "callbackBindFailed": "无法启动 OAuth 回调服务",
-    "devicePageBindFailed": "无法启动设备码展示服务",
-    "connectGitHub": "连接 GitHub",
-    "enterDeviceCode": "请在 GitHub 页面输入此代码，然后点击授权。",
-    "copyCode": "复制代码",
-    "openGitHub": "打开 GitHub 进行授权",
-    "closeAfterAuthorization": "在 FlowsToken 中完成授权后即可关闭此窗口。",
-    "deviceFlowDisabled": "设备码请求失败（422）。请在 OAuth 或 GitHub App 设置中启用 Device Flow：{{details}}"
-  },
-  "updater": {
-    "errors": {
-      "developmentUnsupported": "开发模式不支持自动更新",
-      "configurationUnavailable": "当前构建未配置更新源",
-      "checkFailed": "检查更新失败",
-      "downloadFailed": "下载更新失败",
-      "installFailed": "安装更新失败"
-    }
-  },
-  "terminal": {
-    "remoteOutputDropped": "[远端输出过快，已省略 {{bytes}} 字节]"
-  }
+	"flowstoken": {
+		"errors": {
+			"catalogChanged": "模型目录正在更新，请重试。",
+			"requestTimeout": "账户请求超时，请重试。",
+			"tokenInventoryUnavailable": "暂时无法确认账户密钥列表，请刷新账户后重试。",
+			"tokenUnavailable": "暂时无法同步 {{group}} 的桌面密钥，请刷新账户。",
+			"accountChanged": "账户已变更，请重试。",
+			"invalidAccount": "无法确认当前账户，请重新登录。",
+			"entitlementsUnavailable": "暂时无法刷新可用分组，请重试。",
+			"invalidEntitlements": "可用分组数据异常，请刷新后重试。",
+			"authRequired": "请先登录 FlowsToken 账户，再使用此模型。",
+			"groupUnavailable": "此分组已不可用，请重新选择模型；当前会话保留原选择。",
+			"modelUnavailable": "此模型已不可用，请重新选择；计费组未被自动更改。",
+			"credentialStale": "账户密钥需要重新同步，请刷新账户。"
+		}
+	},
+	"tray": {
+		"showWindow": "显示窗口",
+		"hideWindow": "隐藏窗口",
+		"quitVetta": "退出 FlowsToken",
+		"quit": "退出",
+		"hideToTray": "隐藏到托盘"
+	},
+	"menu": {
+		"app": {
+			"title": "FlowsToken",
+			"about": "关于 FlowsToken",
+			"services": "服务",
+			"hide": "隐藏 FlowsToken",
+			"hideOthers": "隐藏其他",
+			"unhide": "全部显示",
+			"quit": "退出 FlowsToken"
+		},
+		"edit": {
+			"title": "编辑",
+			"undo": "撤销",
+			"redo": "重做",
+			"cut": "剪切",
+			"copy": "复制",
+			"paste": "粘贴",
+			"pasteAndMatchStyle": "粘贴并匹配样式",
+			"delete": "删除",
+			"selectAll": "全选"
+		},
+		"view": {
+			"title": "视图",
+			"reload": "重新加载",
+			"forceReload": "强制重新加载",
+			"toggleDevTools": "切换开发者工具",
+			"resetZoom": "实际大小",
+			"zoomIn": "放大",
+			"zoomOut": "缩小",
+			"toggleFullScreen": "进入全屏幕"
+		},
+		"window": {
+			"title": "窗口",
+			"minimize": "最小化",
+			"zoom": "缩放",
+			"front": "前置全部窗口",
+			"close": "关闭窗口"
+		}
+	},
+	"notification": {
+		"turnComplete": "已完成回答",
+		"turnError": "本轮回答出错",
+		"questionPending": "有问题待确认，点击查看",
+		"sessionFallback": "新会话",
+		"remoteDeviceConnectedTitle": "手机已连接",
+		"remoteDeviceConnected": "{{device}} 已连接到这台电脑。不是你操作的？到「远程连接」里解除配对。",
+		"remotePairingRequestTitle": "有手机请求配对",
+		"remotePairingRequest": "{{device}} 想连接这台电脑，验证码 {{code}}。点击核对并放行。",
+		"remoteScreenPermissionTitle": "手机想看这台电脑的屏幕",
+		"remoteScreenPermissionScreen": "{{device}} 打开了远程桌面，但 Vetta 还没有「屏幕录制」权限，手机上看不到画面。点击前往授权，授权后重启 Vetta。",
+		"remoteScreenPermissionInput": "{{device}} 能看到画面，但 Vetta 还没有「辅助功能」权限，手机上的点按和键盘不会生效。点击前往授权。",
+		"remoteScreenPermissionBoth": "{{device}} 打开了远程桌面，但 Vetta 还没有「屏幕录制」和「辅助功能」权限。点击前往授权，授权后重启 Vetta。"
+	},
+	"remote": {
+		"conversationProject": "对话"
+	},
+	"pet": {
+		"openDevTools": "打开桌宠开发者工具"
+	},
+	"pluginPackage": {
+		"confirmTitle": "安装 Vetta 插件",
+		"confirmMessage": "安装并启用 {{name}} {{version}}？",
+		"confirmDetail": "文件：{{file}}\n插件 ID：{{id}}\n版本：{{version}}\n\n将授予的权限：\n{{permissions}}\n\n将启用的命令：\n{{commands}}\n\n插件代码会在 Vetta 中运行，请只安装你信任的文件。",
+		"none": "无",
+		"install": "安装并启用",
+		"cancel": "取消",
+		"done": "完成",
+		"installedTitle": "插件安装完成",
+		"installedMessage": "{{name}} {{version}} 已安装并启用。",
+		"failedTitle": "无法安装插件",
+		"failedMessage": "{{file}} 不是有效的 Vetta 插件包，或与当前版本不兼容。"
+	},
+	"mcpOAuth": {
+		"authorizationSuccessful": "授权成功",
+		"authorizationFailed": "授权失败",
+		"returnToVetta": "你可以关闭此窗口并返回 FlowsToken。",
+		"closeAndRetry": "你可以关闭此窗口并返回 FlowsToken 重试。",
+		"missingAuthorizationCode": "缺少授权码",
+		"callbackAlreadySettled": "OAuth 回调已经结束",
+		"callbackTimedOut": "等待浏览器 OAuth 授权超时",
+		"callbackBindFailed": "无法启动 OAuth 回调服务",
+		"devicePageBindFailed": "无法启动设备码展示服务",
+		"connectGitHub": "连接 GitHub",
+		"enterDeviceCode": "请在 GitHub 页面输入此代码，然后点击授权。",
+		"copyCode": "复制代码",
+		"openGitHub": "打开 GitHub 进行授权",
+		"closeAfterAuthorization": "在 FlowsToken 中完成授权后即可关闭此窗口。",
+		"deviceFlowDisabled": "设备码请求失败（422）。请在 OAuth 或 GitHub App 设置中启用 Device Flow：{{details}}"
+	},
+	"updater": {
+		"errors": {
+			"developmentUnsupported": "开发模式不支持自动更新",
+			"configurationUnavailable": "当前构建未配置更新源",
+			"checkFailed": "检查更新失败",
+			"downloadFailed": "下载更新失败",
+			"installFailed": "安装更新失败"
+		}
+	},
+	"terminal": {
+		"remoteOutputDropped": "[远端输出过快，已省略 {{bytes}} 字节]"
+	},
+	"markdown": {
+		"previewTitle": "HTML 预览 · 30 秒后自动关闭"
+	}
 }

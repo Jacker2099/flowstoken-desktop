@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { digest, verifyReleaseArtifacts } from "./release-artifacts.mjs";
 import { validateManifestLineage, verifyRecoveryPlanOnline } from "./release-recovery-identity.mjs";
+import { assertReleaseSourceEligible } from "./release-source-policy.mjs";
 
 export async function githubJson(path, { allowMissing = false } = {}) {
 	const response = await fetch(`https://api.github.com/${path}`, {
@@ -70,6 +71,7 @@ export async function publishRelease({
 	run = command,
 	checkTag = assertTag,
 }) {
+	assertReleaseSourceEligible(sha);
 	const tag = `v${version}`;
 	const saved = JSON.parse(await readFile(join(directory, "release-manifest.json"), "utf8"));
 	if (saved.version !== version || saved.sha !== sha || (saved.controllerSha ?? saved.sha) !== controllerSha)

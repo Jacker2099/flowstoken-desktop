@@ -2,6 +2,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { getDefaultStore } from "jotai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { DesktopTerminalApi } from "../../../../preload/api-types/terminal.js";
 
 /**
  * 发送链路级联提交的合同：ChatView 把 actions/header memo 成 header slot 元素写进
@@ -23,6 +24,9 @@ function stubVettaWindow(): void {
 	Object.defineProperty(window, "vetta", {
 		configurable: true,
 		value: {
+			terminal: {
+				capabilities: async () => ({ localPty: true }),
+			} satisfies Pick<DesktopTerminalApi, "capabilities">,
 			window: {
 				isAlwaysOnTop: async () => false,
 				toggleAlwaysOnTop: async () => true,
@@ -49,6 +53,20 @@ describe("useChatViewModel 引用稳定性", () => {
 		] as never);
 		store.set(atoms.activeSessionAtom, makeActiveSession() as never);
 		store.set(atoms.pendingSessionOpenAtom, null);
+		store.set(atoms.pendingSessionCreationAtom, null);
+		store.set(atoms.pendingSessionSendAtom, null);
+	});
+
+	it("创建完成后移除创建标签，但保留首条请求的忙碌状态", async () => {
+		const store = getDefaultStore();
+		store.set(atoms.pendingSessionCreationAtom, { cwd: "/repo/a", interactionId: "send-1" });
+		store.set(atoms.pendingSessionSendAtom, { messageId: "message-1", interactionId: "send-1" });
+		const { result } = renderHook(() => useChatViewModel());
+		expect(result.current.model.pendingLabel).toBe("messageList.assistantMessage.creatingSession");
+		expect(result.current.model.isStreaming).toBe(true);
+		await act(async () => store.set(atoms.pendingSessionCreationAtom, null));
+		expect(result.current.model.pendingLabel).toBeUndefined();
+		expect(result.current.model.isStreaming).toBe(true);
 	});
 
 	it("追加消息（非空→非空）不改变 actions / header 引用", () => {

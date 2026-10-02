@@ -40,6 +40,19 @@ try {
 	if (options.target) buildArgs.push("--target", options.target);
 	if (options.metafile) buildArgs.push(`--metafile=${options.metafile}`);
 	await run(process.platform === "win32" ? "bun.exe" : "bun", buildArgs);
+	// Bun modifies the embedded Mach-O payload after copying its executable,
+	// which can leave the inherited signature invalid. Repair this new output
+	// before callers stage or hash it; Desktop's Developer ID signing follows later.
+	if (process.platform === "darwin" && (!options.target || options.target.startsWith("bun-darwin-"))) {
+		await run("codesign", [
+			"--force",
+			"--sign",
+			"-",
+			"--preserve-metadata=identifier,entitlements,requirements,flags,runtime",
+			options.outfile,
+		]);
+		await run("codesign", ["--verify", "--strict", options.outfile]);
+	}
 } finally {
 	await rm(temporaryRoot, { force: true, recursive: true });
 }
