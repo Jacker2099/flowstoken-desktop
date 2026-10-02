@@ -28,6 +28,10 @@ jobs:
           fetch-depth: 0
           ref: ${{ inputs.source_sha || github.sha }}
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
         with:
@@ -66,6 +70,10 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.sha }}
 
+      # The controller owns the action even when validation targets an older application source.
+      - name: Prepare native client test tools
+        uses: ./.github/actions/setup-native-ssh-test-tools
+
       - name: Preserve release quality controller before checking out application source
         if: inputs.source_sha
         shell: bash
@@ -86,33 +94,8 @@ jobs:
         with:
           bun-version-file: package.json
 
-      - name: Install ripgrep on Linux
-        if: runner.os == 'Linux'
-        run: |
-          command -v rg >/dev/null || { sudo apt-get update && sudo apt-get install --yes ripgrep; }
-          command -v fd >/dev/null || command -v fdfind >/dev/null || { sudo apt-get update && sudo apt-get install --yes fd-find; }
-
-      - name: Install ripgrep on macOS
-        if: runner.os == 'macOS'
-        run: |
-          command -v rg >/dev/null || brew install ripgrep
-          command -v fd >/dev/null || brew install fd
-
-      - name: Install ripgrep on Windows
-        if: runner.os == 'Windows'
-        run: if (-not (Get-Command rg -ErrorAction SilentlyContinue)) { choco install ripgrep --yes --no-progress }
-
       - name: Install dependencies
         uses: ./.github/actions/install-bun-dependencies
-
-      - name: Set up Go for native SSH contracts
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: apps/ssh-helper/go.mod
-          cache-dependency-path: apps/ssh-helper/go.sum
-
-      - name: Verify native Go prerequisite
-        run: go version
 
       - name: Prepare Windows remote contract dependencies
         if: runner.os == 'Windows'

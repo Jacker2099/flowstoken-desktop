@@ -66,9 +66,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
+      - name: Prepare native client test tools
+        uses: ./.github/actions/setup-native-ssh-test-tools
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version-file: package.json

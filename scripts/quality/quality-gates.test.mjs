@@ -599,14 +599,19 @@ describe("CI unit test coverage", () => {
 	const rootManifest = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8"));
 
 	it("runs source tests on Linux, macOS and Windows with native path/process coverage", () => {
+		const nativeTools = readFileSync(
+			join(repoRoot, ".github/actions/setup-native-ssh-test-tools/action.yml"),
+			"utf8",
+		);
 		expect(workflow).toContain("os: [ubuntu-latest, macos-latest, windows-latest]");
 		expect(workflow).toContain("fetch-depth: 0");
-		expect(workflow).toContain("command -v rg >/dev/null || { sudo apt-get update");
-		expect(workflow).toContain("Get-Command rg -ErrorAction SilentlyContinue");
+		expect(workflow).toContain("uses: ./.github/actions/setup-native-ssh-test-tools");
 		expect(workflow).toContain("node scripts/flowstoken/test-pr-source.mjs");
-		expect(workflow).toContain("uses: actions/setup-go@v5");
-		expect(workflow).toContain("go-version-file: apps/ssh-helper/go.mod");
-		expect(workflow).toContain("run: go version");
+		expect(nativeTools).toContain("uses: actions/setup-go@v5");
+		expect(nativeTools).toContain("go-version-file: apps/ssh-helper/go.mod");
+		expect(nativeTools).toContain("Get-Command rg -ErrorAction SilentlyContinue");
+		expect(nativeTools).toContain("rg --version");
+		expect(nativeTools).toContain("fd --version 2>/dev/null || fdfind --version");
 	});
 
 	it("cancels stale PR runs while preserving release validation, fails the matrix fast and uses the exact-lockfile cache", () => {
