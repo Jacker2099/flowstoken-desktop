@@ -59,10 +59,9 @@ describe("Vetta Desktop packaged updater", () => {
 		});
 		const fixtureName = UPDATER_ACCOUNT_SNAPSHOT.user?.displayName || UPDATER_ACCOUNT_SNAPSHOT.user?.username;
 		if (!fixtureName) throw new Error("Updater account fixture has no display name");
-		const loggedInText = `${fixtureName}（已登录）`;
-		const accountStatus = await $(`div=${loggedInText}`).getElement();
+		const accountStatus = await $(`p*=${fixtureName}`).getElement();
 		await accountStatus.waitForDisplayed({ timeout: UPDATE_TIMEOUT_MS });
-		expect(await accountStatus.getText()).toBe(loggedInText);
+		expect(await accountStatus.getText()).toContain(fixtureName);
 		await browser.execute(() => {
 			window.location.hash = "/settings/general";
 		});

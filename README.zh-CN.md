@@ -120,8 +120,8 @@ Vetta 提供不同重量的扩展入口，简单流程不必被做成完整插�
 | [`apps/desktop`](apps/desktop) | Electron 桌面宿主与渲染层 |
 | [`apps/cli-host`](apps/cli-host) | Coding Agent 的 CLI 宿主 |
 | [`apps/docs-site`](apps/docs-site) | 发布到 `docs.openvetta.com` 的 Next.js 文档站 |
-| [`apps/mobile`](apps/mobile) | Expo/React Native 移动客户端 |
-| [`apps/kotlin`](apps/kotlin) | Kotlin Multiplatform Android 客户端 |
+| [`apps/mobile/client-apple`](apps/mobile/client-apple) | Swift/SwiftUI 原生 iOS 客户端 |
+| [`apps/mobile/client-android`](apps/mobile/client-android) | Kotlin Multiplatform Android 客户端（冻结在协议 v1） |
 | [`apps/im-gateway`](apps/im-gateway) | Go 编写的 IM 旁路网关 |
 | [`packages/ai`](packages/ai) · [`packages/agent`](packages/agent) | Provider 抽象与 Agent Loop |
 | [`packages/coding-agent`](packages/coding-agent) · `packages/runtime-*` | 产品组合、运行时合同、工具、存储、MCP 与宿主适配 |
@@ -176,3 +176,13 @@ Open Vetta 建立在广泛的开源生态之上，包括 pi、Codex CLI、MCP、
 本项目采用 [Apache-2.0](LICENSE) 许可。
 
 - **友情链接：** [LINUX DO](https://linux.do/) - 一个面向技术爱好者的中文社区，本项目链接并认可 LINUX DO，欢迎佬友交流和反馈。
+
+## Star 趋势
+
+<a href="https://www.star-history.com/?repos=openvetta%2Fopen-vetta&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=openvetta/open-vetta&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=openvetta/open-vetta&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=openvetta/open-vetta&type=date&legend=top-left" />
+ </picture>
+</a>

@@ -62,7 +62,7 @@ describe("远程项目的文件树：用户在面板里的一串常见操作", (
 
 		await service.deleteFilesystemPath(`${root}/docs`);
 		expect(existsSync(join(remoteRoot, "docs"))).toBe(false);
-	});
+	}, 20_000);
 
 	it("无扩展名的文本、图片都能预览，呈现判断与本地项目同一套", async () => {
 		await expect(service.readTextPreviewFile(`${root}/LICENSE`)).resolves.toMatchObject({
@@ -84,6 +84,11 @@ describe("远程项目的文件树：用户在面板里的一串常见操作", (
 		const files = await service.listFilesystemFilesRecursive(root);
 		expect(files.map((file) => file.relPath).sort()).toEqual(["LICENSE", "logo.png", "src/main.ts"]);
 		expect(files.find((file) => file.relPath === "src/main.ts")?.path).toBe(`${root}/src/main.ts`);
+	});
+
+	it("按文件名筛选的递归列举只给出命中的远端文件", async () => {
+		const files = await service.listFilesystemFilesRecursive(root, { names: ["LICENSE", "index.js"] });
+		expect(files.map((file) => file.relPath)).toEqual(["LICENSE"]);
 	});
 
 	it("写文件保留远端文件原有的可执行位", async () => {

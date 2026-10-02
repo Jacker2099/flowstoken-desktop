@@ -1,0 +1,249 @@
+import { describe, expect, it } from "vitest";
+import {
+	REMOTE_MAX_UPLOAD_BYTES,
+	readDeviceStatus,
+	readFileChunk,
+	readFileEntries,
+	readFileInfo,
+	readMessageEvent,
+	readModelOptions,
+	readQuestionRequest,
+	readScreenCursor,
+	readScreenStatus,
+	readSessionState,
+	readSessionSummaries,
+	readToolEvent,
+	readTranscriptEntries,
+} from "../src/index.js";
+
+describe("remote api payload readers", () => {
+	it("keeps well-formed session summaries and drops malformed ones", () => {
+		expect(
+			readSessionSummaries({
+				sessions: [
+					{ id: "a", projectCwd: "/p", projectName: "P", title: "T", updatedAt: 5, status: "running", live: true },
+					{ id: "b" },
+					"junk",
+				],
+			}),
+		).toEqual([
+			{
+				id: "a",
+				projectCwd: "/p",
+				projectName: "P",
+				title: "T",
+				preview: undefined,
+				updatedAt: 5,
+				status: "running",
+				live: true,
+				pinnedAt: undefined,
+			},
+		]);
+		expect(readSessionSummaries(undefined)).toEqual([]);
+	});
+
+	it("reads the pin time only when it is a number", () => {
+		const [pinned, unpinned] = readSessionSummaries({
+			sessions: [
+				{ id: "a", projectCwd: "/p", pinnedAt: 42 },
+				{ id: "b", projectCwd: "/p", pinnedAt: "yesterday" },
+			],
+		});
+		expect(pinned?.pinnedAt).toBe(42);
+		expect(unpinned?.pinnedAt).toBeUndefined();
+	});
+
+	it("normalizes unknown statuses to idle and parses nested question requests", () => {
+		const state = readSessionState({
+			status: "weird",
+			pendingQuestion: {
+				requestId: "q1",
+				questions: [
+					{ question: "Deploy?", header: "Deploy", options: [{ label: "Yes" }, { nope: 1 }], multiSelect: false },
+				],
+			},
+		});
+		expect(state.status).toBe("idle");
+		expect(state.pendingQuestion).toEqual({
+			requestId: "q1",
+			questions: [
+				{ question: "Deploy?", header: "Deploy", options: [{ label: "Yes", description: "" }], multiSelect: false },
+			],
+		});
+		expect(readQuestionRequest({ requestId: "q" })).toBeUndefined();
+	});
+
+	it("reads the model and thinking level a session runs with", () => {
+		const state = readSessionState({
+			status: "idle",
+			model: "Claude Fable 5.1",
+			modelKey: "anthropic/claude-fable-5-1",
+			thinkingLevel: "high",
+		});
+		expect(state).toMatchObject({ modelKey: "anthropic/claude-fable-5-1", thinkingLevel: "high" });
+		expect(readSessionState({ status: "idle" }).modelKey).toBeUndefined();
+	});
+
+	it("keeps model options with a key and their thinking levels", () => {
+		expect(
+			readModelOptions({
+				models: [
+					{
+						key: "anthropic/claude-fable-5-1",
+						name: "Claude Fable 5.1",
+						provider: "anthropic",
+						thinkingLevels: ["off", "low", 3, "high"],
+						defaultThinkingLevel: "high",
+						supportsImage: true,
+					},
+					{ key: "local/llama" },
+					{ name: "no key" },
+				],
+			}),
+		).toEqual([
+			{
+				key: "anthropic/claude-fable-5-1",
+				name: "Claude Fable 5.1",
+				provider: "anthropic",
+				thinkingLevels: ["off", "low", "high"],
+				defaultThinkingLevel: "high",
+				supportsImage: true,
+			},
+			{
+				key: "local/llama",
+				name: "local/llama",
+				provider: "local",
+				thinkingLevels: [],
+				defaultThinkingLevel: undefined,
+				supportsImage: false,
+			},
+		]);
+		expect(readModelOptions(undefined)).toEqual([]);
+	});
+
+	it("caps one upload well inside a sealed frame", () => {
+		// base64 grows by 4/3 and the frame is sealed JSON; ~1.05 MB of plaintext fits the relay.
+		expect(Math.ceil(REMOTE_MAX_UPLOAD_BYTES / 3) * 4).toBeLessThan(1_000_000);
+	});
+
+	it("reads message, tool and transcript payloads", () => {
+		expect(readMessageEvent({ kind: "assistant_delta", text: "hi" })).toEqual({
+			kind: "assistant_delta",
+			text: "hi",
+		});
+		expect(readMessageEvent({ kind: "nope" })).toBeUndefined();
+		expect(readToolEvent({ toolCallId: "t", toolName: "read", phase: "started", args: "{}" })).toMatchObject({
+			toolName: "read",
+			phase: "started",
+		});
+		expect(
+			readTranscriptEntries({
+				entries: [
+					{ kind: "user", id: "1", text: "hello" },
+					{ kind: "assistant", id: "2", text: "hey", toolCalls: [{ toolCallId: "t", toolName: "read" }, {}] },
+					{ kind: "unknown", id: "3" },
+				],
+			}),
+		).toEqual([
+			{ kind: "user", id: "1", text: "hello", at: undefined },
+			{
+				kind: "assistant",
+				id: "2",
+				text: "hey",
+				thinking: undefined,
+				toolCalls: [
+					{
+						toolCallId: "t",
+						toolName: "read",
+						args: undefined,
+						result: undefined,
+						isError: false,
+						durationMs: undefined,
+					},
+				],
+				at: undefined,
+				error: undefined,
+			},
+		]);
+	});
+
+	it("reads file entries, keeping the session directory's own empty path", () => {
+		expect(
+			readFileEntries({
+				path: "",
+				entries: [
+					{ name: "out", path: "out", isDirectory: true, size: 0, modifiedAt: 3 },
+					{ name: "a.md", path: "a.md", size: 12 },
+					{ path: "nameless" },
+					"junk",
+				],
+			}),
+		).toEqual([
+			{ name: "out", path: "out", isDirectory: true, size: 0, modifiedAt: 3 },
+			{ name: "a.md", path: "a.md", isDirectory: false, size: 12, modifiedAt: 0 },
+		]);
+		expect(readFileEntries(undefined)).toEqual([]);
+	});
+
+	it("reads a file description and a chunk", () => {
+		expect(
+			readFileInfo({
+				file: { name: "x.html", path: "~/Desktop/x.html", size: 5, modifiedAt: 9, mimeType: "text/html" },
+			}),
+		).toEqual({
+			name: "x.html",
+			path: "~/Desktop/x.html",
+			isDirectory: false,
+			size: 5,
+			modifiedAt: 9,
+			mimeType: "text/html",
+			displayPath: "~/Desktop/x.html",
+		});
+		expect(readFileInfo({})).toBeUndefined();
+		expect(readFileChunk({ data: "aGk=", offset: 0, totalSize: 2, modifiedAt: 9, mimeType: "text/plain" })).toEqual({
+			data: "aGk=",
+			offset: 0,
+			totalSize: 2,
+			modifiedAt: 9,
+			mimeType: "text/plain",
+		});
+		expect(readFileChunk({ data: "aGk=" })).toBeUndefined();
+	});
+
+	it("treats a desktop that does not mention fileRead as unable to serve files", () => {
+		const base = { deviceName: "Mac", lanEndpoints: [], relayEnabled: true, runningSessionCount: 0 };
+		expect(readDeviceStatus({ ...base, fileRead: true })?.fileRead).toBe(true);
+		expect(readDeviceStatus(base)?.fileRead).toBe(false);
+	});
+
+	it("treats a desktop that does not mention screen as streaming whenever P2P is up", () => {
+		const base = { deviceName: "Mac", lanEndpoints: [], relayEnabled: true, runningSessionCount: 0 };
+		expect(readDeviceStatus({ ...base, screen: true })?.screen).toBe(true);
+		expect(readDeviceStatus(base)?.screen).toBe(false);
+	});
+
+	it("reads the pointer's shape and keeps its hot spot inside the image", () => {
+		expect(
+			readScreenCursor({ image: "iVBOR", width: 28, height: 40, hotspotX: 5, hotspotY: 50, screenWidth: 1512 }),
+		).toEqual({ image: "iVBOR", width: 28, height: 40, hotspotX: 5, hotspotY: 40, screenWidth: 1512 });
+		expect(readScreenCursor({ image: "iVBOR", width: 0, height: 40, screenWidth: 1512 })).toBeUndefined();
+		expect(readScreenCursor({ width: 28, height: 40, screenWidth: 1512 })).toBeUndefined();
+	});
+
+	it("reads the screen status and degrades states it does not know", () => {
+		expect(readScreenStatus({ screen: "streaming", input: "ready" })).toEqual({
+			screen: "streaming",
+			input: "ready",
+		});
+		expect(readScreenStatus({ screen: "permission_denied", input: "permission_denied" })).toEqual({
+			screen: "permission_denied",
+			input: "permission_denied",
+		});
+		expect(readScreenStatus({ screen: "hdr", input: "gamepad" })).toEqual({
+			screen: "unavailable",
+			input: "unsupported",
+		});
+		expect(readScreenStatus({ screen: "streaming" })).toBeUndefined();
+		expect(readScreenStatus("streaming")).toBeUndefined();
+	});
+});

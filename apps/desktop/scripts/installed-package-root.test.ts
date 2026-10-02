@@ -25,6 +25,6 @@ describe("installed package root resolution", () => {
 		);
 		writeFileSync(join(packageRoot, "binding.node"), "");
 
-		expect(resolveInstalledPackageRoot("@native/binary-only", fixtureRoot)).toBe(packageRoot);
+		expect(resolveInstalledPackageRoot("@native/binary-only", fixtureRoot)).toBe(realpathSync(packageRoot));
 	});
 });

@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createNodeSshProcessRunner } from "./node-process-runner.js";
+import { assertNativePosixTestHost } from "./testing-platform.js";
 
 // 当前 Node 顶替 ssh：这一层验证本地子进程与管道，不需要把 Windows 伪装成 POSIX 主机。
 const runner = createNodeSshProcessRunner({ sshBinary: process.execPath });
@@ -45,8 +46,45 @@ describe("ssh 子进程执行器", () => {
 		await expect(pending).resolves.toMatchObject({ aborted: true, timedOut: false });
 	});
 
+	it("native POSIX endpoint guard rejects Windows and accepts the two supported remote endpoint families", () => {
+		expect(() => assertNativePosixTestHost("win32")).toThrow(/Native POSIX/);
+		expect(() => assertNativePosixTestHost("darwin")).not.toThrow();
+		expect(() => assertNativePosixTestHost("linux")).not.toThrow();
+	});
+
+	it("运行超时时也回收自有 native Node 孙进程，不遗留输出管道", async () => {
+		vi.useFakeTimers();
+		let reportDescendant = (_pid: number): void => {};
+		const descendantStarted = new Promise<number>((resolve) => {
+			reportDescendant = resolve;
+		});
+		const program = [
+			'const { spawn } = require("node:child_process");',
+			'const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "inherit" });',
+			'process.stdout.write(String(child.pid) + "\\n");',
+		].join("\n");
+		const pending = runner.run({
+			argv: ["-e", program],
+			timeoutMs: 30_000,
+			onStdout: (chunk) => reportDescendant(Number.parseInt(decode(chunk).trim(), 10)),
+		});
+		const pid = await descendantStarted;
+		try {
+			expect(pid).toBeGreaterThan(1);
+			await vi.advanceTimersByTimeAsync(30_000);
+			await expect(pending).resolves.toMatchObject({ aborted: true, timedOut: true });
+			expect(() => process.kill(pid, 0)).toThrow();
+		} finally {
+			try {
+				process.kill(pid, "SIGKILL");
+			} catch {}
+			await pending;
+			vi.useRealTimers();
+		}
+	});
+
 	for (const mode of ["run", "channel"] as const) {
-		it.runIf(process.platform !== "win32")(`取消 ${mode} 时终止自有 POSIX 进程组，孙进程不再持有管道`, async () => {
+		it(`取消 ${mode} 时终止自有 SSH 进程树，孙进程不再持有管道`, async () => {
 			const controller = new AbortController();
 			let reportDescendant = (_pid: number): void => {};
 			const descendantStarted = new Promise<number>((resolve) => {

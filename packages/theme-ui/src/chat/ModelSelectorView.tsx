@@ -1,7 +1,5 @@
-import { AnimatePresence, motion } from "motion/react";
-import type { ChangeEvent, JSX, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+	Button,
 	cn,
 	DropdownMenu,
 	DropdownMenuContent,
@@ -13,9 +11,13 @@ import {
 	DropdownMenuSubTrigger,
 	DropdownMenuTrigger,
 } from "@vetta-org/ui";
+import { AnimatePresence, motion } from "motion/react";
+import type { ChangeEvent, JSX, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ThemeSurface } from "../appearance/ThemeSurface";
 import { MultiplierTag } from "../shared/MultiplierTag";
 import { ProviderIcon } from "../shared/provider-icon";
+import { ModelSelectorTrigger } from "./ModelSelectorTrigger";
 
 /**
  * 模型选择器的视图层：搜索、按 provider 分组、推理档位子菜单、云端/默认/视觉徽章。
@@ -64,6 +66,12 @@ export interface ModelSelectorLabels {
 	defaultBadge: string;
 	/** 近期发布模型的徽标文案；未提供则不显示。 */
 	newBadge?: string;
+	unavailableBadge?: string;
+	unavailableHint?: string;
+	syncCatalog?: string;
+	cached?: string;
+	fallback?: string;
+	refreshFailed?: string;
 	/** 厂商快捷条里「回到顶部」chip 的文案。 */
 	allVendors?: string;
 	/** 推荐卡上「已选用当前模型」的文案。 */
@@ -93,6 +101,7 @@ export interface ModelSelectorTab {
 	icon?: string;
 	/** 属于该 tab 的 provider id；空数组表示展示全部 provider。 */
 	providers: readonly string[];
+	modelCount?: number;
 }
 
 /** 厂商快捷条 chip：点击滚动到对应 `data-vendor-id` 分区，不做筛选。 */
@@ -123,6 +132,7 @@ export interface ModelSelectorTriggerBadge {
 
 export interface ModelSelectorViewProps {
 	selectedModel?: string;
+	selectedUnavailable?: boolean;
 	selectedOption: ModelSelectorOptionView | null;
 	currentLevel?: string;
 	menuLevels: string[];
@@ -137,8 +147,16 @@ export interface ModelSelectorViewProps {
 	vendorBarByTab?: Readonly<Record<string, readonly ModelSelectorVendorChip[]>>;
 	/** 推荐卡；仅在对应 tab 且未搜索时显示。 */
 	highlight?: ModelSelectorHighlight;
+	highlightByTab?: Readonly<Record<string, ModelSelectorHighlight>>;
 	/** 触发按钮上的分组徽标。 */
 	triggerBadge?: ModelSelectorTriggerBadge;
+	ariaLabel?: string;
+	disabled?: boolean;
+	/** 可选的空值项，例如“不固定模型”或“跟随会话默认”。 */
+	emptyOption?: {
+		readonly label: string;
+		readonly onSelect: () => void;
+	};
 	className?: string;
 	classNames?: {
 		trigger?: string;
@@ -151,12 +169,14 @@ export interface ModelSelectorViewProps {
 	onReasoningSelect: (value: string) => void;
 	/** 菜单开合回调，宿主可借此在打开时刷新模型目录 */
 	onOpenChange?: (open: boolean) => void;
+	onCatalogRefresh?: () => Promise<void>;
+	catalogStatus?: "network" | "cache" | "fallback";
 }
 
 const MODEL_ITEM_SELECTOR = "[data-model-key]";
 
 /** 紧凑行：覆盖 @vetta-org/ui 默认的 px-3 py-2 text-[13px]，让模型多时列表不至于过长。 */
-const COMPACT_ITEM_CLASS = "gap-1.5 rounded-md px-2 py-1 text-xs";
+const COMPACT_ITEM_CLASS = "gap-2 rounded-lg px-2.5 py-1.5 text-[12px]";
 const COMPACT_LABEL_CLASS = "px-2 pb-0.5 pt-1 text-[10px]";
 
 function normalizeSearchValue(value: string): string {
@@ -165,6 +185,7 @@ function normalizeSearchValue(value: string): string {
 
 export function ModelSelectorView({
 	selectedModel,
+	selectedUnavailable = false,
 	selectedOption,
 	currentLevel,
 	menuLevels,
@@ -175,34 +196,63 @@ export function ModelSelectorView({
 	initialTab,
 	vendorBarByTab,
 	highlight,
+	highlightByTab,
 	triggerBadge,
+	ariaLabel,
+	disabled = false,
+	emptyOption,
 	className,
 	classNames,
 	onModelSelect,
 	onReasoningSelect,
 	onOpenChange,
+	onCatalogRefresh,
+	catalogStatus,
 }: ModelSelectorViewProps): JSX.Element {
 	const [open, setOpen] = useState(false);
 	const [reasoningOpen, setReasoningOpen] = useState(false);
 	const [searchQuery, setSearchQuery] = useState("");
 	const [activeVendor, setActiveVendor] = useState<string | null>(null);
+	const [catalogRefreshing, setCatalogRefreshing] = useState(false);
+	const [catalogRefreshFailed, setCatalogRefreshFailed] = useState(false);
+	const refreshBusyRef = useRef(false);
 	const searchInputRef = useRef<HTMLInputElement>(null);
-	const modelListRef = useRef<HTMLDivElement>(null);
+	const modelListRef = useRef<HTMLElement>(null);
+	const initialFrameRef = useRef<number | null>(null);
+	const cancelInitialFrame = useCallback(() => {
+		if (initialFrameRef.current !== null) cancelAnimationFrame(initialFrameRef.current);
+		initialFrameRef.current = null;
+	}, []);
+	const triggerRef = useRef<HTMLButtonElement>(null);
+	const portalContainer = open
+		? (triggerRef.current?.closest<HTMLElement>('[data-slot="drawer-content"], [data-slot="dialog-content"]') ??
+			undefined)
+		: undefined;
 
 	const preferredTab = tabs?.find((tab) => tab.id === initialTab)?.id ?? tabs?.[0]?.id ?? initialTab ?? "all";
 	const [activeTab, setActiveTab] = useState<string>(preferredTab);
 
+	const previousSelection = useRef({ open: false, selectedModel });
 	useEffect(() => {
-		if (!open) return;
-		setActiveTab(preferredTab);
-		setActiveVendor(null);
-	}, [open, preferredTab]);
+		const previous = previousSelection.current;
+		if (open && (!previous.open || previous.selectedModel !== selectedModel)) {
+			setActiveTab(preferredTab);
+			setActiveVendor(null);
+		}
+		previousSelection.current = { open, selectedModel };
+	}, [open, selectedModel, preferredTab]);
 
 	useEffect(() => {
 		if (!open || !tabs?.length || tabs.some((tab) => tab.id === activeTab)) return;
 		setActiveTab(preferredTab);
 		setActiveVendor(null);
 	}, [open, tabs, activeTab, preferredTab]);
+
+	useEffect(() => {
+		if (!open) return;
+		if (modelListRef.current) modelListRef.current.scrollTop = 0;
+		setActiveVendor(null);
+	}, [open, activeTab]);
 
 	const activeTabProviders = useMemo(
 		() => (tabs ? (tabs.find((tab) => tab.id === activeTab)?.providers ?? []) : []),
@@ -211,12 +261,12 @@ export function ModelSelectorView({
 
 	const filteredGroups = useMemo(() => {
 		let currentGroups = groups;
-		if (tabs && activeTab !== "all" && activeTabProviders.length > 0) {
+		if (tabs && activeTabProviders.length > 0) {
 			currentGroups = groups.filter((g) => activeTabProviders.includes(g.provider));
 		}
 
 		const query = normalizeSearchValue(searchQuery);
-		if (!query) return currentGroups;
+		if (!query) return currentGroups.filter((group) => group.models.length > 0);
 
 		return currentGroups.flatMap((group) => {
 			const models = group.models.filter((model) =>
@@ -225,6 +275,8 @@ export function ModelSelectorView({
 					model.subtitle,
 					model.modelId,
 					model.provider,
+					model.vendor,
+					model.vendorId,
 					group.label,
 					...(model.tags ?? []),
 				].some((value) => value && normalizeSearchValue(value).includes(query)),
@@ -234,18 +286,28 @@ export function ModelSelectorView({
 	}, [groups, tabs, activeTab, activeTabProviders, searchQuery]);
 
 	/** 当前 tab 的厂商快捷条（顺序由宿主给定）。 */
-	const vendorChips = useMemo(() => vendorBarByTab?.[activeTab] ?? [], [vendorBarByTab, activeTab]);
+	const vendorChips = useMemo(
+		() => (vendorBarByTab && Object.hasOwn(vendorBarByTab, activeTab) ? vendorBarByTab[activeTab] : []),
+		[vendorBarByTab, activeTab],
+	);
 
 	const scrollListToTop = useCallback(() => {
-		modelListRef.current?.scrollTo({ top: 0 });
+		cancelInitialFrame();
+		if (modelListRef.current) modelListRef.current.scrollTop = 0;
 		setActiveVendor(null);
-	}, []);
+	}, [cancelInitialFrame]);
 
-	const scrollToVendor = useCallback((vendorId: string) => {
-		const target = modelListRef.current?.querySelector<HTMLElement>(`[data-vendor-id="${vendorId}"]`);
-		target?.scrollIntoView({ block: "start" });
-		setActiveVendor(vendorId);
-	}, []);
+	const scrollToVendor = useCallback(
+		(vendorId: string) => {
+			cancelInitialFrame();
+			const target = Array.from(
+				modelListRef.current?.querySelectorAll<HTMLElement>("[data-model-vendor-section]") ?? [],
+			).find((section) => section.dataset.vendorId === vendorId);
+			target?.scrollIntoView({ block: "start" });
+			setActiveVendor(vendorId);
+		},
+		[cancelInitialFrame],
+	);
 
 	const handleOpenChange = useCallback(
 		(nextOpen: boolean) => {
@@ -263,6 +325,8 @@ export function ModelSelectorView({
 		if (!open) return;
 
 		const frame = requestAnimationFrame(() => {
+			if (initialFrameRef.current !== frame) return;
+			initialFrameRef.current = null;
 			searchInputRef.current?.focus();
 			if (!selectedModel) return;
 			const selectedItem = Array.from(
@@ -271,15 +335,18 @@ export function ModelSelectorView({
 			selectedItem?.scrollIntoView({ block: "nearest" });
 		});
 
-		return () => cancelAnimationFrame(frame);
-	}, [open, selectedModel]);
+		initialFrameRef.current = frame;
+		return cancelInitialFrame;
+	}, [open, selectedModel, cancelInitialFrame]);
 
 	const handleSearchChange = (event: ChangeEvent<HTMLInputElement>) => {
+		cancelInitialFrame();
 		setSearchQuery(event.target.value);
 	};
 
 	const handleSearchKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
 		if (event.key === "Escape") return;
+		cancelInitialFrame();
 		event.stopPropagation();
 
 		if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
@@ -291,251 +358,334 @@ export function ModelSelectorView({
 	};
 
 	const handleSearchClick = (event: ReactMouseEvent<HTMLInputElement | HTMLButtonElement>) => {
+		cancelInitialFrame();
 		event.stopPropagation();
 	};
 
 	const handleClearSearch = (event: ReactMouseEvent<HTMLButtonElement>) => {
+		cancelInitialFrame();
 		event.stopPropagation();
 		setSearchQuery("");
 		searchInputRef.current?.focus();
 	};
 
 	const handleModelSelect = (key: string) => {
+		cancelInitialFrame();
 		onModelSelect(key);
 		setSearchQuery("");
 	};
+	const handleControlKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+		cancelInitialFrame();
+		if (event.key === "Tab") event.stopPropagation();
+	};
+	const activeHighlight =
+		(highlightByTab && Object.hasOwn(highlightByTab, activeTab) ? highlightByTab[activeTab] : undefined) ??
+		(highlight?.tabId === activeTab ? highlight : undefined);
+	const refreshHint = catalogRefreshFailed
+		? labels.refreshFailed
+		: catalogStatus === "cache"
+			? labels.cached
+			: catalogStatus === "fallback"
+				? labels.fallback
+				: undefined;
+	const handleCatalogRefresh = async () => {
+		if (!onCatalogRefresh || refreshBusyRef.current) return;
+		cancelInitialFrame();
+		refreshBusyRef.current = true;
+		setCatalogRefreshing(true);
+		setCatalogRefreshFailed(false);
+		try {
+			await onCatalogRefresh();
+		} catch {
+			setCatalogRefreshFailed(true);
+		} finally {
+			refreshBusyRef.current = false;
+			setCatalogRefreshing(false);
+		}
+	};
+	const highlightSelectable = Boolean(
+		activeHighlight?.modelKey &&
+			filteredGroups.some((group) => group.models.some((model) => model.key === activeHighlight.modelKey)),
+	);
+	const triggerLabel =
+		selectedOption?.displayName ??
+		(selectedUnavailable && selectedModel ? selectedModel.slice(selectedModel.indexOf("/") + 1) : labels.placeholder);
 
 	return (
-		// 搜索型选择器不需要锁住页面；modal 模式会改写 body 的滚动与 pointer-events，
-		// 在长会话页面触发整棵 DOM 的同步样式重算。
 		<DropdownMenu open={open} modal={false} onOpenChange={handleOpenChange}>
-			<DropdownMenuTrigger asChild>
-				<button
-					type="button"
-					title={selectedOption?.displayName ?? labels.placeholder}
-					className={cn(
-						// 输入卡 @container：窄宽缩短模型名、藏推理档，避免工具栏换行
-						"flex min-w-0 max-w-[6.5rem] items-center gap-1 rounded-full border border-transparent px-1.5 py-0.5 text-[11px] text-foreground transition-colors focus:outline-none focus-visible:outline-none data-[state=open]:bg-accent/60 data-[state=open]:text-foreground @[22rem]:max-w-[10rem] @[28rem]:max-w-[14rem]",
-						className,
-						classNames?.trigger,
-					)}
-				>
-					{triggerBadge ? (
-						<span
-							className={cn(
-								"shrink-0 rounded px-1 text-[9px] font-semibold leading-[14px]",
-								triggerBadge.tone === "primary" && "bg-primary/20 text-primary font-bold",
-								triggerBadge.tone === "blue" && "bg-blue-500/15 text-blue-600 dark:text-blue-400",
-								triggerBadge.tone === "amber" && "bg-amber-500/15 text-amber-600 dark:text-amber-400",
-							)}
-						>
-							{triggerBadge.text}
-						</span>
-					) : selectedOption ? (
-						<ProviderIcon
-							symbol={groups.find((g) => g.provider === selectedOption.provider)?.icon}
-							className="h-3 w-3 shrink-0"
-						/>
-					) : null}
-					<span className="min-w-0 flex-1 truncate text-left font-medium">
-						{selectedOption?.displayName ?? labels.placeholder}
-					</span>
-					{currentLevel && (
-						<span className="hidden shrink-0 rounded bg-muted/70 px-1 text-[9px] leading-[14px] text-muted-foreground @[28rem]:inline">
-							{labels.levelLabel(currentLevel)}
-						</span>
-					)}
-					<span className="icon-[solar--alt-arrow-down-linear] h-2.5 w-2.5 shrink-0 text-muted-foreground" />
-				</button>
+			<DropdownMenuTrigger asChild disabled={disabled}>
+				<ModelSelectorTrigger
+					ref={triggerRef}
+					aria-label={ariaLabel}
+					disabled={disabled}
+					label={triggerLabel}
+					icon={
+						selectedOption ? groups.find((group) => group.provider === selectedOption.provider)?.icon : undefined
+					}
+					badge={triggerBadge}
+					reasoningLabel={currentLevel ? labels.levelLabel(currentLevel) : undefined}
+					unavailable={selectedUnavailable}
+					unavailableBadge={labels.unavailableBadge}
+					unavailableHint={labels.unavailableHint}
+					className={cn(className, classNames?.trigger)}
+				/>
 			</DropdownMenuTrigger>
 			<AnimatePresence>
 				{open && (
 					<DropdownMenuContent
 						forceMount
 						asChild
+						portalContainer={portalContainer}
 						align="start"
+						collisionPadding={12}
 						className={cn(
-							"w-[min(24rem,calc(100vw-2rem))] min-w-[260px] max-w-[24rem] overflow-visible bg-background p-0 shadow-lg",
+							"w-[400px] min-w-0 max-h-[440px] max-w-[calc(100vw-24px)] overflow-visible bg-popover p-0 shadow-md",
 							classNames?.content,
 						)}
 						style={{ animation: "none" }}
 					>
 						<motion.div
-							initial={{ opacity: 0, scale: 0.96, y: 8 }}
-							animate={{ opacity: 1, scale: 1, y: 0 }}
-							exit={{ opacity: 0, scale: 0.96, y: 8 }}
-							transition={{ duration: 0.1, ease: [0.16, 1, 0.3, 1] }}
+							initial={{ opacity: 0, y: 4 }}
+							animate={{ opacity: 1, y: 0 }}
+							exit={{ opacity: 0, y: 4 }}
+							transition={{ duration: 0.1 }}
 						>
 							<div className="relative overflow-visible rounded-[inherit]">
 								<ThemeSurface slot="chat.modelSelectorMenu" />
 								<div
 									className={cn(
-										"relative z-10 flex max-h-[min(400px,65vh)] flex-col overflow-hidden rounded-[inherit] p-1",
+										"relative z-10 flex max-h-[min(438px,calc(var(--radix-dropdown-menu-content-available-height,440px)-2px))] flex-col overflow-hidden rounded-[inherit] p-1",
 										classNames?.contentInner,
 									)}
 								>
-									{/* 分组标签页（宿主提供 tabs 时才渲染） */}
 									{tabs && tabs.length > 0 && (
-										<div className="shrink-0 p-1 border-b border-border/40">
-											<div
-												className={cn(
-													"grid gap-1 rounded-lg bg-muted/60 p-0.5 text-[11px]",
-													tabs.length === 4 ? "grid-cols-4" : "grid-cols-3",
-												)}
-											>
-												{tabs.map((tab) => (
-													<button
-														key={tab.id}
-														type="button"
-														onClick={() => {
-															setActiveTab(tab.id);
-															setActiveVendor(null);
-															if (tab.id === "all") scrollListToTop();
-														}}
+										<nav
+											aria-label={labels.modelHeader}
+											className="flex shrink-0 gap-1 overflow-x-auto border-b border-border/40 p-1"
+										>
+											{tabs.map((tab) => (
+												<Button
+													onKeyDown={handleControlKeyDown}
+													key={tab.id}
+													type="button"
+													variant="ghost"
+													size="sm"
+													title={tab.label}
+													aria-current={activeTab === tab.id ? "page" : undefined}
+													onClick={() => {
+														setActiveTab(tab.id);
+														scrollListToTop();
+													}}
+													className={cn(
+														"h-7 min-w-0 max-w-[10rem] shrink-0 gap-1.5 rounded-full px-2.5 text-[11px] transition-colors",
+														activeTab === tab.id ? "bg-primary/10 text-primary" : "text-muted-foreground",
+													)}
+												>
+													{tab.icon ? (
+														<span aria-hidden="true" className={cn(tab.icon, "size-3 shrink-0")} />
+													) : null}
+													<span className="truncate">{tab.label}</span>
+													{tab.modelCount !== undefined ? (
+														<span
+															aria-hidden="true"
+															className="text-[10px] tabular-nums text-muted-foreground"
+														>
+															{tab.modelCount}
+														</span>
+													) : null}
+												</Button>
+											))}
+										</nav>
+									)}
+									<div className="relative shrink-0 p-1">
+										<span
+											aria-hidden="true"
+											className="icon-[solar--magnifer-linear] pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
+										/>
+										<input
+											ref={searchInputRef}
+											type="search"
+											value={searchQuery}
+											onKeyDown={handleSearchKeyDown}
+											onChange={handleSearchChange}
+											onClick={handleSearchClick}
+											placeholder={labels.searchPlaceholder}
+											aria-label={labels.searchPlaceholder}
+											className={cn(
+												"h-8 w-full rounded-lg bg-muted/40 pl-7 pr-8 text-[12px] text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
+												onCatalogRefresh && searchQuery && "pr-16",
+											)}
+										/>
+										<div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1">
+											{searchQuery ? (
+												<Button
+													onKeyDown={handleControlKeyDown}
+													type="button"
+													variant="ghost"
+													size="icon-xs"
+													onClick={handleClearSearch}
+													aria-label={labels.clearSearch}
+													className="transition-colors"
+												>
+													<span
+														aria-hidden="true"
+														className="icon-[solar--close-circle-linear] size-3.5"
+													/>
+												</Button>
+											) : null}
+											{onCatalogRefresh ? (
+												<Button
+													onKeyDown={handleControlKeyDown}
+													type="button"
+													variant="ghost"
+													size="icon-xs"
+													onClick={() => {
+														void handleCatalogRefresh();
+													}}
+													disabled={catalogRefreshing}
+													aria-busy={catalogRefreshing}
+													aria-label={labels.syncCatalog ?? labels.modelHeader}
+													title={[labels.syncCatalog, refreshHint].filter(Boolean).join("\n")}
+													className="transition-colors"
+												>
+													<span
+														aria-hidden="true"
 														className={cn(
-															"flex items-center justify-center gap-1 rounded-md px-1.5 py-1 font-medium transition-all",
-															activeTab === tab.id
-																? "bg-background text-primary shadow-sm font-semibold"
-																: "text-muted-foreground hover:text-foreground",
+															"icon-[solar--refresh-linear] size-3.5",
+															catalogRefreshing && "animate-spin",
 														)}
-													>
-														{tab.icon && <span className={cn(tab.icon, "size-3 shrink-0")} />}
-														{tab.label}
-													</button>
-												))}
-											</div>
+													/>
+												</Button>
+											) : null}
+											{catalogRefreshFailed && labels.refreshFailed ? (
+												<output className="sr-only">{labels.refreshFailed}</output>
+											) : null}
+										</div>
+									</div>
+									{activeHighlight && !searchQuery && (
+										<div className="shrink-0 px-1 pb-1">
+											<Button
+												onKeyDown={handleControlKeyDown}
+												type="button"
+												variant="ghost"
+												disabled={!highlightSelectable}
+												title={activeHighlight.description ?? activeHighlight.title}
+												onClick={() => {
+													if (activeHighlight.modelKey) handleModelSelect(activeHighlight.modelKey);
+												}}
+												className="h-auto w-full min-w-0 justify-start gap-2 rounded-lg border border-border/50 bg-muted/30 px-2.5 py-1.5 text-left transition-colors"
+											>
+												<span
+													aria-hidden="true"
+													className="icon-[solar--star-linear] size-3.5 shrink-0 text-primary"
+												/>
+												<span className="min-w-0 flex-1">
+													<span className="block truncate text-[12px] font-medium text-foreground">
+														{activeHighlight.title}
+													</span>
+													{activeHighlight.description ? (
+														<span className="block truncate text-[10px] font-normal text-muted-foreground">
+															{activeHighlight.description}
+														</span>
+													) : null}
+												</span>
+												{activeHighlight.badge ? (
+													<span className="max-w-20 truncate text-[10px] font-medium text-primary">
+														{activeHighlight.badge}
+													</span>
+												) : null}
+												<span className="shrink-0 text-[10px] font-normal text-muted-foreground">
+													{selectedModel === activeHighlight.modelKey
+														? labels.recommendationSelected
+														: labels.recommendationAction}
+												</span>
+											</Button>
 										</div>
 									)}
-
-									{/* 厂商快捷条：点击滚动到对应分区，不做筛选 */}
 									{vendorChips.length > 0 && (
-										<div className="shrink-0 flex items-center gap-1 overflow-x-auto px-1.5 pt-1.5 pb-0.5 text-[10px] no-scrollbar">
-											<button
+										<div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-border/40 px-1 pb-1 text-[10px]">
+											<Button
+												onKeyDown={handleControlKeyDown}
 												type="button"
+												variant="ghost"
+												size="xs"
 												aria-pressed={activeVendor === null}
 												onClick={scrollListToTop}
 												className={cn(
-													"shrink-0 rounded-full px-2 py-0.5 text-[10px] transition-colors",
-													activeVendor === null
-														? "bg-primary/20 font-semibold text-primary"
-														: "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground",
+													"h-6 shrink-0 rounded-full px-2 text-[10px] transition-colors",
+													activeVendor === null && "bg-accent text-foreground",
 												)}
 											>
-												{labels.allVendors ?? "All"}
-											</button>
+												{labels.allVendors ?? labels.modelHeader}
+											</Button>
 											{vendorChips.map((chip) => (
-												<button
+												<Button
+													onKeyDown={handleControlKeyDown}
 													key={chip.id}
 													type="button"
+													variant="ghost"
+													size="xs"
+													title={chip.name}
 													aria-pressed={activeVendor === chip.id}
 													onClick={() => scrollToVendor(chip.id)}
 													className={cn(
-														"flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] transition-colors",
-														activeVendor === chip.id
-															? "bg-primary/20 font-semibold text-primary"
-															: "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground",
+														"h-6 max-w-[10rem] shrink-0 gap-1.5 rounded-full px-2 text-[10px] transition-colors",
+														activeVendor === chip.id && "bg-accent text-foreground",
 													)}
 												>
-													<VendorIcon name={chip.name} iconUrl={chip.iconUrl} mono={chip.mono} className="size-4" />
-													{chip.name}
-												</button>
+													<VendorIcon
+														name={chip.name}
+														iconUrl={chip.iconUrl}
+														mono={chip.mono}
+														className="size-3.5"
+													/>
+													<span className="truncate">{chip.name}</span>
+													{chip.count !== undefined ? (
+														<span
+															aria-hidden="true"
+															className="text-[10px] tabular-nums text-muted-foreground"
+														>
+															{chip.count}
+														</span>
+													) : null}
+												</Button>
 											))}
 										</div>
 									)}
-
-									{/* 推荐卡（宿主提供 highlight，只在对应 tab 显示） */}
-									{highlight && activeTab === highlight.tabId && !searchQuery && (
-										<div className="shrink-0 p-1.5">
-											<div
-												onClick={() => {
-													if (highlight.modelKey) handleModelSelect(highlight.modelKey);
-												}}
-												className="group flex cursor-pointer flex-col gap-1 rounded-lg border border-primary/25 bg-gradient-to-br from-primary/10 via-primary/5 to-transparent p-2.5 transition-all hover:border-primary/50 hover:shadow-sm"
-											>
-												<div className="flex items-center justify-between">
-													<div className="flex items-center gap-1.5 text-xs font-semibold text-primary">
-														<span className="icon-[solar--magic-stick-3-bold] size-3.5 text-primary" />
-														{highlight.title}
-													</div>
-													{highlight.badge && (
-														<span className="rounded-full bg-primary/20 px-1.5 py-0.5 text-[9px] font-semibold text-primary">
-															{highlight.badge}
-														</span>
-													)}
-												</div>
-												{highlight.description && (
-													<p className="text-[11px] leading-relaxed text-muted-foreground">
-														{highlight.description}
-													</p>
-												)}
-												<div className="mt-1 flex items-center justify-between text-[10px] text-primary/90 font-medium">
-													<span>
-														{highlight.modelKey && selectedModel === highlight.modelKey
-															? (labels.recommendationSelected ?? "")
-															: (labels.recommendationAction ?? "")}
-													</span>
-													<span className="icon-[solar--arrow-right-linear] size-3 transition-transform group-hover:translate-x-0.5" />
-												</div>
-											</div>
-										</div>
-									)}
-
-									<div className="shrink-0 p-0.5">
-										<div className="relative" onKeyDown={handleSearchKeyDown}>
-											<span
-												aria-hidden="true"
-												className="icon-[solar--magnifer-linear] pointer-events-none absolute left-2 top-1/2 size-3 -translate-y-1/2 text-muted-foreground"
-											/>
-											<input
-												ref={searchInputRef}
-												type="search"
-												value={searchQuery}
-												onChange={handleSearchChange}
-												onClick={handleSearchClick}
-												placeholder={labels.searchPlaceholder}
-												aria-label={labels.searchPlaceholder}
-												className="h-7 w-full rounded-md pl-7 pr-7 text-[11px] text-foreground outline-none placeholder:text-muted-foreground"
-											/>
-											{searchQuery && (
-												<button
-													type="button"
-													onClick={handleClearSearch}
-													aria-label={labels.clearSearch}
-													className="absolute right-1 top-1/2 inline-flex size-4 -translate-y-1/2 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-												>
-													<span aria-hidden="true" className="icon-[solar--close-circle-linear] size-3" />
-												</button>
-											)}
-										</div>
-									</div>
 									{menuLevels.length > 0 && (
 										<>
 											<DropdownMenuSub open={reasoningOpen} onOpenChange={setReasoningOpen}>
-												<DropdownMenuSubTrigger className={COMPACT_ITEM_CLASS}>
+												<DropdownMenuSubTrigger
+													className={cn(COMPACT_ITEM_CLASS, "w-fit max-w-[calc(100%-144px)]")}
+													onPointerMove={cancelInitialFrame}
+													onPointerDown={cancelInitialFrame}
+													onKeyDown={cancelInitialFrame}
+												>
 													<span className="min-w-0 flex-1 truncate">{labels.reasoningHeader}</span>
-													{currentLevel && (
-														<span className="shrink-0 text-[11px] text-muted-foreground">
+													{currentLevel ? (
+														<span className="text-[11px] text-muted-foreground">
 															{labels.levelLabel(currentLevel)}
 														</span>
-													)}
+													) : null}
 												</DropdownMenuSubTrigger>
 												<AnimatePresence>
-													{reasoningOpen && (
+													{reasoningOpen ? (
 														<DropdownMenuSubContent
 															forceMount
-															asChild
-															className="min-w-[130px] overflow-visible bg-background p-0"
+															portalContainer={portalContainer}
+															collisionPadding={12}
+															className="min-w-[130px] overflow-visible bg-popover p-0"
 															style={{ animation: "none" }}
 														>
 															<motion.div
-																initial={{ opacity: 0, scale: 0.96, x: -6 }}
-																animate={{ opacity: 1, scale: 1, x: 0 }}
-																exit={{ opacity: 0, scale: 0.96, x: -6 }}
-																transition={{ duration: 0.1, ease: [0.16, 1, 0.3, 1] }}
+																initial={{ opacity: 0 }}
+																animate={{ opacity: 1 }}
+																exit={{ opacity: 0 }}
+																transition={{ duration: 0.1 }}
 															>
-																<div className="relative overflow-visible rounded-[inherit]">
+																<div className="relative overflow-hidden rounded-[inherit]">
 																	<ThemeSurface slot="chat.modelSelectorReasoningMenu" />
-																	<div className="relative z-10 overflow-hidden rounded-[inherit] p-1">
+																	<div className="relative z-10 p-1">
 																		<DropdownMenuLabel className={COMPACT_LABEL_CLASS}>
 																			{labels.reasoningHeader}
 																		</DropdownMenuLabel>
@@ -548,119 +698,157 @@ export function ModelSelectorView({
 																				<span className="min-w-0 flex-1 truncate">
 																					{labels.levelLabel(level)}
 																				</span>
-																				{level === currentLevel && (
-																					<span className="icon-[solar--check-circle-linear] h-3 w-3 shrink-0" />
-																				)}
+																				{level === currentLevel ? (
+																					<span
+																						aria-hidden="true"
+																						className="icon-[solar--check-circle-linear] size-3 shrink-0"
+																					/>
+																				) : null}
 																			</DropdownMenuItem>
 																		))}
 																	</div>
 																</div>
 															</motion.div>
 														</DropdownMenuSubContent>
-													)}
+													) : null}
 												</AnimatePresence>
 											</DropdownMenuSub>
 											<DropdownMenuSeparator />
 										</>
 									)}
-									<div ref={modelListRef} className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
-										<DropdownMenuLabel className={COMPACT_LABEL_CLASS}>{labels.modelHeader}</DropdownMenuLabel>
+									<section
+										ref={modelListRef}
+										aria-label={labels.modelHeader}
+										className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto"
+									>
+										{emptyOption ? (
+											<>
+												<DropdownMenuItem
+													aria-current={!selectedModel ? "true" : undefined}
+													className={COMPACT_ITEM_CLASS}
+													onSelect={emptyOption.onSelect}
+												>
+													<span className="min-w-0 flex-1 truncate">{emptyOption.label}</span>
+													{!selectedModel ? (
+														<span
+															aria-hidden="true"
+															className="icon-[solar--check-circle-linear] size-3 shrink-0"
+														/>
+													) : null}
+												</DropdownMenuItem>
+												<DropdownMenuSeparator />
+											</>
+										) : null}
+										{!tabs?.length ? (
+											<DropdownMenuLabel className={COMPACT_LABEL_CLASS}>
+												{labels.modelHeader}
+											</DropdownMenuLabel>
+										) : null}
 										{filteredGroups.map((group) => (
-										<div key={group.provider}>
-											<div
-												className={cn(
-													"flex items-center gap-1 px-2 pb-0.5 pt-1 text-[10px] font-medium text-muted-foreground/50",
-													classNames?.providerHeader,
-												)}
-											>
-												<ProviderIcon symbol={group.icon} className="h-2.5 w-2.5" />
-												<span className="min-w-0 truncate">{group.label}</span>
-												{group.models[0]?.remote && (
-													<span className="shrink-0 rounded-full bg-primary/15 px-1 text-[9px] font-medium text-primary">
-														{labels.cloudOnly}
-													</span>
-												)}
-											</div>
-											{vendorSegments(group.models).map((segment) => (
-												<div key={segment.key} className="pt-1 first:pt-0">
-													{segment.vendor && (
-														<div
-															data-vendor-id={segment.vendorId}
-															className="sticky top-0 z-10 flex items-center gap-1.5 bg-background px-2 py-1 text-[10px] font-semibold text-muted-foreground/80"
-														>
-															<VendorIcon
-																name={segment.vendor}
-																iconUrl={segment.vendorIcon}
-																mono={segment.vendorMono}
-																className="size-3.5"
-															/>
-															<span className="min-w-0 truncate">{segment.vendor}</span>
-															<span className="shrink-0 font-normal text-muted-foreground/50">
-																{segment.models.length}
+											<div key={group.provider}>
+												{!tabs?.length ||
+												filteredGroups.length > 1 ||
+												group.models.some((model) => model.remote) ? (
+													<div
+														className={cn(
+															"flex min-w-0 items-center gap-1.5 px-2.5 py-1 text-[10px] font-medium text-muted-foreground",
+															classNames?.providerHeader,
+														)}
+													>
+														<ProviderIcon symbol={group.icon} className="size-3" />
+														<span className="truncate">{group.label}</span>
+														{group.models.some((model) => model.remote) ? (
+															<span className="shrink-0 text-[10px] text-muted-foreground">
+																{labels.cloudOnly}
 															</span>
-														</div>
-													)}
-													{segment.models.map((model) => (
-														<DropdownMenuItem
-															key={model.key}
-															data-model-key={model.key}
-															aria-current={model.key === selectedModel ? "true" : undefined}
-															className={cn(
-																COMPACT_ITEM_CLASS,
-																model.key === selectedModel && "bg-accent text-accent-foreground",
-																classNames?.item,
-															)}
-															onSelect={() => handleModelSelect(model.key)}
-														>
-															<span className="min-w-0 flex-1 truncate font-medium">{model.displayName}</span>
-															{model.subtitle && (
-																<span className="min-w-0 max-w-[40%] truncate font-mono text-[10px] text-muted-foreground/60">
-																	{model.subtitle}
-																</span>
-															)}
-															{model.isNew && labels.newBadge && (
-																<span className="shrink-0 rounded-full bg-primary/10 px-1 text-[9px] font-semibold text-primary">
-																	{labels.newBadge}
-																</span>
-															)}
-															<ModelMultiplier label={labels.multiplierLabel?.(model)} />
-															{model.supportsImage && (
-																<span
-																	aria-label={labels.visionBadge}
-																	title={labels.visionBadge}
-																	className="icon-[solar--gallery-linear] size-3 shrink-0 text-primary"
+														) : null}
+													</div>
+												) : null}
+												{vendorSegments(group.models).map((segment) => (
+													<div key={segment.key}>
+														{segment.vendor ? (
+															<div
+																data-model-vendor-section=""
+																data-vendor-id={segment.vendorId}
+																className="sticky top-0 z-10 flex min-w-0 items-center gap-1.5 border-b border-border/30 bg-popover px-2.5 py-1.5 text-[10px] font-medium text-muted-foreground"
+															>
+																<VendorIcon
+																	name={segment.vendor}
+																	iconUrl={segment.vendorIcon}
+																	mono={segment.vendorMono}
+																	className="size-3.5"
 																/>
-															)}
-															{model.tags?.slice(0, 2).map((tag) => (
-																<span
-																	key={tag}
-																	className="shrink-0 rounded-full bg-accent px-1 text-[9px] font-medium text-muted-foreground"
-																>
-																	{tag.trim()}
+																<span className="min-w-0 truncate">{segment.vendor}</span>
+																<span className="ml-auto tabular-nums">{segment.models.length}</span>
+															</div>
+														) : null}
+														{segment.models.map((model) => (
+															<DropdownMenuItem
+																key={model.key}
+																data-model-key={model.key}
+																onPointerMove={cancelInitialFrame}
+																onPointerDown={cancelInitialFrame}
+																aria-current={model.key === selectedModel ? "true" : undefined}
+																title={[model.displayName, model.subtitle, ...(model.tags ?? [])]
+																	.filter(Boolean)
+																	.join("\n")}
+																className={cn(
+																	COMPACT_ITEM_CLASS,
+																	model.key === selectedModel && "bg-accent text-accent-foreground",
+																	classNames?.item,
+																)}
+																onSelect={() => handleModelSelect(model.key)}
+															>
+																<span className="min-w-0 flex-1">
+																	<span className="block truncate font-medium leading-4">
+																		{model.displayName}
+																	</span>
+																	{model.subtitle &&
+																	normalizeSearchValue(model.subtitle) !==
+																		normalizeSearchValue(model.displayName) ? (
+																		<span className="block truncate font-mono text-[10px] leading-4 text-muted-foreground">
+																			{model.subtitle}
+																		</span>
+																	) : null}
 																</span>
-															))}
-															{model.key === defaultKey && (
-																<span className="shrink-0 rounded-full bg-primary/15 px-1 text-[9px] font-medium text-primary">
-																	{labels.defaultBadge}
-																</span>
-															)}
-															{model.key === selectedModel && (
-																<span className="icon-[solar--check-circle-linear] h-3 w-3 shrink-0" />
-															)}
-														</DropdownMenuItem>
-													))}
-												</div>
-											))}
-										</div>
-										))}
-										{filteredGroups.length === 0 && (
-											<div className="flex min-h-24 flex-col items-center justify-center px-4 py-6 text-center">
-												<span aria-hidden="true" className="icon-[solar--magnifer-linear] mb-1.5 size-4 text-muted-foreground" />
-												<p className="text-xs font-medium text-foreground">{labels.noResults}</p>
-												<p className="mt-0.5 text-[11px] text-muted-foreground">{labels.noResultsHint}</p>
+																{model.supportsImage ? (
+																	<span
+																		role="img"
+																		aria-label={labels.visionBadge}
+																		title={labels.visionBadge}
+																		className="icon-[solar--gallery-linear] size-3 shrink-0 text-muted-foreground"
+																	/>
+																) : null}
+																{model.isNew && labels.newBadge ? (
+																	<span className="shrink-0 rounded-full bg-primary/10 px-1.5 text-[10px] font-medium text-primary">
+																		{labels.newBadge}
+																	</span>
+																) : null}
+																{model.key === defaultKey ? (
+																	<span className="shrink-0 rounded-full bg-muted px-1.5 text-[10px] text-muted-foreground">
+																		{labels.defaultBadge}
+																	</span>
+																) : null}
+																<ModelMultiplier label={labels.multiplierLabel?.(model)} />
+																{model.key === selectedModel ? (
+																	<span
+																		aria-hidden="true"
+																		className="icon-[solar--check-circle-linear] size-3 shrink-0 text-primary"
+																	/>
+																) : null}
+															</DropdownMenuItem>
+														))}
+													</div>
+												))}
 											</div>
-										)}
-									</div>
+										))}
+										{filteredGroups.length === 0 ? (
+											<div className="flex min-h-24 flex-col items-center justify-center px-4 py-6 text-center">
+												<p className="text-[12px] font-medium">{labels.noResults}</p>
+												<p className="mt-1 text-[11px] text-muted-foreground">{labels.noResultsHint}</p>
+											</div>
+										) : null}
+									</section>
 								</div>
 							</div>
 						</motion.div>
@@ -681,7 +869,7 @@ interface VendorSegment {
 	vendorId?: string;
 	vendorIcon?: string;
 	vendorMono?: boolean;
-	models: readonly ModelSelectorOptionView[];
+	models: ModelSelectorOptionView[];
 }
 
 /** Split a provider's already-sorted models into vendor segments (for sticky section headers). */
@@ -700,7 +888,7 @@ function vendorSegments(models: readonly ModelSelectorOptionView[]): VendorSegme
 				models: [model],
 			});
 		} else {
-			segments[segments.length - 1] = { ...last, models: [...last.models, model] };
+			last.models.push(model);
 		}
 	}
 	return segments;

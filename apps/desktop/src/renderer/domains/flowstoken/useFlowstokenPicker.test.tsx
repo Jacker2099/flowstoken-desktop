@@ -5,7 +5,7 @@ import { renderHook } from "@testing-library/react";
 import { createStore, Provider } from "jotai";
 import type { ReactNode } from "react";
 import { expect, it, vi } from "vitest";
-import { useFlowstokenPicker } from "./useFlowstokenPicker";
+import { FLOWSTOKEN_ALL_TAB_ID, useFlowstokenPicker } from "./useFlowstokenPicker";
 
 vi.mock("@shared/i18n", () => ({
 	i18n: { t: (key: string) => `i18n:${key}` },
@@ -42,8 +42,20 @@ const catalog = {
 			title: "普通组",
 			subtitle: "",
 			vendors: [
-				{ id: "anthropic", name: "Anthropic", icon: "claude-color.svg", mono: false, models: [model("claude-opus-5-5")] },
-				{ id: "openai", name: "OpenAI", icon: "openai.svg", mono: true, models: [model("gpt-6-sol"), model("gpt-5.5")] },
+				{
+					id: "anthropic",
+					name: "Anthropic",
+					icon: "claude-color.svg",
+					mono: false,
+					models: [model("claude-opus-5-5")],
+				},
+				{
+					id: "openai",
+					name: "OpenAI",
+					icon: "openai.svg",
+					mono: true,
+					models: [model("gpt-6-sol"), model("gpt-5.5")],
+				},
 			],
 		},
 		{
@@ -108,16 +120,25 @@ it("recognizes the normal provider from earlier clients as the default billing g
 });
 
 it("recommends only an available chat model when the catalog's preferred model was removed", () => {
-	const changed = { ...catalog, groups: catalog.groups.map((group) => group.id === "smart"
-		? { ...group, defaultModel: "removed-model" } : group) };
+	const changed = {
+		...catalog,
+		groups: catalog.groups.map((group) =>
+			group.id === "smart" ? { ...group, defaultModel: "removed-model" } : group,
+		),
+	};
 	expect(setup(null, changed).result.current.highlight?.modelKey).toBe("flowstoken-smart/Bestoo-Auto");
 });
 
 it("builds tabs in catalog order plus an all tab", () => {
 	const { result } = setup(null);
 	expect(result.current.enabled).toBe(true);
-	expect(result.current.tabs.map((t) => t.id)).toEqual(["smart", "default", "vip", "all"]);
-	expect(result.current.tabs.map((t) => t.label)).toEqual(["智能组", "普通组", "官方组", "i18n:common:modelSelect.groupAll"]);
+	expect(result.current.tabs.map((t) => t.id)).toEqual(["smart", "default", "vip", FLOWSTOKEN_ALL_TAB_ID]);
+	expect(result.current.tabs.map((t) => t.label)).toEqual([
+		"智能组",
+		"普通组",
+		"官方组",
+		"i18n:common:modelSelect.groupAll",
+	]);
 	expect(result.current.tabs[1].providers).toEqual(["flowstoken-default"]);
 });
 
@@ -125,7 +146,7 @@ it("defaults the tab to the selected model's group, else smart", () => {
 	expect(setup("flowstoken-official/anthropic/claude-opus-5.5").result.current.initialTab).toBe("vip");
 	expect(setup("flowstoken-default/gpt-6-sol").result.current.initialTab).toBe("default");
 	expect(setup(null).result.current.initialTab).toBe("smart");
-	expect(setup("other-provider/x").result.current.initialTab).toBe("smart");
+	expect(setup("other-provider/x").result.current.initialTab).toBe(FLOWSTOKEN_ALL_TAB_ID);
 });
 
 it("emits the vendor bar in server order with counts and icon URLs", () => {
@@ -180,4 +201,41 @@ it("disables when no FlowsToken providers exist", () => {
 	const { result } = renderHook(() => useFlowstokenPicker([option("other", "x")], empty, null), { wrapper });
 	expect(result.current.enabled).toBe(false);
 	expect(result.current.tabs).toEqual([]);
+});
+
+it("accepts a newly configured billing group named all without colliding with the combined tab", () => {
+	const added = {
+		...catalog,
+		schema: 2 as const,
+		revision: "new-group",
+		groups: [
+			{
+				...catalog.groups[1],
+				id: "all",
+				providerId: "flowstoken-group-all",
+				title: "研究组",
+				defaultModel: "gpt-6-sol",
+			},
+			...catalog.groups,
+		],
+	};
+	const extra = option("flowstoken-group-all", "gpt-6-sol", "openai");
+	const result = setup(extra.key, added, [...options, extra], new Map([...grouped, [extra.provider, [extra]]])).result;
+	expect(result.current.tabs[0]).toMatchObject({
+		id: "all",
+		label: "研究组",
+		providers: [extra.provider],
+		modelCount: 1,
+	});
+	expect(result.current.tabs.at(-1)?.id).toBe(FLOWSTOKEN_ALL_TAB_ID);
+	expect(result.current.initialTab).toBe("all");
+	expect(result.current.highlightByTab.all.modelKey).toBe(extra.key);
+});
+
+it("preserves a retired selection as unavailable instead of recommending another billing group", () => {
+	const retired = { ...catalog, schema: 2 as const, revision: "retired", groups: [] };
+	const result = setup("flowstoken-official/anthropic/claude-opus-5.5", retired, [], new Map()).result;
+	expect(result.current.selectedUnavailable).toBe(true);
+	expect(result.current.highlightByTab).toEqual({});
+	expect(result.current.enabled).toBe(false);
 });

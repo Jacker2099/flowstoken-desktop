@@ -1,4 +1,9 @@
-import { revalidateFlowstokenCatalog } from "@shared/store/flowstoken-catalog";
+import {
+	invalidateFlowstokenCatalog,
+	isFlowstokenCatalogRefreshing,
+	notifyFlowstokenModelsChanged,
+	revalidateFlowstokenCatalog,
+} from "@shared/store/flowstoken-catalog";
 import { modelCatalog } from "@shared/store/model-catalog";
 import { useEffect } from "react";
 
@@ -12,17 +17,27 @@ import { useEffect } from "react";
 export function useModelCatalogSync(): void {
 	useEffect(() => {
 		const revalidate = (): void => {
-			void modelCatalog.revalidate();
-			void revalidateFlowstokenCatalog();
+			void modelCatalog.revalidate().then(() => revalidateFlowstokenCatalog());
 		};
 		const onVisibilityChange = (): void => {
 			if (document.visibilityState === "visible") revalidate();
 		};
 		revalidate();
 		// Keep an always-open app current even without a focus or picker-open event.
-		const timer = window.setInterval(revalidate, 6 * 60 * 60 * 1000);
+		const timer = window.setInterval(revalidate, 60 * 1000);
 		const disposeModelChanged = window.vetta.models.onChanged?.(() => {
-			void modelCatalog.revalidate({ force: true, sources: ["local"] });
+			notifyFlowstokenModelsChanged();
+			modelCatalog.invalidate("local");
+			// Main's reconciliation emits this event before its paired reply. Starting
+			// another local read here would continually invalidate that same reply.
+			if (isFlowstokenCatalogRefreshing()) return;
+			invalidateFlowstokenCatalog();
+			void modelCatalog.revalidate({ force: true, sources: ["local"] }).then(() => revalidateFlowstokenCatalog());
+		});
+		const disposeAccountChanged = window.vetta.flowstoken?.onAccountChanged?.(() => {
+			modelCatalog.invalidate("local");
+			invalidateFlowstokenCatalog();
+			void revalidateFlowstokenCatalog();
 		});
 		window.addEventListener("focus", revalidate);
 		document.addEventListener("visibilitychange", onVisibilityChange);
@@ -31,6 +46,7 @@ export function useModelCatalogSync(): void {
 			window.removeEventListener("focus", revalidate);
 			document.removeEventListener("visibilitychange", onVisibilityChange);
 			disposeModelChanged?.();
+			disposeAccountChanged?.();
 		};
 	}, []);
 }

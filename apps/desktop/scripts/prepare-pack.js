@@ -22,6 +22,8 @@ import {
 } from "./stage-system-plugins.mjs";
 import { stageSystemSkills } from "./stage-system-skills.mjs";
 import { stageSystemThemesFromArchives } from "./stage-system-themes.mjs";
+import { stageThirdPartyNotices } from "./stage-third-party-notices.mjs";
+import { stageWindowsSandboxBinaries } from "./windows-sandbox-packaging.mjs";
 
 // 从 .env.<mode>/.env 注入构建期变量（如 VETTA_TENANT），命令行内联优先。
 const buildEnvMode = loadBuildEnv();
@@ -290,6 +292,10 @@ const appPkg = {
 	dependencies: Object.fromEntries(externalDepInfos.map(({ dep, version }) => [dep, version])),
 };
 writeFileSync(join(buildStageDir, "package.json"), JSON.stringify(appPkg, null, "\t") + "\n");
+stageThirdPartyNotices({
+	repositoryRoot: join(projectRoot, "..", ".."),
+	destinationDir: join(buildStageDir, "third-party-notices"),
+});
 
 // Copy build outputs
 for (const { source, target } of DESKTOP_BUILD_OUTPUTS) {
@@ -552,20 +558,11 @@ for (const target of resolveCliAppCompileTargets()) {
 // main process can resolve them from process.resourcesPath after packaging.
 const stagedSandboxDir = join(buildStageDir, "sandbox");
 mkdirSync(stagedSandboxDir, { recursive: true });
-if (existsSync(runtimeCoreWindowsSandboxDir)) {
-	const stagedWindowsSandboxDir = join(stagedSandboxDir, "windows");
-	mkdirSync(stagedWindowsSandboxDir, { recursive: true });
-	cpSync(runtimeCoreWindowsSandboxDir, stagedWindowsSandboxDir, { recursive: true });
-
-	for (const file of readdirSync(stagedWindowsSandboxDir)) {
-		const binaryPath = join(stagedWindowsSandboxDir, file);
-		if (!existsSync(binaryPath)) continue;
-		try {
-			chmodSync(binaryPath, 0o755);
-		} catch {
-			// best effort on Windows / FAT
-		}
-	}
+if (resolvePlatformFamilies().has("win32")) {
+	stageWindowsSandboxBinaries({
+		sourceDir: runtimeCoreWindowsSandboxDir,
+		destinationDir: join(stagedSandboxDir, "windows"),
+	});
 }
 
 if (existsSync(runtimeCoreSandboxDir)) {
@@ -655,6 +652,11 @@ stageSystemSkills(join(buildStageDir, "system-skills"), "prepare-pack");
 
 function resolveExtraResources() {
 	const extraResources = [
+		{
+			from: "third-party-notices",
+			to: "third-party-notices",
+			filter: ["LICENSE", "NOTICE"],
+		},
 		{
 			from: "im-gateway",
 			to: "im-gateway",

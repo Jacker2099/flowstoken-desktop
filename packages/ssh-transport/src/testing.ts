@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createNodeSshProcessRunner } from "./node-process-runner.js";
+import { formatSshProjectUri } from "./project-uri.js";
 import { SshConnection, type SshConnectionOptions } from "./ssh-connection.js";
 import { createShellLoopbackRunner, terminateWindowsLoopbackTree } from "./testing-process-runner.js";
 
@@ -81,6 +82,13 @@ export function loopbackShellBinary(): string {
 export function loopbackRemotePath(localPath: string): string {
 	if (process.platform !== "win32") return localPath;
 	return execFileSync(gitBashTools().cygpath, ["-u", "--", localPath], { encoding: "utf8" }).trim();
+}
+
+// Both names share the same Git Bash path conversion; upstream consumers use the former.
+export const toLoopbackRemotePath = loopbackRemotePath;
+
+export function formatLoopbackProjectUri(hostId: string, localPath: string): string {
+	return formatSshProjectUri(hostId, toLoopbackRemotePath(localPath));
 }
 
 let cachedGitBash: { bash: string; cygpath: string } | undefined;

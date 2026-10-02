@@ -1,4 +1,5 @@
 /** FlowsToken NewAPI endpoints and desktop provider ids (additive overlay). */
+import { providerIdForGroup } from "../../shared/flowstoken-catalog-policy.js";
 
 export const FLOWSTOKEN_SITE_URL = "https://www.flowstoken.com";
 export const FLOWSTOKEN_API_ORIGIN = "https://www.flowstoken.com";
@@ -94,7 +95,7 @@ export const FLOWSTOKEN_OFFICIAL_GROUP_MODELS: readonly string[] = [
 export const FLOWSTOKEN_GROUPS = [
 	{
 		id: "default" as const,
-		providerId: "flowstoken-default",
+		providerId: providerIdForGroup("default"),
 		labelZh: "普通组",
 		tokenName: "FlowsToken-Desktop-普通",
 		descriptionZh: "经济实用，主流高性价比模型",
@@ -102,7 +103,7 @@ export const FLOWSTOKEN_GROUPS = [
 	},
 	{
 		id: "smart" as const,
-		providerId: "flowstoken-smart",
+		providerId: providerIdForGroup("smart"),
 		labelZh: "智能组",
 		tokenName: "FlowsToken-Desktop-智能",
 		descriptionZh: "智能选模（Bestoo-Auto 自动分配最佳专家模型）",
@@ -110,7 +111,7 @@ export const FLOWSTOKEN_GROUPS = [
 	},
 	{
 		id: "vip" as const,
-		providerId: "flowstoken-official",
+		providerId: providerIdForGroup("vip"),
 		labelZh: "官方组",
 		tokenName: "FlowsToken-Desktop-官方",
 		descriptionZh: "厂商官方模型（GPT / Claude 等），模型 ID 与厂商一致",

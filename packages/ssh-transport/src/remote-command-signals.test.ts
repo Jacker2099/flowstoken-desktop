@@ -6,6 +6,9 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it, vi } from "vitest";
 import { buildKillCommand } from "./remote-command.js";
+import { assertNativePosixTestHost } from "./testing-platform.js";
+
+assertNativePosixTestHost();
 
 const execute = promisify(execFile);
 // The production remote endpoint is /bin/sh. This override tests that endpoint's dash/Bash implementations.

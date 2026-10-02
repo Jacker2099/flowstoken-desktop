@@ -2,6 +2,16 @@
 
 This repository is a fork of [openvetta/open-vetta](https://github.com/openvetta/open-vetta) (Apache-2.0).
 
+## Current product contract (0.6.4)
+
+FlowsToken 0.6.4 incorporates the published Open Vetta 0.5.60 tag. Product identity, account and billing integration, model-group policy, self-hosted updates and strict release gates remain owned by this fork. See [the maintenance boundary](docs/flowstoken/UPSTREAM_POLICY.md) and [ADR-0145](docs/adr/0145-flowstoken-runtime-catalog-and-managed-model-access.md).
+
+Model/group additions, removal, display names, vendor logos/order, recommendations and existing capabilities are schema2 catalog data; they do not require a client release. Keep the legacy schema1 endpoint alongside v2. Catalog data cannot grant account access, rewrite a billing identity or supply code/credentials/API endpoints. New protocols and local permissions still require a reviewed client release.
+
+The current release requires the exact source SHA to pass complete supported client-workspace tests on Linux, macOS and Windows, the explicit platform SSH matrix, four platform builds and four strict installation/startup/update verification jobs. The final waiter checks 13 required jobs. The historical related-test gate below is preliminary and cannot replace these full checks. A prohibited source is rejected by the repository release policy before recovery or publication. Apple polling resumes the original signed bytes/receipt; changed application content must get a new submission.
+
+Automatic upstream sync was manually disabled before this audit; this release does not re-enable it. Future complete merges or selected core backports must follow the operator's instruction and preserve applicable license/NOTICE and product boundaries. Do not adopt upstream removal of verification gates.
+
 ## Remotes
 
 ```bash

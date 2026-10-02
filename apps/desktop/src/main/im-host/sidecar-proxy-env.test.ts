@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const spawnCalls: Array<{ command: string; args: string[]; options: Record<string, unknown> }> = [];
 
@@ -36,8 +36,15 @@ function baseConfig() {
 	};
 }
 
+beforeEach(() => {
+	for (const key of ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"]) {
+		vi.stubEnv(key, undefined);
+	}
+});
+
 afterEach(() => {
 	spawnCalls.length = 0;
+	vi.unstubAllEnvs();
 });
 
 /**
@@ -60,13 +67,12 @@ describe("sidecar 进程的代理环境", () => {
 	});
 
 	it("仍然继承父进程环境，不是只给代理变量", async () => {
-		process.env.VETTA_PROXY_ENV_PROBE = "inherited";
+		vi.stubEnv("VETTA_PROXY_ENV_PROBE", "inherited");
 		const manager = new SidecarManager({ readyTimeoutMs: 5_000, shutdownGraceMs: 50, backoffMs: [10] });
 		await manager.start({ ...baseConfig(), proxyEnv: { HTTPS_PROXY: "http://127.0.0.1:7890" } });
 
 		const env = spawnCalls.at(-1)?.options.env as NodeJS.ProcessEnv;
 		expect(env.VETTA_PROXY_ENV_PROBE).toBe("inherited");
-		delete process.env.VETTA_PROXY_ENV_PROBE;
 		await manager.stop();
 	});
 

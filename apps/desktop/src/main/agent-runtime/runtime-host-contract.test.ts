@@ -138,6 +138,17 @@ describe("Desktop RuntimeHost production contract", () => {
 				unsubscribe();
 
 				expect(server.requests).toHaveLength(2);
+				const requests = events.filter((event) => event.type === "model.request.started");
+				expect(requests.map((event) => event.modelCallIndex)).toEqual([0, 1]);
+				for (const request of requests) {
+					const firstOutput = events.find(
+						(event) => event.channel === "assistant" && event.modelCallIndex === request.modelCallIndex,
+					);
+					if (!firstOutput || firstOutput.channel !== "assistant") throw new Error("Missing assistant output");
+					expect(request.turnId).toBeTruthy();
+					expect(firstOutput.turnId).toBe(request.turnId);
+					expect(events.indexOf(request)).toBeLessThan(events.indexOf(firstOutput));
+				}
 				expect(JSON.stringify(server.requests[1]?.body.input)).toContain("desktop tool fixture content");
 				const sessionPath = fixture.runtime.getSessionPath(created.sessionId);
 				if (!sessionPath) throw new Error(`${backend} did not persist the Tool Loop session`);
@@ -163,6 +174,9 @@ describe("Desktop RuntimeHost production contract", () => {
 				await restartedFixture.runtime.prompt(resumed.sessionId, { text: "Continue after host restart" });
 				unsubscribeResumed();
 				expect(server.requests).toHaveLength(3);
+				expect(resumedEvents.filter((event) => event.type === "model.request.started")).toMatchObject([
+					{ modelCallIndex: 0 },
+				]);
 				const resumedProviderInput = JSON.stringify(server.requests[2]?.body.input);
 				observations[backend] = {
 					initial,
@@ -210,11 +224,15 @@ describe("Desktop RuntimeHost production contract", () => {
 			"active_tools_update",
 			"session.extension",
 			"session.extension",
+			"conversation.turn.started",
 			"session.context.state",
 			"session.extension",
+			"conversation.message.appended",
 			"session.context.state",
 			"session.lifecycle",
 			"session.lifecycle",
+			"model.request.started",
+			"session.context.state",
 			"start",
 			"toolcall_start",
 			"toolcall_delta",
@@ -222,14 +240,17 @@ describe("Desktop RuntimeHost production contract", () => {
 			"done",
 			"session.extension",
 			"session.context.state",
-			"usage.update",
+			"conversation.message.appended",
 			"session.context.state",
+			"usage.update",
 			"tool.start",
 			"tool.end",
 			"session.extension",
+			"conversation.message.appended",
+			"session.context.state",
+			"model.request.started",
 			"session.context.state",
 			"session.lifecycle",
-			"session.context.state",
 			"session.lifecycle",
 			"start",
 			"text_start",
@@ -238,10 +259,13 @@ describe("Desktop RuntimeHost production contract", () => {
 			"done",
 			"session.extension",
 			"session.context.state",
-			"usage.update",
+			"conversation.message.appended",
 			"session.context.state",
+			"usage.update",
 			"session.lifecycle",
 			"session.lifecycle",
+			"session.extension",
+			"conversation.turn.completed",
 		]);
 	}, 30_000);
 

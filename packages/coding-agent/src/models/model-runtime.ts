@@ -19,6 +19,13 @@ import { loadRemoteModelSource, type RemoteModelSourceOptions } from "./remote/r
 
 const NO_AUTH_PLACEHOLDER = "no-auth-needed-for-local-provider";
 
+export interface ModelAccessLease {
+	/** Recheck revocable account state after an asynchronous credential or remote lookup. */
+	assertCurrent(): void;
+	/** Optional host check that the resolved credential still belongs to the admitted account/model. */
+	assertCredential?(credential: string | undefined): void;
+}
+
 export interface CreateCodingAgentModelRuntimeOptions {
 	readonly modelsJsonPath?: string;
 	readonly configFileSource?: ModelConfigFileSource;
@@ -26,6 +33,12 @@ export interface CreateCodingAgentModelRuntimeOptions {
 	readonly configurationValueResolver?: CodingAgentConfigurationValueResolver;
 	/** 仅用于确定性测试或嵌入式宿主；生产默认读取 @vetta/ai 目录。 */
 	readonly builtInModels?: readonly Model<Api>[];
+	readonly validateModelAccess?: (
+		model: Model<Api>,
+	) => void | ModelAccessLease | Promise<void> | Promise<ModelAccessLease | undefined>;
+	readonly validateProviderAccess?: (
+		provider: string,
+	) => void | ModelAccessLease | Promise<void> | Promise<ModelAccessLease | undefined>;
 }
 
 export function createCodingAgentModelRuntime(
@@ -39,6 +52,7 @@ export function createCodingAgentModelRuntime(
 		options.remoteSource,
 		options.builtInModels,
 		options.configurationValueResolver ?? literalCodingAgentConfigurationValueResolver,
+		{ validateModelAccess: options.validateModelAccess, validateProviderAccess: options.validateProviderAccess },
 	);
 }
 
@@ -63,6 +77,10 @@ class ModelRuntimeImplementation implements CodingAgentModelRuntime {
 		private readonly remoteSource: RemoteModelSourceOptions | undefined,
 		private readonly builtInModels: readonly Model<Api>[] | undefined,
 		private readonly configurationValueResolver: CodingAgentConfigurationValueResolver,
+		private readonly accessPolicy: Pick<
+			CreateCodingAgentModelRuntimeOptions,
+			"validateModelAccess" | "validateProviderAccess"
+		>,
 	) {
 		credentials.setFallbackResolver((provider) => {
 			const configured = this.customProviderApiKeys.get(provider);
@@ -129,24 +147,48 @@ class ModelRuntimeImplementation implements CodingAgentModelRuntime {
 	}
 
 	async getApiKey(model: Model<Api>): Promise<string | undefined> {
+		const lease = await this.accessPolicy.validateModelAccess?.(model);
 		const token = this.readServerToken();
 		await this.ensureRemoteLoaded(token);
-		if (this.isRemote(model) && token) return token;
+		if (lease) lease.assertCurrent();
+		if (this.isRemote(model) && token) {
+			if (lease) lease.assertCredential?.(token);
+			return token;
+		}
 		const key = await this.credentials.getApiKey(model.provider);
-		if (key) return key;
-		if (this.customProviderNames.has(model.provider) && !this.isUsingOAuth(model)) return NO_AUTH_PLACEHOLDER;
+		if (lease) lease.assertCurrent();
+		if (key) {
+			if (lease) lease.assertCredential?.(key);
+			return key;
+		}
+		if (this.customProviderNames.has(model.provider) && !this.isUsingOAuth(model)) {
+			if (lease) lease.assertCredential?.(NO_AUTH_PLACEHOLDER);
+			return NO_AUTH_PLACEHOLDER;
+		}
+		if (lease) lease.assertCredential?.(undefined);
 		return undefined;
 	}
 
 	async getApiKeyForProvider(provider: string): Promise<string | undefined> {
+		const lease = await this.accessPolicy.validateProviderAccess?.(provider);
 		const token = this.readServerToken();
 		await this.ensureRemoteLoaded(token);
-		if (this.getRemoteProviders().has(provider) && token) return token;
+		if (lease) lease.assertCurrent();
+		if (this.getRemoteProviders().has(provider) && token) {
+			if (lease) lease.assertCredential?.(token);
+			return token;
+		}
 		const key = await this.credentials.getApiKey(provider);
-		if (key) return key;
+		if (lease) lease.assertCurrent();
+		if (key) {
+			if (lease) lease.assertCredential?.(key);
+			return key;
+		}
 		if (this.customProviderNames.has(provider) && this.credentials.get(provider)?.type !== "oauth") {
+			if (lease) lease.assertCredential?.(NO_AUTH_PLACEHOLDER);
 			return NO_AUTH_PLACEHOLDER;
 		}
+		if (lease) lease.assertCredential?.(undefined);
 		return undefined;
 	}
 

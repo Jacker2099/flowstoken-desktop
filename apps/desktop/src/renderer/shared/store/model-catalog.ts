@@ -1,6 +1,11 @@
 import type { ModelsConfigData } from "@preload/api";
 import { getDefaultStore } from "jotai";
-import { localModelsConfigAtom, remoteProvidersAtom } from "./model-catalog-atoms";
+import {
+	localModelsConfigAtom,
+	localModelsConfigVersionAtom,
+	remoteProvidersAtom,
+	remoteProvidersVersionAtom,
+} from "./model-catalog-atoms";
 import { createModelCatalogSync, type ModelCatalogSync } from "./model-catalog-sync";
 
 export {
@@ -18,6 +23,8 @@ export { flowstokenCatalogAtom, localModelsConfigAtom } from "./model-catalog-at
  */
 export const modelCatalog: ModelCatalogSync = createModelCatalogSync<ModelsConfigData, Record<string, unknown>>({
 	now: () => Date.now(),
+	getVersion: (source) =>
+		getDefaultStore().get(source === "local" ? localModelsConfigVersionAtom : remoteProvidersVersionAtom),
 	loadLocal: () => window.vetta.models.get(),
 	applyLocal: (config) => getDefaultStore().set(localModelsConfigAtom, config),
 	loadRemote: async () => {

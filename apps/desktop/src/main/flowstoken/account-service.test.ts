@@ -14,6 +14,8 @@ const mocks = vi.hoisted(() => ({
 	listTokens: vi.fn(),
 	revealTokenKey: vi.fn(),
 	authRevision: 0,
+	fetchSelfLogs: vi.fn(),
+	fetchUsableGroups: vi.fn(),
 }));
 
 vi.mock("electron", () => ({
@@ -25,6 +27,7 @@ vi.mock("electron", () => ({
 		},
 	},
 }));
+vi.mock("../i18n/index.js", () => ({ mainT: (key: string) => key }));
 vi.mock("./group-catalog.js", async (importOriginal) => {
 	const catalog = await importOriginal<typeof GroupCatalogModule>();
 	mocks.fetchCatalog.mockImplementation(catalog.fetchCatalog);
@@ -33,6 +36,17 @@ vi.mock("./group-catalog.js", async (importOriginal) => {
 vi.mock("../models/model-settings-host.js", () => ({
 	getDesktopModelSettingsService: () => ({
 		getConfig: async () => structuredClone(mocks.config),
+		updateConfig: async (
+			update: (current: typeof mocks.config) => typeof mocks.config | undefined,
+			beforeCommit?: () => void,
+		) => {
+			beforeCommit?.();
+			const next = update(structuredClone(mocks.config));
+			if (next) {
+				mocks.replaceConfig(next);
+				mocks.config = structuredClone(next);
+			}
+		},
 		replaceConfig: async (next: typeof mocks.config) => {
 			mocks.replaceConfig(next);
 			mocks.config = structuredClone(next);
@@ -57,18 +71,48 @@ vi.mock("./newapi-client.js", () => ({
 	FlowstokenApiError: class extends Error {},
 	createToken: vi.fn(),
 	fetchSelf: mocks.fetchSelf,
-	fetchSelfLogs: async () => [],
+	fetchSelfLogs: mocks.fetchSelfLogs,
 	findManagedToken: (tokens: Array<{ id: number; name: string }>, group: string) =>
 		tokens.find((t) => t.name.endsWith(group)),
 	listTokens: mocks.listTokens,
 	revealTokenKey: mocks.revealTokenKey,
 	getFlowstokenAuthRevision: () => mocks.authRevision,
+	getFlowstokenAccountId: () => 7,
+	fetchUsableGroups: mocks.fetchUsableGroups,
+	refreshAuth: async () => ({ user: { id: 7 }, accessToken: "fixture" }),
+	managedTokenName: (id: string) => `FlowsToken-Desktop-${id}`,
 }));
 
 const { getAccountSnapshot, ensureGroupKeysAndProviders, getCatalogAndRefreshProviders } = await import(
 	"./account-service.js"
 );
 const { resetGroupCatalogCacheForTests } = await import("./group-catalog.js");
+const { resetCatalogAccessForTests } = await import("./catalog-access.js");
+
+/** These cases start with keys already provisioned for the current account. */
+function withBindings(config: typeof mocks.config): typeof mocks.config {
+	return {
+		...config,
+		providers: Object.fromEntries(
+			Object.entries(config.providers).map(([id, provider]) => {
+				const groupId =
+					id === "flowstoken-smart"
+						? "smart"
+						: id === "flowstoken-official"
+							? "vip"
+							: id === "flowstoken-default"
+								? "default"
+								: null;
+				return [
+					id,
+					groupId && provider.apiKey
+						? { ...provider, managedGroup: { source: "flowstoken", accountId: 7, groupId, tokenId: 1 } }
+						: provider,
+				];
+			}),
+		),
+	};
+}
 
 const model = (id: string, name?: string) => ({
 	id,
@@ -128,10 +172,14 @@ function makeCatalog(pricingVersion: string) {
 }
 
 function respond(pricingVersion = "pv-1") {
-	mocks.fetch.mockImplementation(async () => ({
-		ok: true,
-		json: async () => makeCatalog(pricingVersion),
-	}));
+	mocks.fetch.mockImplementation(async (url: string) =>
+		url.includes("desktop-catalog-v2.json")
+			? { ok: false, status: 404 }
+			: {
+					ok: true,
+					json: async () => makeCatalog(pricingVersion),
+				},
+	);
 }
 
 function wiredProvider(syncedAgoMs: number, models: Array<{ id: string; name?: string }>) {
@@ -164,8 +212,11 @@ beforeEach(async () => {
 	vi.clearAllMocks();
 	mocks.replaceConfig.mockReset();
 	resetGroupCatalogCacheForTests();
+	resetCatalogAccessForTests();
 	mocks.listTokens.mockResolvedValue([]);
-	mocks.fetchSelf.mockResolvedValue({});
+	mocks.fetchSelf.mockResolvedValue({ id: 7 });
+	mocks.fetchUsableGroups.mockResolvedValue(new Set(["default", "smart", "vip"]));
+	mocks.fetchSelfLogs.mockResolvedValue([]);
 	mocks.revealTokenKey.mockImplementation(async (_s: unknown, id: number) => `sk-${id}`);
 });
 
@@ -181,17 +232,60 @@ afterEach(async () => {
 });
 
 describe("FlowsToken group model lists", () => {
+	it("does not publish a previous user's snapshot when the account changes during usage loading", async () => {
+		mocks.config = withBindings({
+			defaultModel: "flowstoken-smart/Bestoo-Auto",
+			providers: Object.fromEntries(
+				["flowstoken-default", "flowstoken-smart", "flowstoken-official"].map((id) => [
+					id,
+					wiredProvider(1_000, []),
+				]),
+			),
+		});
+		let finish!: (value: unknown[]) => void;
+		let started!: () => void;
+		const loading = new Promise<void>((resolve) => {
+			started = resolve;
+		});
+		const usage = new Promise<unknown[]>((resolve) => {
+			finish = resolve;
+		});
+		mocks.fetchSelfLogs.mockImplementationOnce(() => {
+			started();
+			return usage;
+		});
+		const snapshot = getAccountSnapshot().catch((error: unknown) => error);
+		await loading;
+		mocks.authRevision++;
+		finish([]);
+		expect(await snapshot).toBeInstanceOf(Error);
+		expect(mocks.replaceConfig).not.toHaveBeenCalled();
+	});
+
 	it("does not wire an old account's revealed key after the login session changes", async () => {
 		respond();
-		mocks.config = { defaultModel: "flowstoken-smart/Bestoo-Auto", providers: Object.fromEntries([
-			"flowstoken-default", "flowstoken-smart", "flowstoken-official",
-		].map((id) => [id, wiredProvider(1_000, [])])) };
+		mocks.config = withBindings({
+			defaultModel: "flowstoken-smart/Bestoo-Auto",
+			providers: Object.fromEntries(
+				["flowstoken-default", "flowstoken-smart", "flowstoken-official"].map((id) => [
+					id,
+					wiredProvider(1_000, []),
+				]),
+			),
+		});
 		mocks.listTokens.mockResolvedValue([{ id: 1, name: "FlowsToken-Desktop-default" }]);
 		let finish!: (key: string) => void;
 		let started!: () => void;
-		const revealed = new Promise<string>((resolve) => { finish = resolve; });
-		const revealStarted = new Promise<void>((resolve) => { started = resolve; });
-		mocks.revealTokenKey.mockImplementationOnce(() => { started(); return revealed; });
+		const revealed = new Promise<string>((resolve) => {
+			finish = resolve;
+		});
+		const revealStarted = new Promise<void>((resolve) => {
+			started = resolve;
+		});
+		mocks.revealTokenKey.mockImplementationOnce(() => {
+			started();
+			return revealed;
+		});
 		const preparing = ensureGroupKeysAndProviders(["default"]);
 		await revealStarted;
 		mocks.authRevision++;
@@ -204,7 +298,7 @@ describe("FlowsToken group model lists", () => {
 
 	it("wires groups with catalog-ordered models, catalog display names and the smart default", async () => {
 		respond();
-		mocks.config = { providers: {}, defaultModel: "" };
+		mocks.config = withBindings({ providers: {}, defaultModel: "" });
 		mocks.listTokens.mockResolvedValue([
 			{ id: 1, name: "FlowsToken-Desktop-default" },
 			{ id: 2, name: "FlowsToken-Desktop-smart" },
@@ -234,14 +328,14 @@ describe("FlowsToken group model lists", () => {
 	it("refreshes stale model lists of wired groups in the background, keeping keys", async () => {
 		respond("pv-2");
 		const stale = 7 * 60 * 60 * 1000;
-		mocks.config = {
+		mocks.config = withBindings({
 			defaultModel: "flowstoken-official/anthropic/claude-opus-5.5",
 			providers: {
 				"flowstoken-default": wiredProvider(stale, [{ id: "gpt-5.5" }]),
 				"flowstoken-smart": wiredProvider(stale, [{ id: "Bestoo-Auto" }]),
 				"flowstoken-official": wiredProvider(stale, [{ id: "openai/gpt-4o" }]),
 			},
-		};
+		});
 
 		const refreshed = nextConfigReplacement();
 		await getAccountSnapshot({ includeUsage: false });
@@ -258,22 +352,25 @@ describe("FlowsToken group model lists", () => {
 
 	it("leaves fresh lists alone and keeps what it has when the site is unreachable", async () => {
 		const fresh = 60 * 60 * 1000;
-		mocks.config = {
+		mocks.config = withBindings({
 			defaultModel: "flowstoken-smart/Bestoo-Auto",
 			providers: {
 				"flowstoken-default": wiredProvider(fresh, [{ id: "gpt-5.5" }]),
 				"flowstoken-smart": wiredProvider(fresh, [{ id: "Bestoo-Auto" }]),
 				"flowstoken-official": wiredProvider(fresh, [{ id: "openai/gpt-4o" }]),
 			},
-		};
+		});
 		respond();
 		await getAccountSnapshot({ includeUsage: false });
 		// The fresh branch only awaits the immediately resolved getConfig mock; it starts no I/O.
 		expect(mocks.fetchCatalog).not.toHaveBeenCalled();
-		expect(mocks.fetch).not.toHaveBeenCalled();
+		// Catalog metadata is read even for fresh providers so server group changes are discoverable.
+		expect(mocks.fetch).toHaveBeenCalledTimes(2);
 		expect(mocks.replaceConfig).not.toHaveBeenCalled();
 
 		mocks.config.providers["flowstoken-official"].modelsSyncedAt = new Date(0).toISOString();
+		await rm(join(mocks.userDataDir, "flowstoken"), { recursive: true, force: true });
+		resetGroupCatalogCacheForTests();
 		mocks.fetch.mockRejectedValue(new Error("offline"));
 		await getAccountSnapshot({ includeUsage: false });
 		expect(mocks.fetchCatalog).toHaveBeenCalledTimes(1);
@@ -285,7 +382,7 @@ describe("FlowsToken group model lists", () => {
 	it("rewrites model lists when the catalog pricingVersion changed", async () => {
 		const stale = 7 * 60 * 60 * 1000;
 		// Same model ids as the catalog serves — only the version moved (names/order may differ server-side).
-		mocks.config = {
+		mocks.config = withBindings({
 			defaultModel: "flowstoken-smart/Bestoo-Auto",
 			providers: {
 				"flowstoken-default": wiredProvider(stale, [
@@ -299,7 +396,7 @@ describe("FlowsToken group model lists", () => {
 					{ id: "openai/gpt-6-sol", name: "gpt-6-sol" },
 				]),
 			},
-		};
+		});
 		respond("pv-9");
 
 		const refreshed = nextConfigReplacement();
@@ -317,12 +414,17 @@ describe("picker-driven catalog refresh", () => {
 	it("honors a deliberately empty group instead of retaining removed models or reviving fallback models", async () => {
 		const catalog = makeCatalog("pv-empty");
 		catalog.groups[1].vendors = [];
-		mocks.fetch.mockResolvedValue({ ok: true, json: async () => catalog });
-		mocks.config = { defaultModel: "flowstoken-smart/Bestoo-Auto", providers: {
-			"flowstoken-default": wiredProvider(1_000, [{ id: "removed" }]),
-			"flowstoken-smart": wiredProvider(1_000, [{ id: "Bestoo-Auto" }]),
-			"flowstoken-official": wiredProvider(1_000, [{ id: "openai/gpt-4o" }]),
-		} };
+		mocks.fetch.mockImplementation(async (url) =>
+			url.includes("desktop-catalog-v2.json") ? { ok: false, status: 404 } : { ok: true, json: async () => catalog },
+		);
+		mocks.config = withBindings({
+			defaultModel: "flowstoken-smart/Bestoo-Auto",
+			providers: {
+				"flowstoken-default": wiredProvider(1_000, [{ id: "removed" }]),
+				"flowstoken-smart": wiredProvider(1_000, [{ id: "Bestoo-Auto" }]),
+				"flowstoken-official": wiredProvider(1_000, [{ id: "openai/gpt-4o" }]),
+			},
+		});
 		await getCatalogAndRefreshProviders();
 		expect(mocks.config.providers["flowstoken-default"].models).toEqual([]);
 		expect(mocks.config.providers["flowstoken-default"].apiKey).toBe("sk-kept");
@@ -334,8 +436,10 @@ describe("picker-driven catalog refresh", () => {
 	it("updates a fresh wired provider from new server data without touching account tokens or custom tuning", async () => {
 		const catalog = makeCatalog("pv-menu");
 		catalog.groups[1].vendors[0].models[0].vision = true;
-		mocks.fetch.mockResolvedValue({ ok: true, json: async () => catalog });
-		mocks.config = {
+		mocks.fetch.mockImplementation(async (url) =>
+			url.includes("desktop-catalog-v2.json") ? { ok: false, status: 404 } : { ok: true, json: async () => catalog },
+		);
+		mocks.config = withBindings({
 			defaultModel: "custom/model",
 			providers: {
 				"flowstoken-default": {
@@ -347,7 +451,7 @@ describe("picker-driven catalog refresh", () => {
 				},
 				custom: { apiKey: "keep-custom", models: [{ id: "model", input: ["text"] }] },
 			},
-		};
+		});
 		const result = await getCatalogAndRefreshProviders();
 		expect(result.pricingVersion).toBe("pv-menu");
 		const provider = mocks.config.providers["flowstoken-default"];
@@ -374,7 +478,7 @@ describe("picker-driven catalog refresh", () => {
 	});
 
 	it("preserves an explicit input override through disk fallback and keeps providers when no catalog exists", async () => {
-		mocks.config = {
+		mocks.config = withBindings({
 			defaultModel: "flowstoken-default/claude-opus-5-5",
 			providers: {
 				"flowstoken-default": {
@@ -382,10 +486,12 @@ describe("picker-driven catalog refresh", () => {
 					models: [{ id: "claude-opus-5-5", input: ["text"] }],
 				},
 			},
-		};
+		});
 		const catalog = makeCatalog("pv-vision");
 		catalog.groups[1].vendors[0].models[0].vision = true;
-		mocks.fetch.mockResolvedValue({ ok: true, json: async () => catalog });
+		mocks.fetch.mockImplementation(async (url) =>
+			url.includes("desktop-catalog-v2.json") ? { ok: false, status: 404 } : { ok: true, json: async () => catalog },
+		);
 		await getCatalogAndRefreshProviders();
 		expect((mocks.config.providers["flowstoken-default"].models as Array<Record<string, unknown>>)[0].input).toEqual([
 			"text",

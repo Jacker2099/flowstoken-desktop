@@ -1,3 +1,4 @@
+import { modelOptionFromIndex } from "@shared/components/ModelSelect/model-option-identity";
 import { resolveReasoning } from "@shared/components/ModelSelect/resolveReasoning";
 import { type ModelOption, useModelOptions } from "@shared/components/ModelSelect/useModelOptions";
 import {
@@ -28,7 +29,7 @@ export interface ModelSelectorScope {
 	readonly onReasoningSelect: (reasoning: string) => void;
 }
 
-function persistSelectedModel(key: string): void {
+export function persistSelectedModel(key: string): void {
 	try {
 		localStorage.setItem(SELECTED_MODEL_STORAGE_KEY, key);
 	} catch {
@@ -70,8 +71,22 @@ export function useModelSelectorModel({
 	const setModelSupportsImages = useSetAtom(modelSupportsImagesAtom);
 	const { options, grouped, defaultKey, iconFor, labelFor } = useModelOptions();
 	const picker = useFlowstokenPicker(options, grouped, selectedModel);
+	const optionByKey = useMemo(() => new Map(options.map((option) => [option.key, option])), [options]);
+	const providerGroups = useMemo(
+		() =>
+			[...grouped.entries()].map(([provider, models]) => ({
+				icon: iconFor(provider),
+				label: labelFor(provider),
+				models,
+				provider,
+			})),
+		[grouped, iconFor, labelFor],
+	);
 
-	const catalogOption = useMemo(() => options.find((m) => m.key === selectedModel) ?? null, [options, selectedModel]);
+	const catalogOption = useMemo(
+		() => (selectedModel ? (modelOptionFromIndex(optionByKey, selectedModel) ?? null) : null),
+		[optionByKey, selectedModel],
+	);
 	// 有 key 但 catalog 未就绪时仍展示 modelId，避免闪「选择模型」。
 	const selectedOption = useMemo(() => {
 		if (catalogOption) return catalogOption;
@@ -109,22 +124,21 @@ export function useModelSelectorModel({
 
 	// Auto-apply the configured default model when nothing is selected yet.
 	useEffect(() => {
-		if (!selectedModel && defaultKey) {
+		if (!selectedModel && defaultKey && modelOptionFromIndex(optionByKey, defaultKey)) {
 			if (scope) {
-				const defaultReasoning = resolveReasoning(options.find((option) => option.key === defaultKey))?.default;
+				const defaultReasoning = resolveReasoning(modelOptionFromIndex(optionByKey, defaultKey))?.default;
 				scope.onModelSelect(defaultKey, defaultReasoning);
 			} else {
 				setSelectedModel(defaultKey);
 				persistSelectedModel(defaultKey);
 			}
 		}
-	}, [selectedModel, defaultKey, setSelectedModel, scope, options]);
+	}, [selectedModel, defaultKey, setSelectedModel, scope, optionByKey]);
 
 	// Keep image-support flag in sync with the resolved catalog selection only.
 	useEffect(() => {
-		if (options.length === 0) return;
 		setModelSupportsImages(catalogOption?.supportsImage ?? false);
-	}, [options.length, catalogOption, setModelSupportsImages]);
+	}, [catalogOption, setModelSupportsImages]);
 
 	// Persist the effective default level for the selected model when none is remembered,
 	// so the prompt sender always has a value to send (per-model memory seeded with default).
@@ -160,21 +174,24 @@ export function useModelSelectorModel({
 	 */
 	const multiplierLabelFor = useCallback(
 		(option: { key: string }): string | undefined => {
-			const multiplier = options.find((candidate) => candidate.key === option.key)?.multiplier;
+			const multiplier = optionByKey.get(option.key)?.multiplier;
 			if (!multiplier) return undefined;
 			return multiplier.input === 0 && multiplier.output === 0
 				? t("modelSelect.free")
 				: t("modelSelect.multiplier", { value: fmtMultiplier(multiplier.input) });
 		},
-		[options, t],
+		[optionByKey, t],
 	);
 
 	// 打开模型菜单时按 TTL 后台重校验目录，服务端增删模型无需重启即可看到。
 	const handleOpenChange = useCallback((open: boolean) => {
 		if (open) {
-			void modelCatalog.revalidate();
-			void revalidateFlowstokenCatalog();
+			void modelCatalog.revalidate().then(() => revalidateFlowstokenCatalog());
 		}
+	}, []);
+	const handleCatalogRefresh = useCallback(async () => {
+		await revalidateFlowstokenCatalog(Date.now(), { force: true });
+		await modelCatalog.revalidate({ force: true, sources: ["local"] });
 	}, []);
 
 	const handleReasoningSelect = useCallback(
@@ -191,13 +208,8 @@ export function useModelSelectorModel({
 		empty: options.length === 0 && !selectedModel,
 		viewProps: {
 			currentLevel,
-			defaultKey,
-			groups: [...grouped.entries()].map(([provider, models]) => ({
-				icon: iconFor(provider),
-				label: labelFor(provider),
-				models,
-				provider,
-			})),
+			defaultKey: defaultKey ? (modelOptionFromIndex(optionByKey, defaultKey)?.key ?? defaultKey) : undefined,
+			groups: providerGroups,
 			labels: {
 				clearSearch: t("modelSelect.clearSearch"),
 				recommendationAction: t("modelSelect.recommendationAction"),
@@ -215,17 +227,27 @@ export function useModelSelectorModel({
 				reasoningHeader: t("modelSelect.reasoningHeader"),
 				searchPlaceholder: t("modelSelect.searchPlaceholder"),
 				visionBadge: t("modelSelect.visionBadge"),
+				unavailableBadge: t("modelSelect.unavailableBadge"),
+				unavailableHint: t("modelSelect.unavailableHint"),
+				syncCatalog: t("modelSelect.syncCatalog"),
+				cached: t("modelSelect.catalogCached"),
+				fallback: t("modelSelect.catalogFallback"),
+				refreshFailed: t("modelSelect.catalogRefreshFailed"),
 			},
 			menuLevels,
 			onModelSelect: handleModelSelect,
 			onOpenChange: handleOpenChange,
 			onReasoningSelect: handleReasoningSelect,
-			selectedModel: selectedModel ?? undefined,
+			selectedModel: catalogOption?.key ?? selectedModel ?? undefined,
 			selectedOption,
+			selectedUnavailable: picker.selectedUnavailable,
 			tabs: picker.enabled ? picker.tabs : undefined,
 			initialTab: picker.initialTab,
 			vendorBarByTab: picker.vendorBarByTab,
 			highlight: picker.highlight ?? undefined,
+			highlightByTab: picker.highlightByTab,
+			onCatalogRefresh: picker.enabled || picker.selectedUnavailable ? handleCatalogRefresh : undefined,
+			catalogStatus: picker.catalogStatus,
 			triggerBadge: picker.groupBadge ?? undefined,
 		},
 	};

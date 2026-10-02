@@ -2,13 +2,13 @@ import type { SkillInfo } from "@preload/api";
 import type { InputSegment } from "@shared/lib/input-tokens";
 import type { AppshotAttachment } from "@shared/store/atoms";
 import type { TodoItem } from "@shared/store/todo-atoms";
+import type { WorkSurfaceScope } from "@shared/workspace/work-surface";
 import type { CodingAgentPlanReviewRequest } from "@vetta/coding-agent/function-extensions";
 import type { BottomPanelTabViewModel } from "@vetta-org/theme-ui/bottom-panel";
 import type { InputBarContextMenuViewProps, SessionDropZoneViewProps } from "@vetta-org/theme-ui/chat";
 import type { ComponentProps, MouseEvent, ReactNode } from "react";
 import type { ConnectorGridItem } from "../../hooks/useConnectorGrid";
 import type { ContextRingModel } from "../../hooks/useContextRingModel";
-import type { ModelSelectorScope } from "../../hooks/useModelSelectorModel";
 import type { AtPanelItem, AtPanelSelection } from "../AtPanel";
 import type { ExecutionModeSelectorViewProps } from "../execution-mode-selector/types";
 import type { McpElicitationPanel } from "../McpElicitationPanel";
@@ -20,11 +20,15 @@ export interface ConnectedInputBarProps {
 	onSend: (overrideText?: string, context?: SendInteractionContext) => Promise<void>;
 	onAbort: () => Promise<void>;
 	onSendQueued?: (runtimeId: string, id: string) => void;
+	/** 已有会话与消息列同宽；新建会话保持与 hero、选项行一致的紧凑宽度。 */
+	contentWidth?: InputBarContentWidth;
 	/**
 	 * 当无 activeSession 但仍希望放行输入与发送时（例如 NewSessionPage），
 	 * 把该项目的 cwd 传进来：InputBar 把它视为「有会话」、@ 文件面板用它作为根目录。
 	 */
 	cwdOverride?: string;
+	/** Bottom-panel state is scoped by the host surface, not inferred from the active Conversation. */
+	workSurface?: WorkSurfaceScope | null;
 	/**
 	 * 命令区展开 / 收起时回调。命令区向上生长，宿主可以据此腾出空间
 	 * （新会话页把整条输入栏下移，避免下方留白过大）。
@@ -39,6 +43,7 @@ export interface ConnectedInputBarProps {
 
 export interface ControlledInputBarProps {
 	readonly model: InputBarModel;
+	readonly children?: ReactNode;
 }
 
 export type InputBarProps = ControlledInputBarProps;
@@ -115,6 +120,8 @@ export interface SpeechInputModel {
 	onToggle: () => void;
 }
 
+export type InputBarContentWidth = "compact" | "message";
+
 export interface InputBarCommandModel {
 	readonly slashOpen: boolean;
 	readonly slashVisible: boolean;
@@ -145,6 +152,7 @@ export type InputBarTrailingTool = {
 };
 
 export interface InputBarModel {
+	contentWidth: InputBarContentWidth;
 	dropZone: Omit<SessionDropZoneViewProps, "children" | "className">;
 	isStreaming: boolean;
 	/** 宿主传入的发送前准备态，原样透给发送按钮。 */
@@ -229,10 +237,7 @@ export interface InputBarModel {
 			readonly onSelect: () => void;
 		}[];
 	};
-	modelSelector: {
-		readonly updateActiveSession: boolean;
-		readonly scope?: ModelSelectorScope;
-	};
+
 	/** 工具栏按真实组成项装配，避免用 showX/capability 布尔值扩展产品分支。 */
 	leadingTools: readonly InputBarLeadingTool[];
 	trailingTools: readonly InputBarTrailingTool[];
@@ -270,6 +275,8 @@ export interface InputBarViewClassNames {
 }
 
 export interface InputBarViewProps {
+	/** Toolbar composition supplied by the conversation connector. */
+	children?: ReactNode;
 	model: InputBarModel;
 	className?: string;
 	classNames?: InputBarViewClassNames;

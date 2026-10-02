@@ -5,6 +5,7 @@ const assistantErrorEvent = (failure: Record<string, unknown>) => ({
 	type: "message.appended" as const,
 	sessionId: "session-1",
 	turnId: "turn-1",
+	messageId: "assistant-1",
 	message: {
 		role: "assistant" as const,
 		content: [],

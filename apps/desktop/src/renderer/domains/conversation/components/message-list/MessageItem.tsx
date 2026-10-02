@@ -21,10 +21,9 @@ export const CompactionBoundary = memo(function CompactionBoundary() {
 	return <CompactionBoundaryView label={t("messageList.compactionBoundary")} />;
 });
 
-export const ModelSwitchBoundary = memo(function ModelSwitchBoundary({ label }: { label: string }) {
+export const ModelSwitchBoundary = memo(function ModelSwitchBoundary({ from, to }: { from: string; to: string }) {
 	const { t } = useTranslation("chat");
-	// t includes name interpolation — pass preformatted label from host
-	return <ModelSwitchBoundaryView prefix="" label={t("messageList.modelSwitched", { name: label })} />;
+	return <ModelSwitchBoundaryView prefix="" label={t("messageList.modelSwitched", { from, to })} />;
 });
 
 export interface MessageItemProps {
@@ -92,9 +91,16 @@ export const DefaultMessageItem = memo(function DefaultMessageItem({
 	);
 });
 
-export const ExportMessageList = forwardRef<HTMLDivElement, { messages: readonly ChatConversationItem[] }>(
-	function ExportMessageList({ messages }, ref) {
+export const ExportMessageList = forwardRef<
+	HTMLDivElement,
+	{
+		messages: readonly ChatConversationItem[];
+		participants?: readonly ConversationParticipantViewModel[];
+	}
+>(
+	function ExportMessageList({ messages, participants = [] }, ref) {
 		const tailMessageId = messages.at(-1)?.id ?? null;
+		const participantsById = new Map(participants.map((participant) => [participant.id, participant]));
 		return (
 			<ExportMessageListView listRef={ref}>
 				{messages.map((message) => (
@@ -104,6 +110,8 @@ export const ExportMessageList = forwardRef<HTMLDivElement, { messages: readonly
 							isTailMessage={message.id === tailMessageId}
 							isStreaming={false}
 							exportMode
+							participant={message.kind === "agent" ? participantsById.get(message.authorId) : undefined}
+							participants={participants}
 						/>
 					</div>
 				))}

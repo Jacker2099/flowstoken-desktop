@@ -142,15 +142,15 @@ Local-first does not mean zero network traffic. Model providers, MCP servers, pl
 
 ## Repository map
 
-This is a Bun/TypeScript monorepo with additional Kotlin and Go applications. Dependencies point from applications toward reusable packages; `packages/*` never depend on `apps/*`.
+This is a Bun/TypeScript monorepo with additional Swift, Kotlin and Go applications. Dependencies point from applications toward reusable packages; `packages/*` never depend on `apps/*`.
 
 | Area | Responsibility |
 |---|---|
 | [`apps/desktop`](apps/desktop) | Electron desktop host and renderer |
 | [`apps/cli-host`](apps/cli-host) | CLI host for the coding agent |
 | [`apps/docs-site`](apps/docs-site) | Next.js documentation site published at `docs.openvetta.com` |
-| [`apps/mobile`](apps/mobile) | Expo/React Native mobile client |
-| [`apps/kotlin`](apps/kotlin) | Kotlin Multiplatform Android client |
+| [`apps/mobile/client-apple`](apps/mobile/client-apple) | Native iOS client in Swift/SwiftUI (pairs with the desktop over LAN or relay, end-to-end encrypted) |
+| [`apps/mobile/client-android`](apps/mobile/client-android) | Kotlin Multiplatform Android client (frozen at protocol v1, kept for reference) |
 | [`apps/im-gateway`](apps/im-gateway) | Go IM sidecar gateway |
 | [`packages/ai`](packages/ai) · [`packages/agent`](packages/agent) | Provider abstraction and the agent loop |
 | [`packages/coding-agent`](packages/coding-agent) · `packages/runtime-*` | Product composition, runtime contracts, tools, storage, MCP, and host adapters |
@@ -205,3 +205,13 @@ Open Vetta builds on work from the wider open-source ecosystem, including pi, Co
 Licensed under [Apache-2.0](LICENSE).
 
 - **Friends & Links:** [LINUX DO](https://linux.do/) - A Chinese community for technology enthusiasts. This project is linked with and endorsed by LINUX DO.
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=openvetta%2Fopen-vetta&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=openvetta/open-vetta&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=openvetta/open-vetta&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=openvetta/open-vetta&type=date&legend=top-left" />
+ </picture>
+</a>

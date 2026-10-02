@@ -23,6 +23,8 @@ export interface ModelCatalogSyncDeps<TLocal, TRemote> {
 	/** 返回 null 表示当前不该拉远程（未登录）：不写入、也不刷新新鲜度 */
 	loadRemote: () => Promise<TRemote | null>;
 	applyRemote: (value: TRemote) => void;
+	/** Shared-state writes outside this synchronizer also make an outstanding read obsolete. */
+	getVersion?: (source: ModelCatalogSource) => number;
 	onError?: (source: ModelCatalogSource, error: unknown) => void;
 }
 
@@ -64,15 +66,20 @@ export function createModelCatalogSync<TLocal, TRemote>(deps: ModelCatalogSyncDe
 		remote: createSourceState(),
 	};
 
-	async function pull(source: ModelCatalogSource): Promise<void> {
+	async function pull(source: ModelCatalogSource, state: SourceState): Promise<boolean> {
+		const version = deps.getVersion?.(source);
+		const isCurrent = () => states[source] === state && version === deps.getVersion?.(source);
 		if (source === "local") {
-			deps.applyLocal(await deps.loadLocal());
-			return;
+			const value = await deps.loadLocal();
+			if (!isCurrent()) return false;
+			deps.applyLocal(value);
+			return true;
 		}
 		const providers = await deps.loadRemote();
 		// null = 未登录：保持现状，由调用方（登出流程）负责清空。
-		if (providers === null) return;
+		if (providers === null || !isCurrent()) return false;
 		deps.applyRemote(providers);
+		return true;
 	}
 
 	function shouldSkip(state: SourceState, force: boolean, now: number): boolean {
@@ -84,17 +91,19 @@ export function createModelCatalogSync<TLocal, TRemote>(deps: ModelCatalogSyncDe
 
 	function revalidateSource(source: ModelCatalogSource, force: boolean): Promise<void> {
 		const state = states[source];
-		// 并发去重：同一来源同时只有一个请求在飞，force 也复用它——
-		// 正在飞的这一次拿到的就是最新数据。
+		// 同一有效代际内去重；失效/登出会替换 state，旧请求无法写回。
 		if (state.inFlight) return state.inFlight;
 		if (shouldSkip(state, force, deps.now())) return Promise.resolve();
+		const version = deps.getVersion?.(source);
 
-		const task = pull(source)
-			.then(() => {
+		const task = pull(source, state)
+			.then((applied) => {
+				if (!applied || states[source] !== state) return;
 				state.freshAt = deps.now();
 				state.failedAt = null;
 			})
 			.catch((error: unknown) => {
+				if (states[source] !== state || version !== deps.getVersion?.(source)) return;
 				// 失败不刷新 freshAt：旧数据继续展示，冷却结束后再试。
 				state.failedAt = deps.now();
 				deps.onError?.(source, error);
@@ -113,8 +122,7 @@ export function createModelCatalogSync<TLocal, TRemote>(deps: ModelCatalogSyncDe
 		},
 		invalidate: (source) => {
 			for (const key of source ? [source] : MODEL_CATALOG_SOURCES) {
-				states[key].freshAt = null;
-				states[key].failedAt = null;
+				states[key] = createSourceState();
 			}
 		},
 		reset: () => {

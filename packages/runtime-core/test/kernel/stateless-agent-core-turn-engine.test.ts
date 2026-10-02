@@ -22,6 +22,89 @@ import {
 import { StatelessAgentCoreTurnEngine } from "../../src/kernel/stateless-agent-core-turn-engine.js";
 
 describe("StatelessAgentCoreTurnEngine", () => {
+	it("does not announce or invoke a provider when cancelled during credential preparation", async () => {
+		const abort = new AbortController();
+		const observations: unknown[] = [];
+		let providerCalls = 0;
+		let resolveCredentials: (value: string) => void = () => undefined;
+		let markPreparing: () => void = () => undefined;
+		const credentials = new Promise<string>((resolve) => {
+			resolveCredentials = resolve;
+		});
+		const preparing = new Promise<void>((resolve) => {
+			markPreparing = resolve;
+		});
+		const engine = new StatelessAgentCoreTurnEngine({
+			model: model(),
+			resolveApiKey: () => {
+				markPreparing();
+				return credentials;
+			},
+			streamFn: () => {
+				providerCalls += 1;
+				return recordedStream(assistant([{ type: "text", text: "hello" }]));
+			},
+		});
+		const execution = (async () => {
+			for await (const _event of engine.execute({
+				sessionId: "session-1",
+				turnId: "turn-1",
+				snapshot: snapshot(),
+				messages: [user("hello")],
+				signal: abort.signal,
+				reportObservation: async (observation) => {
+					observations.push(observation);
+				},
+			})) {
+				/* Drain the terminal cancellation events. */
+			}
+		})();
+		const cancelled = expect(execution).rejects.toMatchObject({ name: "AbortError" });
+		await preparing;
+		abort.abort();
+		resolveCredentials("test-key");
+		await cancelled;
+		expect(observations).toEqual([]);
+		expect(providerCalls).toBe(0);
+	});
+
+	it("announces the provider request after credentials and context preparation, before opening the stream", async () => {
+		const order: string[] = [];
+		const engine = new StatelessAgentCoreTurnEngine({
+			model: model(),
+			resolveApiKey: async () => {
+				order.push("credentials");
+				return "test-key";
+			},
+			streamFn: () => {
+				order.push("provider");
+				return recordedStream(assistant([{ type: "text", text: "hello" }]));
+			},
+		});
+		const events: TurnEngineEvent[] = [];
+		for await (const event of engine.execute({
+			sessionId: "session-1",
+			turnId: "turn-1",
+			snapshot: {
+				...snapshot(),
+				contextCompositionPublisher: {
+					publishContextComposition: async (report) => {
+						if (report.phase === "prepared") order.push("context");
+					},
+				},
+			},
+			messages: [user("hello")],
+			signal: new AbortController().signal,
+			reportObservation: async (observation) => {
+				expect(observation).toMatchObject({ type: "model.request.started", modelCallIndex: 0 });
+				order.push("request-start");
+			},
+		}))
+			events.push(event);
+		expect(order).toEqual(["credentials", "context", "request-start", "provider"]);
+		expect(events.at(-1)).toMatchObject({ type: "completed" });
+	});
+
 	it("keeps the production facade aligned with the stateless text projection", async () => {
 		const response = assistant([{ type: "text", text: "done" }]);
 		const legacy = await run(new AgentCoreTurnEngine(options([response])), snapshot());
@@ -346,7 +429,7 @@ describe("StatelessAgentCoreTurnEngine", () => {
 		// 一个用户气泡，而规范历史按 origin 过滤掉它 —— 两侧永远对不上账。
 		const snapshots: SessionInputQueueSnapshot[] = [];
 		const queue = new SessionInputQueue({ onChange: (entry) => snapshots.push(entry) });
-		queue.followUp({ message: user("user follow-up") });
+		queue.followUp({ message: user("user follow-up"), messageId: "user-follow-up-id" });
 		let collected = false;
 		const continuationPolicy = {
 			async collect() {
@@ -395,6 +478,10 @@ describe("StatelessAgentCoreTurnEngine", () => {
 			kind: "continuation",
 			source: "model-length",
 		});
+		const userFollowUp = events.find(
+			(event) => event.type === "message" && event.message.content === "user follow-up",
+		);
+		expect(userFollowUp).toMatchObject({ messageId: "user-follow-up-id" });
 	});
 });
 

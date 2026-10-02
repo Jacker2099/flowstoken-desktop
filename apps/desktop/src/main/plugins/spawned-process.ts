@@ -1,5 +1,6 @@
 import { type ChildProcess, execFile } from "node:child_process";
 import { isSshProjectUri, parseProjectLocation } from "@vetta/ssh-transport";
+import { getAppLogger } from "../logger.js";
 import { getSshPortForwardService } from "../ssh/port-forward-service.js";
 import { getSshConnection } from "../ssh/ssh-runtime.js";
 import { createPluginCommandEnvironment } from "./command-environment.js";
@@ -68,12 +69,26 @@ export async function forwardRemotePort(
 	projectUri: string,
 	localPort: number,
 	remotePort: number,
-): Promise<() => void> {
+): Promise<() => Promise<void>> {
 	const location = parseProjectLocation(projectUri);
 	if (location.kind !== "ssh") throw new Error(`Not a remote project path: ${projectUri}`);
 	const service = getSshPortForwardService();
 	await service.open({ hostId: location.hostId, remotePort, localPort, source: "plugin" });
-	return () => void service.close(location.hostId, remotePort);
+	let closing: Promise<void> | undefined;
+	return () => {
+		if (!closing) {
+			closing = service.close(location.hostId, remotePort);
+			// Existing callers may still invoke cancellation without awaiting it.
+			void closing.catch((error: unknown) => {
+				getAppLogger("ssh").warn("plugin port forward cleanup failed", {
+					hostId: location.hostId,
+					remotePort,
+					error: String(error),
+				});
+			});
+		}
+		return closing;
+	};
 }
 
 /** 按 cwd 的归属决定进程在哪台机器上启动。 */

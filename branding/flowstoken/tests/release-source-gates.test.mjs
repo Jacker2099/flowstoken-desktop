@@ -9,6 +9,7 @@ import { checkpoint, verifyReleaseArtifacts } from "../../../scripts/flowstoken/
 import { validateRecoveryPlan } from "../../../scripts/flowstoken/release-recovery-identity.mjs";
 import { assertReleaseSourceEligible } from "../../../scripts/flowstoken/release-source-policy.mjs";
 import { releaseSourceTestPackages, testReleaseSource } from "../../../scripts/flowstoken/test-release-source.mjs";
+import { selectSshPlatformSuites, WINDOWS_DESKTOP_SSH_SUITES } from "../../../scripts/flowstoken/test-ssh-platform.mjs";
 import { releaseBuildState } from "../../../scripts/flowstoken/wait-release-builds.mjs";
 
 const root = resolve(import.meta.dirname, "../../..");
@@ -154,7 +155,7 @@ test("normal and recovery packaging depend on exact-source cross-platform qualit
 });
 
 test("an empty fork diff still executes complete client suites, and touched workspaces join the release matrix", () => {
-	assert.deepEqual(releaseSourceTestPackages([]), ["coding-agent", "desktop", "runtime-node"]);
+	assert.deepEqual(releaseSourceTestPackages([]), ["ai", "coding-agent", "desktop", "runtime-node", "runtime-storage"]);
 	const expanded = releaseSourceTestPackages([
 		"packages/runtime-core/src/kernel.ts",
 		"packages/ssh-transport/src/remote-command.ts",
@@ -164,6 +165,7 @@ test("an empty fork diff still executes complete client suites, and touched work
 	const execute = (_file, args) => (args[0] === "rev-parse" ? sourceSha : "");
 	assert.equal(
 		testReleaseSource("upstream/v0.5.59", sourceSha, {
+			platform: "win32",
 			execute,
 			run: (args) => {
 				calls.push(args);
@@ -173,8 +175,9 @@ test("an empty fork diff still executes complete client suites, and touched work
 		0,
 	);
 	assert.deepEqual(calls, [
-		["run", "test:pkg", "coding-agent", "desktop", "runtime-node"],
-		["scripts/quality/run-vitest.mjs", "--run", "packages/ssh-transport/src"],
+		["run", "test:pkg", "ai", "coding-agent", "desktop", "runtime-node", "runtime-storage"],
+		["scripts/quality/run-vitest.mjs", "--run", ...selectSshPlatformSuites("win32").map((file) => `packages/ssh-transport/src/${file}`)],
+		["../../scripts/quality/run-vitest.mjs", "--run", ...WINDOWS_DESKTOP_SSH_SUITES, "--reporter=verbose"],
 	]);
 	assert.throws(
 		() =>

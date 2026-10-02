@@ -7,6 +7,9 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 import type { SshHelperClient } from "./helper-client.js";
 import { HELPER_PROTOCOL_VERSION } from "./helper-client.js";
 import { createLoopbackSshConnection } from "./testing.js";
+import { assertNativePosixTestHost } from "./testing-platform.js";
+
+assertNativePosixTestHost();
 
 const helperSource = resolve(dirname(fileURLToPath(import.meta.url)), "../../../apps/ssh-helper");
 const hasGo = spawnSync("go", ["version"]).status === 0;

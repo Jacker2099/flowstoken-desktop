@@ -55,7 +55,7 @@ export function FlowstokenAuthGate({ children }: FlowstokenAuthGateProps): JSX.E
 			if (res.ok && res.snapshot?.loggedIn) {
 				let currentSnap = res.snapshot;
 				// 如果有任何分组尚未接入，自动进行二次保障同步，无需人工点击
-				if (currentSnap.groups?.some((g) => !g.wired)) {
+				if (currentSnap.groups?.some((g) => g.enabled && !g.wired)) {
 					setStatusText(t("flowstokenAuth.statusSyncing"));
 					try {
 						const ensureRes = await window.vetta.flowstoken.ensureKeys();

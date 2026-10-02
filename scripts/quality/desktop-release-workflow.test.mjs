@@ -28,6 +28,7 @@ const upgradeWorkflow = readFileSync(
 const require = createRequire(join(import.meta.dirname, "../../apps/desktop/package.json"));
 const { parse } = require("yaml");
 const jobs = parse(workflow).jobs;
+const packagedJobs = parse(packagedWorkflow).jobs;
 function actionSteps(name) {
 	return parse(readFileSync(join(import.meta.dirname, `../../.github/actions/${name}/action.yml`), "utf8")).runs.steps;
 }
@@ -165,6 +166,24 @@ describe("Desktop release workflow contracts", () => {
 		expect(workflow).toContain("run: bun run verify:desktop:contracts");
 		expect(workflow).toContain("run: bun run test:desktop:packaging");
 		expect(jobs.build.needs).toEqual(["prepare", "quality", "source-quality"]);
+	});
+
+	it("builds and verifies the pinned Windows sandbox before normal packaging", () => {
+		const sandboxSteps = actionSteps("prepare-windows-sandbox");
+		const checkout = sandboxSteps.find((step) => step.name === "Check out pinned Codex sandbox source");
+		expect(checkout.with.repository).toBe("openvetta/codex");
+		expect(checkout.with.ref).toMatch(/^[0-9a-f]{40}$/);
+		expect(sandboxSteps.some((step) => step.run?.includes("cargo build --locked"))).toBe(true);
+		expect(sandboxSteps.some((step) => step.run?.includes("--capabilities --json"))).toBe(true);
+		for (const buildSteps of [jobs.build.steps, packagedJobs.smoke.steps]) {
+			const sandbox = buildSteps.findIndex((step) => step.uses === "./.github/actions/prepare-windows-sandbox");
+			expect(sandbox).toBeGreaterThanOrEqual(0);
+			expect(buildSteps[sandbox].if).toContain("runner.os == 'Windows'");
+			expect(sandbox).toBeLessThan(buildSteps.findIndex((step) => step.name === "Set up Bun"));
+		}
+		expect(jobs.build.steps.find((step) => step.name === "Prepare Windows sandbox").if).toContain(
+			"needs.prepare.outputs.recovery != 'true'",
+		);
 	});
 
 	it("verifies the public update feed after either publish target", () => {

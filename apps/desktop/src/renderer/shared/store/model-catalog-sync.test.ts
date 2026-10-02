@@ -121,6 +121,8 @@ describe("createModelCatalogSync", () => {
 		h.loadRemote.mockResolvedValueOnce(null);
 		await h.sync.revalidate({ sources: ["remote"] });
 		expect(h.applyRemote).not.toHaveBeenCalled();
+		await h.sync.revalidate({ sources: ["remote"] });
+		expect(h.loadRemote).toHaveBeenCalledTimes(2);
 	});
 
 	it("invalidate 后下一次 revalidate 必定重新拉取", async () => {
@@ -136,5 +138,44 @@ describe("createModelCatalogSync", () => {
 		await h.sync.revalidate();
 		expect(h.loadLocal).toHaveBeenCalledTimes(2);
 		expect(h.loadRemote).toHaveBeenCalledTimes(2);
+	});
+
+	for (const operation of ["invalidate", "reset"] as const) {
+		it(`${operation} discards the old read and allows a new read before it completes`, async () => {
+			let resolve!: (value: { providers: Record<string, unknown> }) => void;
+			h.loadLocal.mockImplementationOnce(
+				() =>
+					new Promise((done) => {
+						resolve = done;
+					}),
+			);
+			const old = h.sync.revalidate({ sources: ["local"] });
+			if (operation === "invalidate") h.sync.invalidate("local");
+			else h.sync.reset();
+			await h.sync.revalidate({ sources: ["local"] });
+			resolve({ providers: { retired: {} } });
+			await old;
+			expect(h.applyLocal).toHaveBeenCalledTimes(1);
+			expect(h.applyLocal).toHaveBeenLastCalledWith({ providers: {} });
+		});
+	}
+
+	it("an obsolete failure cannot cool down or report an error for a newer generation", async () => {
+		let reject!: (error: Error) => void;
+		h.loadRemote.mockImplementationOnce(
+			() =>
+				new Promise((_done, fail) => {
+					reject = fail;
+				}),
+		);
+		const old = h.sync.revalidate({ sources: ["remote"] });
+		h.sync.invalidate("remote");
+		h.loadRemote.mockResolvedValueOnce(null);
+		await h.sync.revalidate({ sources: ["remote"] });
+		reject(new Error("old account offline"));
+		await old;
+		await h.sync.revalidate({ sources: ["remote"] });
+		expect(h.loadRemote).toHaveBeenCalledTimes(3);
+		expect(h.onError).not.toHaveBeenCalled();
 	});
 });

@@ -164,6 +164,25 @@ function ownsProcessGroup(): boolean {
 }
 
 function killSshProcess(child: ChildProcess, signal: NodeJS.Signals): void {
+	if (!ownsProcessGroup()) {
+		if (child.pid === undefined || child.pid <= 1 || child.exitCode !== null || child.signalCode !== null) return;
+		// Native OpenSSH has a stable Windows PID; kill only the tree owned by this live handle.
+		const killer = spawn("taskkill.exe", ["/PID", String(child.pid), "/T", "/F"], {
+			windowsHide: true,
+			stdio: "ignore",
+		});
+		let reported = false;
+		const reportError = (error: Error): void => {
+			if (reported || child.exitCode !== null || child.signalCode !== null) return;
+			reported = true;
+			child.emit("error", error);
+		};
+		killer.once("error", reportError);
+		killer.once("close", (code) => {
+			if (code !== 0) reportError(new Error(`SSH process tree termination failed with exit code ${code}`));
+		});
+		return;
+	}
 	if (ownsProcessGroup() && child.pid !== undefined) {
 		try {
 			process.kill(-child.pid, signal);

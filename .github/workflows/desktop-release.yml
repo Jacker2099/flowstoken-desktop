@@ -399,6 +399,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Prepare Windows sandbox
+        if: runner.os == 'Windows' && needs.prepare.outputs.recovery != 'true'
+        uses: ./.github/actions/prepare-windows-sandbox
+
       - name: Stage recovery controller outside the source checkout
         if: needs.prepare.outputs.recovery == 'true'
         shell: bash

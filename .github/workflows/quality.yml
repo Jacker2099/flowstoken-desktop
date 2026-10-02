@@ -55,6 +55,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
+        # Release source quality must cover account, process and path behavior on all client OSes.
         os: [ubuntu-latest, macos-latest, windows-latest]
 
     steps:

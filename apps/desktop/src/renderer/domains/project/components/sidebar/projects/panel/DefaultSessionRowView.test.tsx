@@ -150,7 +150,24 @@ describe("DefaultSessionRowView leading icon", () => {
 		);
 	});
 
-	it("bounds a large avatar collection to three faces and one overflow marker", () => {
+	it("shows three members directly and overlays the remaining count on the third avatar", () => {
+		const threeAvatars = Array.from({ length: 3 }, (_, index) => `/avatar-${index}.webp`);
+		const view = render(<DefaultSessionRowView {...props({ trailingAvatarUrls: threeAvatars })} />);
+		const stack = view.container.querySelector('[data-avatar-stack="true"]');
+
+		expect(stack?.querySelectorAll("img")).toHaveLength(3);
+		expect(stack?.querySelector('[data-avatar-overflow]')).toBeNull();
+		view.rerender(<DefaultSessionRowView {...props({ trailingAvatarUrls: [...threeAvatars, "/avatar-3.webp"] })} />);
+
+		const overflow = view.container.querySelector('[data-avatar-overflow="1"]');
+		expect(view.container.querySelectorAll('[data-avatar-stack="true"] img')).toHaveLength(3);
+		expect(view.container.querySelectorAll('[data-avatar-stack="true"] img')[2]?.getAttribute("src")).toBe("/avatar-2.webp");
+		expect(overflow?.textContent).toBe("+1");
+		expect(overflow?.parentElement?.querySelector("img")?.getAttribute("src")).toBe("/avatar-2.webp");
+		expect(overflow?.className).toContain("bg-background/60");
+	});
+
+	it("bounds a large avatar collection to three faces with an overlaid overflow marker", () => {
 		const avatarUrls = Array.from({ length: 32 }, (_, index) => `/avatar-${index}.webp`);
 		const view = render(<DefaultSessionRowView {...props({ trailingAvatarUrls: avatarUrls })} />);
 
@@ -427,5 +444,83 @@ describe("session row hover more trigger", () => {
 		fireEvent.click(trigger, { clientX: 32, clientY: 48 });
 
 		expect(onOpenContextMenu).toHaveBeenCalledOnce();
+	});
+});
+
+describe("session row title overflow", () => {
+	const longTitle = "A conversation title that is much wider than the sidebar";
+
+	function makeTitleOverflow(title: HTMLElement): void {
+		Object.defineProperties(title, {
+			clientWidth: { configurable: true, value: 120 },
+			scrollWidth: { configurable: true, value: 360 },
+		});
+	}
+
+	it("keeps default-list titles truncated until the pointer hovers the overflowing title", () => {
+		const view = render(<DefaultSessionRowView {...props({ label: longTitle })} />);
+		const title = view.getByText(longTitle);
+		const titleViewport = title.closest<HTMLElement>('[data-session-title="true"]');
+		if (!titleViewport) throw new Error("missing session title viewport");
+
+		expect(titleViewport.getAttribute("title")).toBe(longTitle);
+		expect(title.className).toContain("truncate");
+		makeTitleOverflow(title);
+
+		fireEvent.mouseEnter(titleViewport);
+
+		expect(titleViewport.dataset.sessionTitleScrolling).toBe("true");
+		const scrollingTitle = view.getByText(longTitle);
+		expect(scrollingTitle.className).not.toContain("truncate");
+		expect(
+			Number.parseFloat(scrollingTitle.style.getPropertyValue("--session-title-marquee-duration")),
+		).toBeLessThanOrEqual(4.6);
+
+		fireEvent.mouseLeave(titleViewport);
+
+		expect(titleViewport.dataset.sessionTitleScrolling).toBeUndefined();
+		expect(view.getByText(longTitle).className).toContain("truncate");
+	});
+
+	it("uses the same hover marquee contract for project conversation titles", () => {
+		const view = render(
+			<SessionRowView
+				active={false}
+				label={longTitle}
+				onOpenContextMenu={vi.fn()}
+				onRename={vi.fn()}
+				onRenameDone={vi.fn()}
+				onSelect={vi.fn()}
+				renaming={false}
+				running={false}
+				scheduled={false}
+			/>,
+		);
+		const title = view.getByText(longTitle);
+		const titleViewport = title.closest<HTMLElement>('[data-session-title="true"]');
+		if (!titleViewport) throw new Error("missing session title viewport");
+		makeTitleOverflow(title);
+
+		fireEvent.mouseEnter(titleViewport);
+
+		expect(titleViewport.getAttribute("title")).toBe(longTitle);
+		expect(titleViewport.dataset.sessionTitleScrolling).toBe("true");
+		expect(view.getByText(longTitle).className).not.toContain("truncate");
+	});
+
+	it("does not animate a title that already fits", () => {
+		const view = render(<DefaultSessionRowView {...props({ label: "Short title" })} />);
+		const title = view.getByText("Short title");
+		const titleViewport = title.closest<HTMLElement>('[data-session-title="true"]');
+		if (!titleViewport) throw new Error("missing session title viewport");
+		Object.defineProperties(title, {
+			clientWidth: { configurable: true, value: 120 },
+			scrollWidth: { configurable: true, value: 100 },
+		});
+
+		fireEvent.mouseEnter(titleViewport);
+
+		expect(titleViewport.dataset.sessionTitleScrolling).toBeUndefined();
+		expect(view.getByText("Short title").className).toContain("truncate");
 	});
 });

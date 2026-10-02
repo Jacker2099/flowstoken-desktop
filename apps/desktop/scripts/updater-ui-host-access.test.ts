@@ -131,10 +131,14 @@ it("runs the updater spec through the account UI while raw Host API access remai
 		}
 	};
 	const findElement = (selector: string): TestElement => {
-		const locate = () =>
-			selector.startsWith("div=")
-				? [...document.querySelectorAll("div")].find((node) => node.textContent === selector.slice(4))
-				: document.querySelector(selector);
+		const locate = () => {
+			const textSelector = /^(\w+)(\*?)=(.+)$/.exec(selector);
+			if (!textSelector) return document.querySelector(selector);
+			const [, tag, partial, value] = textSelector;
+			return [...document.querySelectorAll(tag)].find((node) =>
+				partial ? node.textContent?.includes(value) : node.textContent === value,
+			);
+		};
 		const element: TestElement = {
 			getElement: async () => element,
 			waitForDisplayed: async () => {
