@@ -77,7 +77,10 @@ process.send({ type: "ready" });`,
 		await writeFile(join(directory, token), `${kind}${pid}`);
 		const current = scriptArgument();
 		const argument = legacy
-			? current.replace("[ $i -lt 10 ]", "[ $i -lt 20 ]").replace("do sleep 0.2;", "do sleep 0.1;")
+			? current.replace(
+					'for d in 0.1 0.1 0.2 0.4 1.2; do kill -s 0 -- "$t" 2>/dev/null || break; sleep "$d"; done',
+					'i=0; while [ $i -lt 20 ] && kill -s 0 -- "$t" 2>/dev/null; do sleep 0.1; i=$((i+1)); done',
+				)
 			: current;
 		if (legacy) expect(argument).not.toBe(current);
 		// Model startup cost in the same real sleep, avoiding a second external launch per poll.
@@ -87,7 +90,7 @@ kill() { printf 'kill:%s\\n' "$*" >> "$SIGNAL_LOG"; command kill "$@"; }
 pkill() { printf 'pkill:%s\\n' "$*" >> "$SIGNAL_LOG"; command pkill "$@"; }
 sleep() {
   printf 'sleep:%s\\n' "$*" >> "$SIGNAL_LOG"
-  ${coldStart ? 'case "$1" in 0.1) sleepDelay=0.21;; 0.2) sleepDelay=0.31;; *) return 64;; esac' : 'sleepDelay="$1"'}
+  ${coldStart ? 'case "$1" in 0.1) sleepDelay=0.21;; 0.2) sleepDelay=0.31;; 0.4) sleepDelay=0.51;; 1.2) sleepDelay=1.31;; *) return 64;; esac' : 'sleepDelay="$1"'}
   printf 'launch:%s\\n' "$sleepDelay" >> "$SIGNAL_LOG"
   command sleep "$sleepDelay"
   printf 'slept:%s\\n' "$*" >> "$SIGNAL_LOG"
@@ -111,6 +114,10 @@ eval "$1"`;
 				ended,
 				targetExit: child.exitCode,
 				targetSignal: child.signalCode,
+				requested: recorded.split("\n").filter((line) => line.startsWith("sleep:")),
+				completed: recorded.split("\n").filter((line) => line.startsWith("slept:")),
+				launched: recorded.split("\n").filter((line) => line.startsWith("launch:")),
+				signalStages: recorded.split("\n").filter((line) => /^(?:kill|pkill):/.test(line)),
 			});
 		// These observations precede finally; its safety cleanup cannot masquerade as production KILL.
 		await assertResult({ child, pid, error, log: recorded, ended: () => ended, termReceived: () => termReceived });
@@ -219,14 +226,14 @@ process.send({ type: "ready" });
 					.split("\n")
 					.filter((line) => line.startsWith("slept:"))
 					.map((line) => Number(line.slice("slept:".length)));
-				expect(delays).toHaveLength(10);
+				expect(delays).toEqual([0.1, 0.1, 0.2, 0.4, 1.2]);
 				expect(delays.reduce((total, delay) => total + delay, 0)).toBeCloseTo(2);
 				const launches = probe.log.split("\n").filter((line) => line.startsWith("launch:"));
-				expect(launches).toEqual(Array.from({ length: 10 }, () => "launch:0.31"));
+				expect(launches).toEqual(["launch:0.21", "launch:0.21", "launch:0.31", "launch:0.51", "launch:1.31"]);
 			});
 		});
 
-		it(`${kind} detects ordinary TERM completion using at most 200ms polling intervals`, async () => {
+		it(`${kind} detects ordinary TERM completion in the initial 100ms polling phase`, async () => {
 			await withPollingProbe(kind, { legacy: false, ignoreTerm: false, coldStart: false }, async (probe) => {
 				expect(probe.error).toBeUndefined();
 				await vi.waitFor(() => expect(probe.ended()).toBe(true), { timeout: 500 });
@@ -237,8 +244,8 @@ process.send({ type: "ready" });
 					.split("\n")
 					.filter((line) => line.startsWith("slept:"))
 					.map((line) => Number(line.slice("slept:".length)));
-				expect(delays.length).toBeLessThan(10);
-				for (const delay of delays) expect(delay).toBeLessThanOrEqual(0.2);
+				expect(delays.length).toBeLessThanOrEqual(2);
+				for (const delay of delays) expect(delay).toBe(0.1);
 			});
 		});
 	}
