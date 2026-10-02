@@ -28,6 +28,7 @@ import {
 } from "@vetta/runtime-node/host";
 import { isSshProjectUri, parseProjectLocation } from "@vetta/ssh-transport";
 import { getSshConnection } from "../ssh/ssh-runtime.js";
+import { createRemoteResourceReadScope } from "./remote-resource-read-scope.js";
 
 interface DesktopResourceRuntimeScope {
 	readonly cwd: string;
@@ -75,7 +76,9 @@ export function createDesktopSessionResourceRuntime(
 	// 同一个端口同时服务本地与远程项目：`ssh://` 路径读远端，其余读本机。远程项目的 cwd
 	// 是 URI，由它派生的每条路径（向上找 AGENTS.md、拼项目技能目录）因此都落到远端；
 	// 交给纯本机端口的话，URI 会被解析到本机进程 cwd 之下，再沿本机祖先目录向上读。
-	const host = { ...nodeHost, resourceAccess: createProjectResourceAccess(nodeHost.resourceAccess, getSshConnection) };
+	const projectAccess = createProjectResourceAccess(nodeHost.resourceAccess, getSshConnection);
+	const readScope = isSshProjectUri(options.cwd) ? createRemoteResourceReadScope(projectAccess) : undefined;
+	const host = { ...nodeHost, resourceAccess: readScope?.access ?? projectAccess };
 	const packages = createResourcePackageRuntime({
 		cwd: options.cwd,
 		agentDir: options.agentDir,
@@ -96,7 +99,7 @@ export function createDesktopSessionResourceRuntime(
 			manifestPath: host.resourceAccess.paths.join(getVettaHomePath(), "skills-manifest.json"),
 		},
 	});
-	return isSshProjectUri(options.cwd) ? presentRemotePathsAsSeenByTools(runtime) : runtime;
+	return readScope ? presentRemotePathsAsSeenByTools(runtime, () => readScope.run(() => runtime.reload())) : runtime;
 }
 
 /**
@@ -107,9 +110,13 @@ export function createDesktopSessionResourceRuntime(
  *
  * 只改对外读出的视图，运行时内部仍用 URI 作为资源身份。
  */
-function presentRemotePathsAsSeenByTools(runtime: SessionResourceRuntime): SessionResourceRuntime {
+function presentRemotePathsAsSeenByTools(
+	runtime: SessionResourceRuntime,
+	reload: () => Promise<void>,
+): SessionResourceRuntime {
 	return new Proxy(runtime, {
 		get(target, property, receiver) {
+			if (property === "reload") return reload;
 			if (property === "getSkills") {
 				return () => {
 					const result = target.getSkills();

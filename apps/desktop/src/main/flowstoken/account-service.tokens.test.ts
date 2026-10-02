@@ -1,4 +1,7 @@
-import { beforeEach, expect, it, vi } from "vitest";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ModelsConfig } from "../models/model-settings-service.js";
 import { FLOWSTOKEN_GROUPS } from "./constants.js";
 import type { NewApiTokenRow } from "./newapi-client.js";
@@ -14,10 +17,11 @@ const state = vi.hoisted(() => ({
 	nextId: 10,
 	tokens: [] as NewApiTokenRow[],
 	requests: [] as Array<{ path: string; method: string; body?: string }>,
+	userDataDir: "",
 }));
 
 vi.mock("electron", () => ({
-	app: { getPath: () => "/nonexistent-flowstoken-token-test" },
+	app: { getPath: () => state.userDataDir },
 	BrowserWindow: vi.fn(),
 	net: { fetch: async () => (state.catalog ? Response.json(state.catalog) : new Response(null, { status: 503 })) },
 	session: {
@@ -65,11 +69,13 @@ vi.mock("../models/model-settings-host.js", () => ({
 
 import { ensureGroupKeysAndProviders, getCatalogAndRefreshProviders } from "./account-service.js";
 import { resetCatalogAccessForTests } from "./catalog-access.js";
-import { resetGroupCatalogCacheForTests } from "./group-catalog.js";
+import { resetGroupCatalogCacheForTests, setCatalogDiskPathForTests } from "./group-catalog.js";
 import { getFlowstokenSession } from "./login-window.js";
 import { clearCachedAccessToken, managedTokenName, refreshAuth } from "./newapi-client.js";
 
 beforeEach(() => {
+	state.userDataDir = mkdtempSync(join(tmpdir(), "flowstoken-account-token-"));
+	setCatalogDiskPathForTests(null);
 	clearCachedAccessToken();
 	resetGroupCatalogCacheForTests();
 	resetCatalogAccessForTests();
@@ -77,6 +83,7 @@ beforeEach(() => {
 	state.catalog = null;
 	state.allowed = { default: {}, smart: {}, vip: {} };
 	state.nextId = 10;
+	state.tokens = [];
 	state.config = {
 		defaultModel: "flowstoken-smart/Bestoo-Auto",
 		providers: Object.fromEntries(
@@ -90,6 +97,15 @@ beforeEach(() => {
 			]),
 		),
 	};
+});
+
+afterEach(() => {
+	clearCachedAccessToken();
+	resetGroupCatalogCacheForTests();
+	resetCatalogAccessForTests();
+	setCatalogDiskPathForTests(null);
+	rmSync(state.userDataDir, { recursive: true, force: true });
+	state.userDataDir = "";
 });
 
 function dynamicCatalog(): FlowstokenCatalog {
@@ -240,10 +256,28 @@ it("keeps an explicit manual key override during automatic catalog synchronizati
 	expect(state.tokens).toEqual([]);
 });
 
+it("retains its own last complete disk catalog through an offline memory-cache reset", async () => {
+	state.catalog = dynamicCatalog();
+	await refreshAuth(getFlowstokenSession());
+	const network = await getCatalogAndRefreshProviders({ force: true });
+	expect(network.source).toBe("network");
+	const savedPath = join(state.userDataDir, "flowstoken", "desktop-catalog-v2.json");
+	expect(existsSync(savedPath)).toBe(true);
+	const { source: _source, ...persisted } = network;
+	expect(JSON.parse(readFileSync(savedPath, "utf8"))).toEqual(persisted);
+	state.catalog = null;
+	resetGroupCatalogCacheForTests();
+	resetCatalogAccessForTests();
+	const offline = await getCatalogAndRefreshProviders({ force: true });
+	expect(offline).toEqual({ ...network, source: "cache" });
+	expect(offline.groups[0].title).toBe("Renamed default");
+});
+
 it.each([
 	{ group: "vip", status: 1 },
 	{ group: "default", status: 2 },
 ])("creates and wires a usable token when the same-name token is unsuitable: %j", async (metadata) => {
+	expect(existsSync(join(state.userDataDir, "flowstoken", "desktop-catalog-v2.json"))).toBe(false);
 	state.tokens = [{ id: 1, name: FLOWSTOKEN_GROUPS[0].tokenName, ...metadata }];
 	const result = await ensureGroupKeysAndProviders(["default"]);
 	expect(result.ok).toBe(true);

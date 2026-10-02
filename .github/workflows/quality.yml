@@ -124,12 +124,19 @@ jobs:
           ]));
           JS
 
-      - name: Verify Windows remote project lifecycle
+      - name: Verify Windows remote project lifecycle and catalog isolation
         if: runner.os == 'Windows'
         working-directory: apps/desktop
         env:
           VETTA_LOOPBACK_TRACE: "1"
-        run: bun ../../scripts/quality/run-vitest.mjs --run src/main/ssh/loopback-fixture.test.ts src/main/plugins/command-spawner.remote.test.ts src/main/agent-runtime/resource-runtime.remote.test.ts --reporter=verbose
+        run: >-
+          bun ../../scripts/quality/run-vitest.mjs --run
+          src/main/agent-runtime/remote-resource-read-scope.test.ts
+          src/main/flowstoken/account-service.tokens.test.ts
+          src/main/ssh/loopback-fixture.test.ts
+          src/main/plugins/command-spawner.remote.test.ts
+          src/main/agent-runtime/resource-runtime.remote.test.ts
+          --reporter=verbose
 
       - name: Test affected workspaces
         if: ${{ !inputs.source_sha }}
