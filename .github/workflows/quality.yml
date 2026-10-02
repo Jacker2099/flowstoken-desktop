@@ -35,6 +35,9 @@ jobs:
           import {buildableTestDependencies, runBun} from './scripts/quality/lib.mjs';
           process.exit(runBun(['x','turbo','run','build',...buildableTestDependencies(['desktop']).map(name=>`--filter=${name}`)]));
           JS
+      - name: Verify ordered ignore reads and existing resource discovery
+        working-directory: packages/coding-agent
+        run: bun ../../scripts/quality/run-vitest.mjs --run test/resource-ignore-read-order.test.ts test/skills.test.ts test/resource-loader.test.ts --reporter=verbose
       - name: Verify resource reads and catalog isolation
         working-directory: apps/desktop
         env:
