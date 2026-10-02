@@ -1,10 +1,22 @@
 import { spawnSync } from "node:child_process";
-import { chmod, lstat, mkdir, mkdtemp, readdir, readFile, readlink, rm, symlink, writeFile } from "node:fs/promises";
+import {
+	chmod,
+	copyFile,
+	lstat,
+	mkdir,
+	mkdtemp,
+	readdir,
+	readFile,
+	readlink,
+	rm,
+	symlink,
+	writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { delimiter, join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { installRuntimeArchive, installRuntimeDirectory } from "./runtime-archive-installer";
+import { installRuntimeArchive, installRuntimeDirectory, runtimeArchiveTarCommand } from "./runtime-archive-installer";
 
 let testRoot = "";
 
@@ -13,7 +25,34 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+	vi.unstubAllEnvs();
 	await rm(testRoot, { recursive: true, force: true });
+});
+
+describe("runtime archive tar selection", () => {
+	it.each(["darwin", "linux"] as const)("keeps the native PATH tar on %s", (platform) => {
+		expect(runtimeArchiveTarCommand(platform, { SystemRoot: "C:\\Windows" })).toBe("tar");
+	});
+
+	it("selects the Windows system tar regardless of PATH or the installation drive", () => {
+		expect(
+			runtimeArchiveTarCommand("win32", {
+				SystemRoot: "D:\\Windows",
+				WINDIR: "C:\\Windows",
+				PATH: "C:\\Program Files\\Git\\usr\\bin",
+			}),
+		).toBe("D:\\Windows\\System32\\tar.exe");
+	});
+
+	it("accepts WINDIR when SystemRoot is absent", () => {
+		expect(runtimeArchiveTarCommand("win32", { WINDIR: "E:/Windows" })).toBe("E:\\Windows\\System32\\tar.exe");
+	});
+
+	it.each([undefined, "", "Windows", "C:Windows"])("rejects an absent or relative Windows system root: %s", (root) => {
+		expect(() => runtimeArchiveTarCommand("win32", { SystemRoot: root })).toThrow(
+			"Windows system tar requires an absolute SystemRoot or WINDIR",
+		);
+	});
 });
 
 describe("installRuntimeArchive", () => {
@@ -24,7 +63,7 @@ describe("installRuntimeArchive", () => {
 		await writeFile(join(sourceRuntime, "tool"), "new-runtime", "utf8");
 
 		const archivePath = join(testRoot, "runtime.tar.gz");
-		const archive = spawnSync("tar", ["-czf", archivePath, "-C", sourceRoot, "runtime"], {
+		const archive = spawnSync(runtimeArchiveTarCommand(), ["-czf", archivePath, "-C", sourceRoot, "runtime"], {
 			encoding: "utf8",
 		});
 		expect(archive.status, archive.stderr || archive.stdout).toBe(0);
@@ -52,9 +91,13 @@ describe("installRuntimeArchive", () => {
 		await writeFile(join(sourceRuntime, "node.exe"), "node-runtime", "utf8");
 
 		const archivePath = join(testRoot, "node.zip");
-		const archive = spawnSync("tar", ["-a", "-cf", archivePath, "-C", sourceRoot, "node-v22.22.2-win-x64"], {
-			encoding: "utf8",
-		});
+		const archive = spawnSync(
+			runtimeArchiveTarCommand(),
+			["-a", "-cf", archivePath, "-C", sourceRoot, "node-v22.22.2-win-x64"],
+			{
+				encoding: "utf8",
+			},
+		);
 		expect(archive.status, archive.stderr || archive.stdout).toBe(0);
 
 		const targetDirectory = join(testRoot, "managed", "22.22.2");
@@ -67,6 +110,63 @@ describe("installRuntimeArchive", () => {
 
 		await expect(readFile(join(targetDirectory, "node.exe"), "utf8")).resolves.toBe("node-runtime");
 	});
+
+	it.runIf(process.platform === "win32")(
+		"installs a root-level MinGit ZIP while a different tar shadows PATH",
+		async () => {
+			const sourceRoot = join(testRoot, "source");
+			await mkdir(join(sourceRoot, "cmd"), { recursive: true });
+			await writeFile(join(sourceRoot, "cmd", "git.exe"), "managed-git", "utf8");
+			const archivePath = join(testRoot, "mingit.zip");
+			const archive = spawnSync(runtimeArchiveTarCommand(), ["-a", "-cf", archivePath, "-C", sourceRoot, "cmd"], {
+				encoding: "utf8",
+			});
+			expect(archive.status, archive.stderr || archive.stdout).toBe(0);
+
+			const poisonDirectory = join(testRoot, "path-poison");
+			await mkdir(poisonDirectory);
+			// A real executable with a different protocol proves that PATH lookup is unsafe.
+			await copyFile(process.execPath, join(poisonDirectory, "tar.exe"));
+			const pathKey = Object.keys(process.env).find((key) => key.toLowerCase() === "path") ?? "PATH";
+			vi.stubEnv(pathKey, `${poisonDirectory}${delimiter}${process.env[pathKey] ?? ""}`);
+			const shadowed = spawnSync("tar", ["--version"], { encoding: "utf8" });
+			expect(shadowed.status, shadowed.stderr).toBe(0);
+			expect(shadowed.stdout.trim()).toBe(process.version);
+			const oldExtractionDirectory = join(testRoot, "old-path-extraction");
+			await mkdir(oldExtractionDirectory);
+			const oldExtraction = spawnSync("tar", ["-xf", archivePath, "-C", oldExtractionDirectory], {
+				encoding: "utf8",
+			});
+			expect(oldExtraction.status).not.toBe(0);
+			await expect(readdir(oldExtractionDirectory)).resolves.toEqual([]);
+
+			const targetDirectory = join(testRoot, "managed", "git");
+			await mkdir(targetDirectory, { recursive: true });
+			await writeFile(join(targetDirectory, "stale"), "old-git", "utf8");
+			await installRuntimeArchive({ archivePath, archiveType: "zip", innerDirectory: "", targetDirectory });
+			await expect(readFile(join(targetDirectory, "cmd", "git.exe"), "utf8")).resolves.toBe("managed-git");
+			await expect(readFile(join(targetDirectory, "stale"), "utf8")).rejects.toThrow();
+			await expect(readdir(join(testRoot, "managed"))).resolves.toEqual(["git"]);
+		},
+	);
+
+	it.runIf(process.platform === "win32")(
+		"preserves the existing runtime when the selected system tar is missing",
+		async () => {
+			const targetDirectory = join(testRoot, "managed", "22.22.2");
+			await mkdir(targetDirectory, { recursive: true });
+			await writeFile(join(targetDirectory, "node.exe"), "existing-runtime", "utf8");
+			const archivePath = join(testRoot, "unused.zip");
+			await writeFile(archivePath, "invalid archive", "utf8");
+			vi.stubEnv("SystemRoot", join(testRoot, "missing-windows"));
+
+			await expect(
+				installRuntimeArchive({ archivePath, archiveType: "zip", innerDirectory: "node", targetDirectory }),
+			).rejects.toThrow("extract failed");
+			await expect(readFile(join(targetDirectory, "node.exe"), "utf8")).resolves.toBe("existing-runtime");
+			await expect(readdir(join(testRoot, "managed"))).resolves.toEqual(["22.22.2"]);
+		},
+	);
 
 	it("preserves an existing runtime when extraction fails", async () => {
 		const targetDirectory = join(testRoot, "managed", "3.13.12");
