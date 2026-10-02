@@ -55,11 +55,18 @@ async function addIgnoreRules(
 ): Promise<void> {
 	const relativeDir = access.paths.relative(rootDir, dir);
 	const prefix = relativeDir ? `${toPosixPath(relativeDir, access.paths.separator)}/` : "";
-	for (const filename of IGNORE_FILE_NAMES) {
-		const ignorePath = access.paths.join(dir, filename);
+	const paths = IGNORE_FILE_NAMES.map((filename) => access.paths.join(dir, filename));
+	const contents = await Promise.allSettled(
+		paths.map(async (ignorePath) => {
+			if ((await access.files.stat(ignorePath, { signal }))?.kind !== "file") return undefined;
+			return access.files.readText(ignorePath, { signal });
+		}),
+	);
+	for (const result of contents) {
 		try {
-			if ((await access.files.stat(ignorePath, { signal }))?.kind !== "file") continue;
-			const content = await access.files.readText(ignorePath, { signal });
+			if (result.status === "rejected") throw result.reason;
+			const content = result.value;
+			if (content === undefined) continue;
 			const patterns = content
 				.split(/\r?\n/)
 				.map((line) => prefixIgnorePattern(line, prefix))

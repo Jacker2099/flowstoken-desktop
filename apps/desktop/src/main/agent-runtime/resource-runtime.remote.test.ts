@@ -10,6 +10,7 @@ vi.mock("../ssh/ssh-runtime.js", () => ({ getSshConnection: () => connection }))
 
 const { createDesktopPromptRuntimeSources } = await import("./resource-runtime.js");
 const directories: string[] = [];
+const pendingReloads = new Set<Promise<unknown>>();
 
 function temporaryDirectory(parent: string, prefix: string): string {
 	const directory = realpathSync(mkdtempSync(join(parent, prefix)));
@@ -17,7 +18,9 @@ function temporaryDirectory(parent: string, prefix: string): string {
 	return directory;
 }
 
-afterEach(() => {
+afterEach(async () => {
+	// A timed-out test still fails; finish only its owned I/O before deleting its fixture files.
+	await Promise.allSettled([...pendingReloads]);
 	vi.restoreAllMocks();
 	vi.unstubAllEnvs();
 	for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true });
@@ -27,6 +30,14 @@ beforeAll(async () => {
 	// Establish the loopback SSH fixture before measuring resource discovery.
 	await connection.probePlatform();
 });
+
+function watchResourceReads() {
+	return {
+		stat: vi.spyOn(connection, "stat"),
+		readText: vi.spyOn(connection, "readFile"),
+		realPath: vi.spyOn(connection, "realPath"),
+	};
+}
 
 function resourceFixture() {
 	const testHome = temporaryDirectory(tmpdir(), "vetta-resource-home-");
@@ -88,8 +99,22 @@ describe("远程项目会话的资源发现", () => {
 describe("已加载的远程资源再次刷新", () => {
 	let fixture: ReturnType<typeof resourceFixture>;
 	let source: SessionResourceRuntime;
+	let reads: ReturnType<typeof watchResourceReads>;
+	const report = (phase: string, started: number) =>
+		console.info("[remote-resource-refresh]", {
+			phase,
+			elapsedMs: Date.now() - started,
+			...Object.fromEntries(Object.entries(reads).map(([operation, query]) => [operation, query.mock.calls.length])),
+		});
 	beforeEach(async () => {
 		fixture = resourceFixture();
+		reads = {
+			stat: vi.spyOn(connection, "stat"),
+			readText: vi.spyOn(connection, "readFile"),
+			realPath: vi.spyOn(connection, "realPath"),
+		};
+		const started = Date.now();
+		report("hook:start", started);
 		// The composition view is read-only; this real Desktop factory returns its full session runtime.
 		source = (
 			await createDesktopPromptRuntimeSources({
@@ -99,6 +124,8 @@ describe("已加载的远程资源再次刷新", () => {
 				runtimeSkillPaths: [],
 			} as never)
 		).resourceSource as SessionResourceRuntime;
+		report("hook:end", started);
+		for (const query of Object.values(reads)) query.mockClear();
 	});
 	it("修改 AGENTS 与 SKILL 后一次 reload 读到真实新内容和正确远端路径", async () => {
 		expect(source.getAgentsFiles().agentsFiles.map((file) => file.content)).toContain("REMOTE-PROJECT-RULES\n");
@@ -107,7 +134,16 @@ describe("已加载的远程资源再次刷新", () => {
 			join(fixture.remoteRoot, ".agents/skills/deploy/SKILL.md"),
 			"---\nname: deploy\ndescription: Updated remote service.\n---\n\nRun the updated script.\n",
 		);
-		await source.reload();
+		const started = Date.now();
+		report("body:start", started);
+		const loading = source.reload();
+		pendingReloads.add(loading);
+		try {
+			await loading;
+		} finally {
+			pendingReloads.delete(loading);
+			report("body:end", started);
+		}
 		const agents = source.getAgentsFiles().agentsFiles;
 		expect(agents.map((file) => file.content)).toContain("UPDATED-PROJECT-RULES\n");
 		expect(agents.map((file) => file.content)).not.toContain("REMOTE-PROJECT-RULES\n");

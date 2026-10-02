@@ -113,8 +113,12 @@ async function addIgnoreRules(
 ): Promise<void> {
 	const relativeDir = ctx.access.paths.relative(rootDir, dir);
 	const prefix = relativeDir ? `${toPosixPath(relativeDir)}/` : "";
-	for (const filename of IGNORE_FILE_NAMES) {
-		const content = await readText(ctx, ctx.access.paths.join(dir, filename));
+	const paths = IGNORE_FILE_NAMES.map((filename) => ctx.access.paths.join(dir, filename));
+	const contents = await Promise.allSettled(paths.map((path) => readText(ctx, path)));
+	// The three fixed files may finish out of order; rule precedence and errors stay in file order.
+	for (const result of contents) {
+		if (result.status === "rejected") throw result.reason;
+		const content = result.value;
 		if (content === undefined) continue;
 		const patterns = content
 			.split(/\r?\n/)
