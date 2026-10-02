@@ -201,7 +201,7 @@ describe("loopback remote shell boundary", () => {
 		},
 	);
 
-	it("traces only run ids, phases and elapsed time when explicitly enabled", async () => {
+	it("traces sanitized operation metadata and timing only when explicitly enabled", async () => {
 		const events: string[] = [];
 		vi.spyOn(console, "error").mockImplementation((value) => {
 			events.push(String(value));
@@ -212,8 +212,29 @@ describe("loopback remote shell boundary", () => {
 			argv: ["printf sensitive-command"],
 			env: { PRIVATE_VALUE: "sensitive-env" },
 		});
-		expect(events).toHaveLength(3);
-		expect(events.every((event) => /^\[loopback \d+\] (queue|start|close) \d+ms$/.test(event))).toBe(true);
+		const phases = events.map((event) => {
+			const match = /^\[loopback \d+\] ([a-z-]+) \d+ms (\{.*\})$/.exec(event);
+			expect(match).not.toBeNull();
+			const details: unknown = JSON.parse(match?.[2] ?? "{}");
+			expect(details).toBeTypeOf("object");
+			const allowed = new Set([
+				"commandKind",
+				"commandHash",
+				"pid",
+				"needsParent",
+				"bytes",
+				"code",
+				"signal",
+				"exitCode",
+				"stdoutBytes",
+			]);
+			expect(Object.keys(details as Record<string, unknown>).every((key) => allowed.has(key))).toBe(true);
+			return match?.[1];
+		});
+		expect(phases).toEqual(["queue", "start", "spawn", "stdout-first", "exit", "close"]);
+		expect(events.join("\n")).not.toContain("sensitive-command");
+		expect(events.join("\n")).not.toContain("sensitive-env");
+		expect(events.join("\n")).not.toContain("PRIVATE_VALUE");
 	});
 
 	it("keeps the bidirectional helper channel available", async () => {

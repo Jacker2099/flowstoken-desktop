@@ -2,7 +2,11 @@ import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createLoopbackSshConnection, loopbackRemotePath } from "@vetta/ssh-transport/testing";
+import {
+	createLoopbackSshConnection,
+	loopbackRemotePath,
+	openOwnedWindowsProcessWitness,
+} from "@vetta/ssh-transport/testing";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const connection = createLoopbackSshConnection("build-01");
@@ -193,12 +197,26 @@ describe("插件的长驻进程与远程项目", () => {
 			expect(nativePids.every((pid) => pid > 1)).toBe(true);
 		});
 
-		await stopPluginCommandSpawn("demo", started.spawnId);
-		expect(getPluginCommandSpawnStatus("demo", started.spawnId).running).toBe(false);
-		await vi.waitFor(() => {
-			// Read-only liveness probes address only the two native PIDs reported by our owned tree.
-			for (const pid of nativePids) expect(() => process.kill(pid, 0)).toThrow();
-		});
+		const witnesses =
+			process.platform === "win32" && process.env.VETTA_LOOPBACK_TRACE === "1"
+				? nativePids.map((pid) => openOwnedWindowsProcessWitness(pid))
+				: [];
+		const report = (phase: string): void => {
+			for (const witness of witnesses) console.error(`[owned-tree] ${phase} ${JSON.stringify(witness.read())}`);
+		};
+		try {
+			report("before-stop");
+			await stopPluginCommandSpawn("demo", started.spawnId);
+			report("after-stop");
+			expect(getPluginCommandSpawnStatus("demo", started.spawnId).running).toBe(false);
+			await vi.waitFor(() => {
+				// Read-only liveness probes address only the two native PIDs reported by our owned tree.
+				for (const pid of nativePids) expect(() => process.kill(pid, 0)).toThrow();
+			});
+		} finally {
+			report("final");
+			for (const witness of witnesses) witness.close();
+		}
 		const next = await spawnPluginCommand("demo", "sh", ["-c", "printf reconnected"], { cwd: project.uri });
 		await vi.waitFor(() => {
 			const status = getPluginCommandSpawnStatus("demo", next.spawnId);

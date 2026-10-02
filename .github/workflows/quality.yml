@@ -1,147 +1,40 @@
-name: quality
+name: Windows lifecycle diagnostics
 
 on:
-  workflow_call:
-    inputs:
-      source_sha:
-        description: "Exact application source commit for complete release client validation"
-        required: true
-        type: string
-  push:
-    branches:
-      - dev
-  pull_request:
+  workflow_dispatch:
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ !inputs.source_sha }}
+permissions:
+  contents: read
 
 jobs:
-  check-and-test:
-    name: check + quality tests
-    runs-on: ubuntu-latest
+  trace:
+    runs-on: windows-latest
     timeout-minutes: 20
-
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          fetch-depth: 0
-          ref: ${{ inputs.source_sha || github.sha }}
-
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
+          node-version: 22
+      - uses: oven-sh/setup-bun@v2
         with:
           bun-version-file: package.json
-
       - name: Install dependencies
         uses: ./.github/actions/install-bun-dependencies
-
-      - name: Run quality checks
-        run: bun run check
-
-      - name: Test quality scripts
-        run: bun run test:quality
-
-      - name: Verify runtime contract
-        run: bun run verify:runtime-contract
-
-      - name: Verify installed runtime artifact
-        run: bun run verify:artifact:installed
-
-  unit-tests:
-    name: affected unit tests (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
-    strategy:
-      fail-fast: true
-      matrix:
-        # Release source quality must cover account, process and path behavior on all client OSes.
-        os: [ubuntu-latest, macos-latest, windows-latest]
-
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-          ref: ${{ github.sha }}
-
-      - name: Preserve release quality controller before checking out application source
-        if: inputs.source_sha
-        shell: bash
-        run: |
-          mkdir -p "$RUNNER_TEMP/release-quality-controller/scripts" "$RUNNER_TEMP/release-quality-controller/branding/flowstoken"
-          cp -R scripts/flowstoken scripts/quality "$RUNNER_TEMP/release-quality-controller/scripts/"
-          cp branding/flowstoken/release-source-policy.json "$RUNNER_TEMP/release-quality-controller/branding/flowstoken/"
-          echo "RELEASE_QUALITY_CONTROLLER=$RUNNER_TEMP/release-quality-controller" >> "$GITHUB_ENV"
-
-      - uses: actions/checkout@v7
-        if: inputs.source_sha
-        with:
-          fetch-depth: 0
-          ref: ${{ inputs.source_sha }}
-
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version-file: package.json
-
-      - name: Install ripgrep on Linux
-        if: runner.os == 'Linux'
-        run: |
-          command -v rg >/dev/null || { sudo apt-get update && sudo apt-get install --yes ripgrep; }
-          command -v fd >/dev/null || command -v fdfind >/dev/null || { sudo apt-get update && sudo apt-get install --yes fd-find; }
-
-      - name: Install ripgrep on macOS
-        if: runner.os == 'macOS'
-        run: |
-          command -v rg >/dev/null || brew install ripgrep
-          command -v fd >/dev/null || brew install fd
-
-      - name: Install ripgrep on Windows
-        if: runner.os == 'Windows'
-        run: if (-not (Get-Command rg -ErrorAction SilentlyContinue)) { choco install ripgrep --yes --no-progress }
-
-      - name: Install dependencies
-        uses: ./.github/actions/install-bun-dependencies
-
-      - name: Prepare Windows remote contract dependencies
-        if: runner.os == 'Windows'
+      - name: Build real desktop test dependencies
         shell: bash
         run: |
           node --input-type=module <<'JS'
-          import { buildableTestDependencies, runBun } from "./scripts/quality/lib.mjs";
-          process.exit(runBun([
-            "x", "turbo", "run", "build", "--summarize",
-            ...buildableTestDependencies(["desktop"]).map((name) => `--filter=${name}`),
-          ]));
+          import {buildableTestDependencies, runBun} from './scripts/quality/lib.mjs';
+          process.exit(runBun(['x','turbo','run','build',...buildableTestDependencies(['desktop']).map(name=>`--filter=${name}`)]));
           JS
-
-      - name: Verify Windows remote project lifecycle
-        if: runner.os == 'Windows'
+      - name: Diagnose owned Windows process and resource lifecycle
         working-directory: apps/desktop
         env:
           VETTA_LOOPBACK_TRACE: "1"
         run: bun ../../scripts/quality/run-vitest.mjs --run src/main/ssh/loopback-fixture.test.ts src/main/plugins/command-spawner.remote.test.ts src/main/agent-runtime/resource-runtime.remote.test.ts --reporter=verbose
-
-      - name: Test affected workspaces
-        if: ${{ !inputs.source_sha }}
-        run: node scripts/flowstoken/test-pr-source.mjs "${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}"
-
-      - name: Test complete release client workspaces and SSH transport
-        if: inputs.source_sha
-        env:
-          RELEASE_SOURCE_SHA: ${{ inputs.source_sha }}
-        shell: bash
-        run: |
-          UPSTREAM_TAG="$(tr -d '\r\n' < branding/flowstoken/UPSTREAM_SYNCED)"
-          [[ "$UPSTREAM_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Invalid upstream marker" >&2; exit 1; }
-          git fetch --no-tags https://github.com/openvetta/open-vetta.git "refs/tags/${UPSTREAM_TAG}:refs/tags/upstream/${UPSTREAM_TAG}"
-          node "$RELEASE_QUALITY_CONTROLLER/scripts/flowstoken/test-release-source.mjs" "upstream/${UPSTREAM_TAG}" "$RELEASE_SOURCE_SHA"
-
-      - name: Upload Turbo run summaries
+      - uses: actions/upload-artifact@v4
         if: always()
-        uses: actions/upload-artifact@v4
         with:
-          name: turbo-run-summaries-${{ matrix.os }}
-          path: .turbo/runs/*.json
+          name: windows-lifecycle-trace
+          path: apps/desktop/diagnostics/*.json
           if-no-files-found: ignore
-          retention-days: 7

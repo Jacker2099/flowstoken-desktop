@@ -73,6 +73,7 @@ export function createLoopbackSshConnection(
 
 // These helpers are exported only by the testing entry point, never the production entry point.
 export { createShellLoopbackRunner, terminateWindowsLoopbackTree } from "./testing-process-runner.js";
+export { openOwnedWindowsProcessWitness } from "./testing-windows-witness.js";
 
 export function loopbackShellBinary(): string {
 	return process.platform === "win32" ? gitBashTools().bash : "/bin/sh";
