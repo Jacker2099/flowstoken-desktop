@@ -37,7 +37,7 @@ const WINDOWS_PARENT_WRAPPER = [
 	"child.stderr.pipe(process.stderr);",
 	'child.stdin.on("error", () => {});',
 	'child.on("error", () => { process.stderr.write("Loopback shell failed to start\\n"); process.exitCode = 1; });',
-	'child.on("close", (code) => { report("shell-close", inner); close(inner); close(self); process.exitCode = code ?? 1; });',
+	'child.on("close", (code) => { report("shell-close", inner); close(inner); close(self); process.exitCode = code ?? 1; if (process.connected) { try { process.disconnect(); } catch {} } });',
 	"};",
 	'if (process.env.VETTA_LOOPBACK_JOB === "1") { const identity = require(' +
 		JSON.stringify(windowsWitnessModulePath) +

@@ -138,6 +138,32 @@ it("the actual Node supervisor exits on parent IPC disconnect before starting a 
 	}
 });
 
+it("the actual Node supervisor preserves natural output and exit17 while the parent IPC stays connected", async () => {
+	const program = `const __name=(value)=>value; (${waitForOwnedSupervisorLaunch.toString()})(process,()=>{const child=require('node:child_process').spawn(process.execPath,['-e',"process.stdout.write('natural-output');process.exitCode=17"],{stdio:['ignore','pipe','ignore']});child.stdout.pipe(process.stdout);child.on('close',code=>{process.exitCode=code;});},()=>process.exit(1));process.send({type:'ready'});`;
+	const child = spawn(process.execPath, ["-e", program], { stdio: ["ignore", "pipe", "pipe", "ipc"] });
+	let output = "",
+		errors = "";
+	child.stdout?.on("data", (data: Buffer) => {
+		output += data.toString();
+	});
+	child.stderr?.on("data", (data: Buffer) => {
+		errors += data.toString();
+	});
+	try {
+		const done = new Promise<number | null>((resolve) => child.once("close", resolve));
+		await new Promise<void>((resolve, reject) => {
+			child.once("message", () => resolve());
+			child.once("error", reject);
+		});
+		child.send({ type: "start-owned-shell" });
+		expect(await done).toBe(17);
+		expect(output).toBe("natural-output");
+		expect(errors).toBe("");
+	} finally {
+		if (child.exitCode === null && child.signalCode === null) child.kill();
+	}
+});
+
 function fixture(terminationDelayMs = 0, terminateOverride?: (child: ChildProcess) => void, trace?: boolean) {
 	const directory = realpathSync(mkdtempSync(join(tmpdir(), "vetta loopback shell ")));
 	directories.push(directory);

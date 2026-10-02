@@ -48,20 +48,25 @@ export async function waitForOwnedJobEmpty(job: Pick<NativeWindowsTestJob, "acti
 
 /** Serialized into the Node supervisor; contains no OS-specific process or signal implementation. */
 export function waitForOwnedSupervisorLaunch(
-	channel: { once(event: string, handler: (message?: unknown) => void): unknown },
+	channel: {
+		once(event: string, handler: (message?: unknown) => void): unknown;
+		off(event: string, handler: (message?: unknown) => void): unknown;
+	},
 	launch: () => void,
 	exitWaiting: () => void,
 ): void {
 	let started = false;
-	channel.once("disconnect", () => {
+	const onDisconnect = (): void => {
 		if (!started) exitWaiting();
-	});
+	};
+	channel.once("disconnect", onDisconnect);
 	channel.once("message", (message) => {
 		if (!message || typeof message !== "object" || !("type" in message) || message.type !== "start-owned-shell") {
 			exitWaiting();
 			return;
 		}
 		started = true;
+		channel.off("disconnect", onDisconnect);
 		launch();
 	});
 }
