@@ -111,7 +111,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: android-device-test-reports
+          # UTP copies screenshots and owned-window evidence before uninstalling the test APK.
           path: |
             apps/mobile/client-android/shared/build/reports/androidTests/
             apps/mobile/client-android/shared/build/outputs/androidTest-results/
+            apps/mobile/client-android/shared/build/outputs/connected_android_test_additional_output/
           if-no-files-found: ignore
