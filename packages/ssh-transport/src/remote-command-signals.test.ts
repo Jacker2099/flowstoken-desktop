@@ -80,15 +80,16 @@ process.send({ type: "ready" });`,
 			? current.replace("[ $i -lt 10 ]", "[ $i -lt 20 ]").replace("do sleep 0.2;", "do sleep 0.1;")
 			: current;
 		if (legacy) expect(argument).not.toBe(current);
-		// Same-shell recorders forward actual signals. Extra startup cost is a real owned sleep,
-		// confined to this fixture; the controller's original four-second deadline is unchanged.
+		// Model startup cost in the same real sleep, avoiding a second external launch per poll.
+		// Record requested grace separately; the controller's four-second deadline is unchanged.
 		const script = `set -- ${argument}
 kill() { printf 'kill:%s\\n' "$*" >> "$SIGNAL_LOG"; command kill "$@"; }
 pkill() { printf 'pkill:%s\\n' "$*" >> "$SIGNAL_LOG"; command pkill "$@"; }
 sleep() {
   printf 'sleep:%s\\n' "$*" >> "$SIGNAL_LOG"
-  ${coldStart ? "command sleep 0.11" : ":"}
-  command sleep "$@"
+  ${coldStart ? 'case "$1" in 0.1) sleepDelay=0.21;; 0.2) sleepDelay=0.31;; *) return 64;; esac' : 'sleepDelay="$1"'}
+  printf 'launch:%s\\n' "$sleepDelay" >> "$SIGNAL_LOG"
+  command sleep "$sleepDelay"
   printf 'slept:%s\\n' "$*" >> "$SIGNAL_LOG"
 }
 eval "$1"`;
@@ -201,6 +202,9 @@ process.send({ type: "ready" });
 				expect(() => process.kill(probe.pid, 0)).not.toThrow();
 				expect(probe.log).not.toContain("kill:-s KILL");
 				expect(probe.log.split("\n").filter((line) => line.startsWith("slept:")).length).toBeLessThan(20);
+				const launches = probe.log.split("\n").filter((line) => line.startsWith("launch:"));
+				expect(launches.length).toBeGreaterThan(0);
+				for (const launch of launches) expect(launch).toBe("launch:0.21");
 			});
 		});
 
@@ -217,6 +221,8 @@ process.send({ type: "ready" });
 					.map((line) => Number(line.slice("slept:".length)));
 				expect(delays).toHaveLength(10);
 				expect(delays.reduce((total, delay) => total + delay, 0)).toBeCloseTo(2);
+				const launches = probe.log.split("\n").filter((line) => line.startsWith("launch:"));
+				expect(launches).toEqual(Array.from({ length: 10 }, () => "launch:0.31"));
 			});
 		});
 

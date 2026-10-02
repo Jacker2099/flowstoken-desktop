@@ -13,6 +13,22 @@ function activeIgnoreRules(contents: string): string[] {
 }
 
 describe("Vercel deployment contract", () => {
+	it("uses the production Webpack entry for the shared CI and Vercel build", () => {
+		const manifest = JSON.parse(readFileSync(resolve(appRoot, "package.json"), "utf8")) as {
+			scripts: Record<string, string>;
+		};
+		const rootManifest = JSON.parse(readFileSync(resolve(repoRoot, "package.json"), "utf8")) as {
+			scripts: Record<string, string>;
+		};
+		const config = JSON.parse(readFileSync(resolve(appRoot, "vercel.json"), "utf8")) as {
+			buildCommand: string;
+		};
+
+		expect(manifest.scripts.build).toBe("next build --webpack");
+		expect(rootManifest.scripts["build:docs"]).toMatch(/^turbo run build --filter=@vetta\/docs-site\b/);
+		expect(config.buildCommand).toBe("bun run --cwd ../.. build:docs");
+	});
+
 	it("keeps the public documentation content in the upload", () => {
 		const rules = activeIgnoreRules(readFileSync(resolve(repoRoot, ".vercelignore"), "utf8"));
 
