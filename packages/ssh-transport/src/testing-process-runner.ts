@@ -101,18 +101,42 @@ export function createShellLoopbackRunner(options: {
 	readonly terminateTree: (child: ChildProcess) => void;
 	/** Explicit file-fixture opt-in; signals, deadlines, arbitrary commands and channels keep the SSH wrapper. */
 	readonly fileShellBinary?: string;
+	/** Test-only native POSIX endpoint: interpret sshd's original last argument directly. */
+	readonly commandShellBinary?: string;
 	readonly fileResultRoot?: { readonly native: string; readonly remote: string };
 	/** Owned lifecycle fault injection; never supplied by the real resource fixture. */
 	readonly readonlyWorkerScriptForTests?: string;
 	readonly verifyReadonlyCloseForTests?: () => Promise<void>;
-}): SshProcessRunner & { closeReadonlyEndpoint(error?: Error): Promise<void> } {
+}): SshProcessRunner & {
+	closeReadonlyEndpoint(error?: Error): Promise<void>;
+	waitForIdle(): Promise<void>;
+	abortOwnedOperations(): void;
+} {
 	const closing = new Set<Promise<void>>();
 	let nextRun = 0;
 	const channelRunner = createNodeSshProcessRunner({ sshBinary: options.shellBinary, baseEnv: options.baseEnv });
 	let fileEndpoint: ReadonlyLoopbackEndpoint | undefined;
 	let fileEndpointClosing: Promise<void> | undefined;
 	let fileEndpointFailure: Error | undefined;
+	const pendingCalls = new Set<Promise<unknown>>();
+	const physicalCloses = new Set<Promise<void>>();
+	const aborters = new Set<() => void>();
+	const track = <T>(promise: Promise<T>): Promise<T> => {
+		pendingCalls.add(promise);
+		void promise.then(
+			() => pendingCalls.delete(promise),
+			() => pendingCalls.delete(promise),
+		);
+		return promise;
+	};
 	return {
+		abortOwnedOperations() {
+			for (const abort of [...aborters]) abort();
+		},
+		async waitForIdle() {
+			while (pendingCalls.size > 0) await Promise.allSettled([...pendingCalls]);
+			await Promise.all([...physicalCloses]);
+		},
 		async closeReadonlyEndpoint(error?: Error) {
 			if (fileEndpointClosing) return fileEndpointClosing;
 			const endpoint = fileEndpoint;
@@ -134,7 +158,9 @@ export function createShellLoopbackRunner(options: {
 		},
 		open(invocation) {
 			if (!channelRunner.open) throw new Error("Loopback channel runner unavailable");
-			return channelRunner.open({ ...invocation, argv: [options.scriptPath, ...invocation.argv] });
+			const channel = channelRunner.open({ ...invocation, argv: [options.scriptPath, ...invocation.argv] });
+			track(channel.exited);
+			return channel;
 		},
 		run(invocation) {
 			const runId = ++nextRun;
@@ -197,7 +223,7 @@ export function createShellLoopbackRunner(options: {
 						`[loopback ${runId}] ${phase} ${Date.now() - startedAt}ms ${JSON.stringify(details ?? {})}`,
 					);
 			};
-			return new Promise((resolve, reject) => {
+			const pendingCall = new Promise<SshProcessResult>((resolve, reject) => {
 				let child: ChildProcessWithoutNullStreams | undefined;
 				const stdout: Buffer[] = [];
 				const stderr: Buffer[] = [];
@@ -211,6 +237,8 @@ export function createShellLoopbackRunner(options: {
 				let ownership: JobOwnership | undefined;
 				let firstStdout = true;
 				let firstStderr = true;
+				let finishPhysical: ((error?: Error) => void) | undefined;
+				let unsafePhysicalFailure: Error | undefined;
 				const result = (exitCode: number | null): SshProcessResult => ({
 					exitCode,
 					stdout: Buffer.concat(stdout),
@@ -222,6 +250,7 @@ export function createShellLoopbackRunner(options: {
 					settled = true;
 					if (timer !== undefined) clearTimeout(timer);
 					invocation.signal?.removeEventListener("abort", onAbort);
+					aborters.delete(onAbort);
 				};
 				const fail = (error: Error): void => {
 					if (ownership) ownership.stopped = true;
@@ -234,6 +263,7 @@ export function createShellLoopbackRunner(options: {
 							try {
 								ownership.job.close();
 								ownership.closed = true;
+								unsafePhysicalFailure = error;
 							} catch (closeError) {
 								trace("job-close-error", { error: String(closeError) });
 							}
@@ -276,6 +306,7 @@ export function createShellLoopbackRunner(options: {
 					}
 				};
 				const onAbort = (): void => stop(false);
+				aborters.add(onAbort);
 				trace("queue", { commandKind, commandHash });
 				invocation.signal?.addEventListener("abort", onAbort, { once: true });
 				if (invocation.timeoutMs !== undefined) timer = setTimeout(() => stop(true), invocation.timeoutMs);
@@ -294,15 +325,25 @@ export function createShellLoopbackRunner(options: {
 						// Ordinary discovery avoids this extra process for every stat/read.
 						const needsParent =
 							process.platform === "win32" &&
-							(invocation.signal !== undefined || invocation.timeoutMs !== undefined);
+							(invocation.signal !== undefined ||
+								invocation.timeoutMs !== undefined ||
+								options.commandShellBinary !== undefined);
 						const useJob = needsParent;
 						const directFileCommand = readonlyFiles;
+						const directCommandEndpoint = options.commandShellBinary !== undefined;
+						const endpointBinary = options.commandShellBinary ?? options.shellBinary;
+						const endpointArgs = directCommandEndpoint
+							? [
+									"-c",
+									`if [ -n "\${VETTA_LOOPBACK_COMMAND_DIRECTORY:-}" ]; then export PATH="$VETTA_LOOPBACK_COMMAND_DIRECTORY:$PATH"; fi\n${command}`,
+								]
+							: [options.scriptPath, ...invocation.argv];
 						const childEnv: NodeJS.ProcessEnv = {
 							...options.baseEnv,
 							...invocation.env,
 							...(useJob ? { VETTA_LOOPBACK_JOB: "1" } : {}),
 						};
-						if (directFileCommand && process.platform === "win32") {
+						if ((directFileCommand || directCommandEndpoint) && process.platform === "win32") {
 							const keys = Object.keys(childEnv).filter((key) => key.toLowerCase() === "path");
 							const pathKey =
 								Object.keys(invocation.env ?? {}).find((key) => key.toLowerCase() === "path") ??
@@ -310,7 +351,8 @@ export function createShellLoopbackRunner(options: {
 								"PATH";
 							const path = childEnv[pathKey] ?? "";
 							for (const key of keys) if (key !== pathKey) delete childEnv[key];
-							childEnv[pathKey] = `${dirname(options.fileShellBinary!)}${delimiter}${path}`;
+							childEnv[pathKey] =
+								`${dirname(directFileCommand ? options.fileShellBinary! : endpointBinary)}${delimiter}${path}`;
 						}
 						if (requestEndpoint) {
 							void requestEndpoint.run(invocation, trace).then((value) => {
@@ -321,19 +363,15 @@ export function createShellLoopbackRunner(options: {
 						}
 						if (useJob) ownership = { job: createOwnedWindowsTestJob(), assigned: false, stopped: false };
 						const spawned = spawn(
-							directFileCommand
-								? options.fileShellBinary!
-								: needsParent
-									? process.execPath
-									: options.shellBinary,
+							directFileCommand ? options.fileShellBinary! : needsParent ? process.execPath : endpointBinary,
 							directFileCommand
 								? [
 										"-c",
 										`if [ -n "\${VETTA_LOOPBACK_COMMAND_DIRECTORY:-}" ]; then export PATH="$VETTA_LOOPBACK_COMMAND_DIRECTORY:$PATH"; fi\n${command}`,
 									]
 								: needsParent
-									? ["-e", WINDOWS_PARENT_WRAPPER, options.shellBinary, options.scriptPath, ...invocation.argv]
-									: [options.scriptPath, ...invocation.argv],
+									? ["-e", WINDOWS_PARENT_WRAPPER, endpointBinary, ...endpointArgs]
+									: endpointArgs,
 							{
 								env: childEnv,
 								stdio:
@@ -345,6 +383,17 @@ export function createShellLoopbackRunner(options: {
 						if (!spawned.stdin || !spawned.stdout || !spawned.stderr)
 							throw new Error("Loopback pipe contract unavailable");
 						child = spawned as ChildProcessWithoutNullStreams;
+						const physical = new Promise<void>((resolveClose, rejectClose) => {
+							finishPhysical = (error) => {
+								if (error) rejectClose(error);
+								else {
+									physicalCloses.delete(physical);
+									resolveClose();
+								}
+							};
+						});
+						void physical.catch(() => {});
+						physicalCloses.add(physical);
 						if (ownership) {
 							windowsJobs.set(child, ownership);
 							child.on("message", (message: unknown) => {
@@ -383,6 +432,7 @@ export function createShellLoopbackRunner(options: {
 							pid: child.pid,
 							needsParent,
 							...(directFileCommand ? { directFileCommand: true } : {}),
+							...(directCommandEndpoint ? { nativeCommandEndpoint: true } : {}),
 							commandKind,
 							commandHash,
 						});
@@ -454,6 +504,7 @@ export function createShellLoopbackRunner(options: {
 								} catch (error) {
 									trace("native-witness-close-error", { error: String(error) });
 								}
+								if (unsafePhysicalFailure) throw unsafePhysicalFailure;
 								if (ownership && !ownership.closed) {
 									try {
 										await waitForOwnedJobEmpty(ownership.job);
@@ -464,17 +515,23 @@ export function createShellLoopbackRunner(options: {
 									}
 								}
 								if (child) windowsJobs.delete(child);
+								finishPhysical?.();
 								finishClosing?.();
 								if (settled) return;
 								cleanup();
 								resolve(result(exitCode));
-							})().catch(fail);
+							})().catch((error: unknown) => {
+								const failure = error instanceof Error ? error : new Error("Loopback close barrier failed");
+								finishPhysical?.(failure);
+								fail(failure);
+							});
 						});
 						child.stdin.on("error", () => {});
 						child.stdin.end(invocation.stdin);
 					}, fail)
 					.catch(fail);
 			});
+			return track(pendingCall);
 		},
 	};
 }

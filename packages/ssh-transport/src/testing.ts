@@ -13,7 +13,9 @@ import { createShellLoopbackRunner, terminateWindowsLoopbackTree } from "./testi
  *
  * 顶替 `ssh` 的脚本只认最后一个参数并把它交给 `/bin/sh -c`——这正是 sshd 对远端命令做的
  * 事。于是「远端」就是本机的一个临时目录，命令构造、两层引用、字节往返与退出码都跑在真实
- * shell 上：测试证明的是功能真的可用，而不是我们拼出了预期的字符串、调用了自己写的 mock。
+ * shell 上。Windows 使用真实 Git usr/bin/sh 直接解释同一完整末参数，省去测试专属
+ * bin launcher 与 fakeSSH 外壳；生产命令里的登录 shell 和 marker 保持原样。
+ * 测试证明的是功能真的可用，而不是我们拼出了预期的字符串、调用了自己写的 mock。
  * 它已经抓出过 BSD stat 不解释 `\t` 这类只有真跑才会暴露的问题。
  */
 export function createLoopbackSshConnection(
@@ -22,8 +24,14 @@ export function createLoopbackSshConnection(
 		readonly commandDirectory?: string;
 		/** Resource-only Windows fixture: avoid redundant shells for exact readonly file scripts. */
 		readonly directFileCommands?: boolean;
+		/** A/B control for the old Windows bin launcher and fake-SSH shell. */
+		readonly legacyCommandEndpoint?: boolean;
 	} = {},
-): SshConnection & { closeReadonlyEndpoint(): Promise<void> } {
+): SshConnection & {
+	closeReadonlyEndpoint(): Promise<void>;
+	waitForIdle(): Promise<void>;
+	abortOwnedOperations(): void;
+} {
 	const directory = mkdtempSync(join(tmpdir(), "vetta-loopback-ssh-"));
 	// 「远端」有自己的家目录：helper 会往 ~/.cache 里装东西，不能装进开发者真实的家目录。
 	const home = join(directory, "home");
@@ -60,6 +68,14 @@ export function createLoopbackSshConnection(
 			? join(dirname(gitBashTools().cygpath), "sh.exe")
 			: undefined;
 	if (fileShellBinary && !existsSync(fileShellBinary)) throw new Error("Loopback file endpoint requires Git sh.exe");
+	const commandShellBinary =
+		process.platform === "win32" && !options.legacyCommandEndpoint
+			? join(dirname(gitBashTools().cygpath), "sh.exe")
+			: undefined;
+	if (commandShellBinary && !existsSync(commandShellBinary))
+		throw new Error("Loopback command endpoint requires Git sh.exe");
+	const pending = new Set<Promise<unknown>>();
+	const controllers = new Set<AbortController>();
 	const runner =
 		process.platform === "win32"
 			? createShellLoopbackRunner({
@@ -68,11 +84,31 @@ export function createLoopbackSshConnection(
 					baseEnv: { ...baseEnv, VETTA_LOOPBACK_WINDOWS: "1" },
 					terminateTree: terminateWindowsLoopbackTree,
 					fileShellBinary,
+					commandShellBinary,
 					fileResultRoot: fileShellBinary
 						? { native: directory, remote: loopbackRemotePath(directory) }
 						: undefined,
 				})
 			: createNodeSshProcessRunner({ sshBinary: fakeSsh, baseEnv });
+	const run = runner.run.bind(runner);
+	runner.run = (invocation) => {
+		const controller = process.platform === "win32" ? undefined : new AbortController();
+		const abort = () => controller?.abort();
+		if (controller) {
+			controllers.add(controller);
+			if (invocation.signal?.aborted) controller.abort();
+			invocation.signal?.addEventListener("abort", abort, { once: true });
+		}
+		const result = run(controller ? { ...invocation, signal: controller.signal } : invocation);
+		pending.add(result);
+		const finished = () => {
+			pending.delete(result);
+			if (controller) controllers.delete(controller);
+			invocation.signal?.removeEventListener("abort", abort);
+		};
+		void result.then(finished, finished);
+		return result;
+	};
 	const connection = new SshConnection(
 		{ id: hostId, label: hostId, target: hostId, source: "manual" },
 		{
@@ -83,6 +119,15 @@ export function createLoopbackSshConnection(
 		},
 	);
 	return Object.assign(connection, {
+		abortOwnedOperations: () => {
+			for (const controller of controllers) controller.abort();
+			if ("abortOwnedOperations" in runner && typeof runner.abortOwnedOperations === "function")
+				runner.abortOwnedOperations();
+		},
+		waitForIdle: async () => {
+			while (pending.size > 0) await Promise.allSettled([...pending]);
+			if ("waitForIdle" in runner && typeof runner.waitForIdle === "function") await runner.waitForIdle();
+		},
 		closeReadonlyEndpoint: async () => {
 			if ("closeReadonlyEndpoint" in runner && typeof runner.closeReadonlyEndpoint === "function") {
 				await runner.closeReadonlyEndpoint();
@@ -115,8 +160,110 @@ export function loopbackRemotePath(localPath: string): string {
 // Both names share the same Git Bash path conversion; upstream consumers use the former.
 export const toLoopbackRemotePath = loopbackRemotePath;
 
+/** Own a complete test flow, including startup that can finish after a test timeout. */
+export function createLoopbackTestScope() {
+	let closing = false;
+	let cleanup: Promise<void> | undefined;
+	const pending = new Set<Promise<unknown>>();
+	const starts = new Set<Promise<unknown>>();
+	const releases: (() => void)[] = [];
+	const stops: (() => Promise<void>)[] = [];
+	const closedError = new Error("Owned loopback test is closing");
+	let rejectClosed: (error: Error) => void = () => {};
+	const closed = new Promise<never>((_resolve, reject) => {
+		rejectClosed = reject;
+	});
+	void closed.catch(() => {});
+	const track = <T>(task: Promise<T>): Promise<T> => {
+		pending.add(task);
+		void task.then(
+			() => pending.delete(task),
+			() => pending.delete(task),
+		);
+		return task;
+	};
+	const assertOpen = (): void => {
+		if (closing) throw closedError;
+	};
+	return {
+		track,
+		assertOpen,
+		step<T>(operation: () => Promise<T>): Promise<T> {
+			assertOpen();
+			return track(
+				operation().then((value) => {
+					assertOpen();
+					return value;
+				}),
+			);
+		},
+		start<T>(operation: () => Promise<T>, stop: (value: T) => Promise<void>): Promise<T> {
+			assertOpen();
+			const starting = operation().then((value) => {
+				stops.push(() => stop(value));
+				assertOpen();
+				return value;
+			});
+			starts.add(starting);
+			void starting.then(
+				() => starts.delete(starting),
+				() => starts.delete(starting),
+			);
+			return track(starting);
+		},
+		until(check: () => void, wait: (check: () => void) => Promise<unknown>): Promise<unknown> {
+			assertOpen();
+			const waiting = wait(() => {
+				if (!closing) check();
+			});
+			return track(Promise.race([waiting, closed]));
+		},
+		onClosing(release: () => void) {
+			releases.push(release);
+		},
+		onCleanup(stop: () => Promise<void>) {
+			stops.push(stop);
+		},
+		close(idle: () => Promise<void>): Promise<void> {
+			if (cleanup) return cleanup;
+			closing = true;
+			rejectClosed(closedError);
+			cleanup = (async () => {
+				const failures: unknown[] = [];
+				for (const release of releases.splice(0)) {
+					try {
+						release();
+					} catch (error) {
+						failures.push(error);
+					}
+				}
+				await Promise.allSettled([...starts]);
+				while (stops.length > 0) {
+					for (const result of await Promise.allSettled(
+						stops.splice(0).map((stop) => Promise.resolve().then(stop)),
+					))
+						if (result.status === "rejected") failures.push(result.reason);
+				}
+				while (pending.size > 0) await Promise.allSettled([...pending]);
+				try {
+					await idle();
+				} catch (error) {
+					failures.push(error);
+				}
+				if (failures.length > 0) throw failures[0];
+			})();
+			return cleanup;
+		},
+	};
+}
+
 export function formatLoopbackProjectUri(hostId: string, localPath: string): string {
 	return formatSshProjectUri(hostId, toLoopbackRemotePath(localPath));
+}
+
+/** Test-only Windows endpoint; POSIX hosts retain their existing native process runner. */
+export function loopbackCommandShellBinary(): string | undefined {
+	return process.platform === "win32" ? join(dirname(gitBashTools().cygpath), "sh.exe") : undefined;
 }
 
 let cachedGitBash: { bash: string; cygpath: string } | undefined;
