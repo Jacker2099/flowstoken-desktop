@@ -18,7 +18,11 @@ import { createShellLoopbackRunner, terminateWindowsLoopbackTree } from "./testi
  */
 export function createLoopbackSshConnection(
 	hostId = "loopback",
-	options: Pick<SshConnectionOptions, "helper"> & { readonly commandDirectory?: string } = {},
+	options: Pick<SshConnectionOptions, "helper"> & {
+		readonly commandDirectory?: string;
+		/** Resource-only Windows fixture: avoid redundant shells for exact readonly file scripts. */
+		readonly directFileCommands?: boolean;
+	} = {},
 ): SshConnection {
 	const directory = mkdtempSync(join(tmpdir(), "vetta-loopback-ssh-"));
 	// 「远端」有自己的家目录：helper 会往 ~/.cache 里装东西，不能装进开发者真实的家目录。
@@ -51,6 +55,11 @@ export function createLoopbackSshConnection(
 			? {}
 			: { VETTA_LOOPBACK_COMMAND_DIRECTORY: loopbackRemotePath(options.commandDirectory) }),
 	};
+	const fileShellBinary =
+		process.platform === "win32" && options.directFileCommands
+			? join(dirname(gitBashTools().cygpath), "sh.exe")
+			: undefined;
+	if (fileShellBinary && !existsSync(fileShellBinary)) throw new Error("Loopback file endpoint requires Git sh.exe");
 	const runner =
 		process.platform === "win32"
 			? createShellLoopbackRunner({
@@ -58,6 +67,7 @@ export function createLoopbackSshConnection(
 					scriptPath: loopbackRemotePath(fakeSsh),
 					baseEnv: { ...baseEnv, VETTA_LOOPBACK_WINDOWS: "1" },
 					terminateTree: terminateWindowsLoopbackTree,
+					fileShellBinary,
 				})
 			: createNodeSshProcessRunner({ sshBinary: fakeSsh, baseEnv });
 	return new SshConnection(

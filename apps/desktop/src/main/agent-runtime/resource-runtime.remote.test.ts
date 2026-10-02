@@ -1,12 +1,24 @@
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, parse, posix } from "node:path";
+import { dirname, join, parse, posix } from "node:path";
 import type { SessionResourceRuntime } from "@vetta/coding-agent/resources";
-import { createLoopbackSshConnection, loopbackRemotePath } from "@vetta/ssh-transport/testing";
+import {
+	buildListDirectoryCommand,
+	buildRealPathCommand,
+	buildStatCommand,
+	quoteShellArgument,
+} from "@vetta/ssh-transport";
+import {
+	createLoopbackSshConnection,
+	createShellLoopbackRunner,
+	loopbackRemotePath,
+	loopbackShellBinary,
+	terminateWindowsLoopbackTree,
+} from "@vetta/ssh-transport/testing";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-const connection = createLoopbackSshConnection();
+const connection = createLoopbackSshConnection("loopback", { directFileCommands: process.platform === "win32" });
 vi.mock("../ssh/ssh-runtime.js", () => ({ getSshConnection: () => connection }));
 
 const { createDesktopPromptRuntimeSources } = await import("./resource-runtime.js");
@@ -68,6 +80,137 @@ function resourceFixture() {
 	const agentDir = temporaryDirectory(tmpdir(), "vetta-agent-dir-");
 	return { remoteRoot, remotePath, agentDir };
 }
+
+describe("readonly loopback endpoint matches the actual SSH wrapper", () => {
+	let fixture: ReturnType<typeof readonlyEndpointFixture>;
+	beforeEach(() => {
+		fixture = readonlyEndpointFixture();
+	});
+	function readonlyEndpointFixture() {
+		const directory = temporaryDirectory(tmpdir(), "loopback readonly quoted ");
+		const remoteDirectory = loopbackRemotePath(directory);
+		const dataDirectory = join(directory, "data");
+		const toolsDirectory = join(directory, "tools");
+		mkdirSync(dataDirectory);
+		mkdirSync(toolsDirectory);
+		mkdirSync(join(directory, "home"));
+		const data = Buffer.from([0, 255, 10, 13, 39, 36, 65]);
+		writeFileSync(join(dataDirectory, "quoted 'stat' file.txt"), data);
+		const marker = join(directory, "wrapped.marker");
+		const envMarker = join(directory, "env.marker");
+		const remoteMarker = posix.join(remoteDirectory, "wrapped.marker");
+		const remoteEnvMarker = posix.join(remoteDirectory, "env.marker");
+		const scriptPath = join(directory, "ssh.sh");
+		writeFileSync(
+			scriptPath,
+			[
+				"#!/bin/sh",
+				"for last; do :; done",
+				`printf wrapped >> ${quoteShellArgument(remoteMarker)}`,
+				`if [ -n "\${VETTA_LOOPBACK_COMMAND_DIRECTORY:-}" ]; then export PATH="$VETTA_LOOPBACK_COMMAND_DIRECTORY:$PATH"; fi`,
+				'exec /bin/sh -c "$last"',
+			].join("\n"),
+		);
+		chmodSync(scriptPath, 0o755);
+		const catPath = join(toolsDirectory, "cat");
+		writeFileSync(
+			catPath,
+			[
+				"#!/bin/sh",
+				`printf '%s|%s|%s' "$HOME" "$SHELL" "$DIFF_ENV" > ${quoteShellArgument(remoteEnvMarker)}`,
+				'exec /bin/cat "$@"',
+			].join("\n"),
+		);
+		chmodSync(catPath, 0o755);
+		const shellBinary = loopbackShellBinary();
+		const fileShellBinary =
+			process.platform === "win32" ? join(dirname(dirname(shellBinary)), "usr", "bin", "sh.exe") : "/bin/sh";
+		const options = {
+			shellBinary,
+			scriptPath: posix.join(remoteDirectory, "ssh.sh"),
+			baseEnv: {
+				...process.env,
+				HOME: posix.join(remoteDirectory, "home"),
+				TMPDIR: remoteDirectory,
+				SHELL: "/bin/sh",
+				VETTA_LOOPBACK_COMMAND_DIRECTORY: posix.join(remoteDirectory, "tools"),
+			},
+			terminateTree: (child: Parameters<typeof terminateWindowsLoopbackTree>[0]) => {
+				if (process.platform === "win32") terminateWindowsLoopbackTree(child);
+				else child.kill();
+			},
+		};
+		return {
+			wrapped: createShellLoopbackRunner(options),
+			direct: createShellLoopbackRunner({ ...options, fileShellBinary }),
+			remoteFile: posix.join(remoteDirectory, "data", "quoted 'stat' file.txt"),
+			remoteDataDirectory: posix.join(remoteDirectory, "data"),
+			remoteMissing: posix.join(remoteDirectory, "data", "missing.txt"),
+			expectedHome: options.baseEnv.HOME,
+			data,
+			marker,
+			envMarker,
+		};
+	}
+	it.each(["read", "stat", "list", "realpath"] as const)(
+		"executes genuine %s with identical bytes/exit and preserves the owned path and environment",
+		(operation) =>
+			trackReload(
+				(async () => {
+					const flavor = process.platform === "darwin" ? "bsd" : "gnu";
+					const command =
+						operation === "read"
+							? `cat -- ${quoteShellArgument(fixture.remoteFile)}`
+							: operation === "stat"
+								? buildStatCommand(fixture.remoteFile, flavor)
+								: operation === "list"
+									? buildListDirectoryCommand(fixture.remoteDataDirectory, flavor)
+									: buildRealPathCommand(fixture.remoteFile);
+					const invocation = { argv: ["ignored-ssh-argument", command], env: { DIFF_ENV: "literal $value" } };
+					const direct = await fixture.direct.run(invocation);
+					expect(direct.exitCode).toBe(0);
+					expect(() => readFileSync(fixture.marker)).toThrow();
+					const wrapped = await fixture.wrapped.run(invocation);
+					expect(wrapped).toEqual(direct);
+					expect(readFileSync(fixture.marker, "utf8")).toBe("wrapped");
+					if (operation === "read") {
+						expect(Buffer.from(direct.stdout)).toEqual(fixture.data);
+						expect(readFileSync(fixture.envMarker, "utf8")).toBe(
+							`${fixture.expectedHome}|/bin/sh|literal $value`,
+						);
+					}
+				})(),
+			),
+	);
+	it("preserves actual nonzero exit and stderr for missing files", () =>
+		trackReload(
+			(async () => {
+				const invocation = { argv: [`cat -- ${quoteShellArgument(fixture.remoteMissing)}`] };
+				const direct = await fixture.direct.run(invocation);
+				const wrapped = await fixture.wrapped.run(invocation);
+				expect(direct.exitCode).not.toBe(0);
+				expect(direct.stderr).toContain("missing.txt");
+				expect(wrapped).toEqual(direct);
+			})(),
+		));
+	it("keeps deadlines, signals, unknown commands mentioning stat, and public open on the real wrapper", () =>
+		trackReload(
+			(async () => {
+				const command = `cat -- ${quoteShellArgument(fixture.remoteFile)}`;
+				await fixture.direct.run({ argv: [command], signal: new AbortController().signal });
+				await fixture.direct.run({ argv: [command], timeoutMs: 5000 });
+				await fixture.direct.run({ argv: ["printf stat"] });
+				await fixture.direct.run({ argv: [`${command}; printf stat`] });
+				expect(readFileSync(fixture.marker, "utf8")).toBe("wrappedwrappedwrappedwrapped");
+				const chunks: Uint8Array[] = [];
+				const channel = fixture.direct.open!({ argv: [command], onStdout: (data) => chunks.push(data) });
+				channel.end();
+				expect((await channel.exited).exitCode).toBe(0);
+				expect(Buffer.concat(chunks)).toEqual(fixture.data);
+				expect(readFileSync(fixture.marker, "utf8")).toBe("wrappedwrappedwrappedwrappedwrapped");
+			})(),
+		));
+});
 
 describe("远程项目会话的资源发现", () => {
 	it("读到远端项目自己的 AGENTS.md 与项目技能，不读本机的", async () => {
