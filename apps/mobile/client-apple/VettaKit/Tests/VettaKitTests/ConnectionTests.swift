@@ -2,6 +2,11 @@ import Foundation
 import Testing
 @testable import VettaKit
 
+private func closeDesktopFixture(_ desktop: FakeDesktop) {
+	for acceptor in desktop.acceptors { acceptor.close() }
+	desktop.relayDesktop?.close()
+}
+
 @Suite(.serialized) struct RemoteConnectionTests {
 	func pair(latency: Double = 1) -> (phone: RemoteConnection, desktop: RemoteConnection, phoneIdentity: RemoteIdentityKeyPair) {
 		let phoneSide = FakeTransport(latencyMs: latency)
@@ -20,6 +25,10 @@ import Testing
 
 	@Test func completesTheHandshakeAndCorrelatesRequests() async throws {
 		let (phone, desktop, _) = pair()
+		defer {
+			phone.close()
+			desktop.close()
+		}
 		desktop.onEvent { event in
 			if case let .remoteRequest(request) = event {
 				try? desktop.respond(requestId: request.requestId, success: true, payload: ["echo": request.payload ?? .null])
@@ -36,6 +45,10 @@ import Testing
 
 	@Test func timesOutUnansweredRequestsAndFailsFastWhenOffline() async throws {
 		let (phone, desktop, _) = pair()
+		defer {
+			phone.close()
+			desktop.close()
+		}
 		try await desktop.connect()
 		try await phone.connect()
 		#expect(await eventually { phone.state == .online })
@@ -47,6 +60,10 @@ import Testing
 
 	@Test func deliversEventsInOrderAndRecoversFromAGap() async throws {
 		let (phone, desktop, _) = pair()
+		defer {
+			phone.close()
+			desktop.close()
+		}
 		var received: [Int] = []
 		phone.onEvent { event in
 			if case let .remoteEvent(remote) = event { received.append(remote.sequence) }
@@ -71,6 +88,10 @@ import Testing
 		desktopOptions.onHello = { _ in .approve }
 		let phone = RemoteConnection(transport: phoneSide, options: phoneOptions)
 		let desktop = RemoteConnection(transport: desktopSide, options: desktopOptions)
+		defer {
+			phone.close()
+			desktop.close()
+		}
 		try await desktop.connect()
 		try await phone.connect()
 		#expect(await eventually { phone.state == .failed })
@@ -87,6 +108,10 @@ import Testing
 		var phoneOptions = RemoteConnectionOptions(role: .mobile, deviceId: "phone", deviceName: "Phone", capabilities: RemoteCapabilities(chat: true, sessionRead: true), identity: phoneIdentity)
 		phoneOptions.expectedPeerIdentityKey = desktopIdentity.publicKey
 		let phone = RemoteConnection(transport: relay.createTransport(pairingId: "room-1234567890abcd", role: .mobile), options: phoneOptions)
+		defer {
+			phone.close()
+			desktop.close()
+		}
 		desktop.onEvent { event in
 			if case let .remoteRequest(request) = event { try? desktop.respond(requestId: request.requestId, success: true, payload: ["ok": true]) }
 		}
@@ -104,19 +129,21 @@ import Testing
 	@Test func prefersTheLanWhenItAnswers() async {
 		let link = makeLink()
 		let desktop = FakeDesktop()
+		defer { closeDesktopFixture(desktop) }
 		desktop.mobileIdentityKey = link.identity.publicKey
 		let manager = ChannelManager(options: ChannelManagerOptions(desktop: desktopRecord(desktop), link: link, createTransport: desktop.createTransport))
+		defer { manager.stop() }
 		manager.start()
 		#expect(await eventually { manager.snapshot.status == .online })
 		#expect(manager.snapshot.channel == .lan)
 		#expect(manager.snapshot.peerOnline)
 		#expect(!desktop.opened.contains { $0.contains("/v2/relay/") })
-		manager.stop()
 	}
 
 	@Test func fallsBackToTheRelayThenSwitchesBackSilently() async throws {
 		let link = makeLink()
 		let desktop = FakeDesktop()
+		defer { closeDesktopFixture(desktop) }
 		desktop.mobileIdentityKey = link.identity.publicKey
 		desktop.unreachable.insert("ws://192.168.1.20:43117")
 		try await desktop.connectRelay("pair-1234567890abcdef")
@@ -124,6 +151,7 @@ import Testing
 		options.lanBudgetMs = 150
 		options.lanProbeIntervalMs = 300
 		let manager = ChannelManager(options: options)
+		defer { manager.stop() }
 		var seen: [String] = []
 		manager.subscribe { seen.append("\($0.status.rawValue):\($0.channel?.rawValue ?? "nil")") }
 		manager.start()
@@ -134,12 +162,12 @@ import Testing
 		#expect(manager.snapshot.status == .online)
 		#expect(!seen.contains { $0.hasPrefix("offline") })
 		#expect(desktop.relayDesktop?.snapshot.peerDeviceId == "phone-1")
-		manager.stop()
 	}
 
 	@Test func keepsOneContinuousSequenceAcrossAChannelSwitch() async throws {
 		let link = makeLink()
 		let desktop = FakeDesktop()
+		defer { closeDesktopFixture(desktop) }
 		desktop.mobileIdentityKey = link.identity.publicKey
 		desktop.unreachable.insert("ws://192.168.1.20:43117")
 		let relayDesktop = try await desktop.connectRelay("pair-1234567890abcdef")
@@ -149,6 +177,7 @@ import Testing
 		options.lanProbeIntervalMs = 300
 		options.onSequence = { sequences.append($0) }
 		let manager = ChannelManager(options: options)
+		defer { manager.stop() }
 		var names: [String] = []
 		manager.onEvent { names.append("\($0.sequence):\($0.name.rawValue)") }
 		manager.start()
@@ -165,32 +194,34 @@ import Testing
 		#expect(names == ["1:session.state", "2:session.message", "3:session.message"])
 		#expect(sequences.last == 3)
 		#expect(manager.sequence == 3)
-		manager.stop()
 	}
 
 	@Test func resumesFromThePersistedSequence() async {
 		let link = makeLink()
 		let desktop = FakeDesktop()
+		defer { closeDesktopFixture(desktop) }
 		desktop.mobileIdentityKey = link.identity.publicKey
 		for index in 0 ..< 3 {
 			let sequence = desktop.journal.nextSequence()
 			desktop.journal.remember(RemoteEvent(eventId: "e\(index + 1)", sequence: sequence, name: .sessionState, sessionId: "s1", payload: ["status": "running"]))
 		}
 		let manager = ChannelManager(options: ChannelManagerOptions(desktop: desktopRecord(desktop, lastEventSequence: 1), link: link, createTransport: desktop.createTransport))
+		defer { manager.stop() }
 		var received: [Int] = []
 		manager.onEvent { received.append($0.sequence) }
 		manager.start()
 		#expect(await eventually { received == [2, 3] })
-		manager.stop()
 	}
 
 	@Test func rejectsRequestsWhileOfflineAndReconnectsWithBackoff() async throws {
 		let link = makeLink()
 		let desktop = FakeDesktop()
+		defer { closeDesktopFixture(desktop) }
 		desktop.mobileIdentityKey = link.identity.publicKey
 		var options = ChannelManagerOptions(desktop: desktopRecord(desktop, relay: nil), link: link, createTransport: desktop.createTransport)
 		options.lanBudgetMs = 100
 		let manager = ChannelManager(options: options)
+		defer { manager.stop() }
 		manager.start()
 		#expect(await eventually { manager.snapshot.status == .online })
 		let acceptor = try #require(desktop.onlineAcceptor())
@@ -199,18 +230,19 @@ import Testing
 		await #expect(throws: LinkOfflineError.self) { try await manager.request(.sessionList) }
 		#expect(await eventually(timeoutMs: 3_000) { manager.snapshot.status == .online })
 		#expect(desktop.acceptors.count >= 2)
-		manager.stop()
 	}
 
 	@Test func waitsForARecoveringConnectionInsteadOfFailingTheRequest() async throws {
 		let link = makeLink()
 		let desktop = FakeDesktop()
+		defer { closeDesktopFixture(desktop) }
 		desktop.mobileIdentityKey = link.identity.publicKey
 		desktop.lanDelayMs = 40
 		desktop.onRequest = { connection, request in
 			try? connection.respond(requestId: request.requestId, success: true, payload: ["sessions": []])
 		}
 		let manager = ChannelManager(options: ChannelManagerOptions(desktop: desktopRecord(desktop), link: link, createTransport: desktop.createTransport))
+		defer { manager.stop() }
 		manager.start()
 		#expect(await eventually { manager.snapshot.isUsable && desktop.onlineAcceptor() != nil })
 		await sleep(ms: 200) // let the handshake's own resume round-trip finish first
@@ -226,17 +258,18 @@ import Testing
 		let result = try await manager.request(.sessionList)
 		#expect(result?["sessions"] != nil)
 		#expect(await eventually { received == [1, 2, 3] })
-		manager.stop()
 	}
 
 	@Test func updatesCachedLanEndpointsFromDeviceStatus() async throws {
 		let link = makeLink()
 		let desktop = FakeDesktop()
+		defer { closeDesktopFixture(desktop) }
 		desktop.mobileIdentityKey = link.identity.publicKey
 		var endpoints: [[String]] = []
 		var options = ChannelManagerOptions(desktop: desktopRecord(desktop), link: link, createTransport: desktop.createTransport)
 		options.onLanEndpoints = { endpoints.append($0) }
 		let manager = ChannelManager(options: options)
+		defer { manager.stop() }
 		manager.start()
 		#expect(await eventually { manager.snapshot.status == .online && desktop.onlineAcceptor() != nil })
 		try desktop.onlineAcceptor()!.emitEvent(.deviceStatus, payload: [
@@ -247,7 +280,6 @@ import Testing
 		])
 		#expect(await eventually { endpoints == [["10.0.0.5:43117"]] })
 		#expect(manager.snapshot.desktop?.runningSessionCount == 2)
-		manager.stop()
 	}
 }
 
@@ -258,6 +290,7 @@ import Testing
 
 	@Test func pairsFromAScannedCodeOverTheLan() async {
 		let desktop = FakeDesktop()
+		defer { closeDesktopFixture(desktop) }
 		desktop.onHello = { _ in .approve }
 		var phases: [PairingPhase] = []
 		let flow = PairingFlow(options: PairingFlowOptions(link: makeLink(), createTransport: desktop.createTransport) { phases.append($0) })
@@ -274,6 +307,7 @@ import Testing
 
 	@Test func carriesTheAcknowledgedInviteCursorIntoTheLastingLinkWithoutLosingDesktopStatus() async throws {
 		let desktop = FakeDesktop()
+		defer { closeDesktopFixture(desktop) }
 		desktop.onHello = { _ in .approve }
 		desktop.onRequest = { connection, request in
 			try? connection.respond(requestId: request.requestId, success: true, payload: ["sessions": []])
@@ -306,7 +340,9 @@ import Testing
 		let manager = ChannelManager(options: ChannelManagerOptions(desktop: record, link: identity, createTransport: transport))
 		defer { manager.stop() }
 		manager.start()
-		#expect(await eventually(timeoutMs: 5_000) { manager.snapshot.desktop?.deviceName == "MacBook Pro" })
+		#expect(await eventually(timeoutMs: 5_000) {
+			manager.snapshot.desktop?.deviceName == "MacBook Pro" && manager.snapshot.isUsable && manager.snapshot.channel == .lan
+		})
 		#expect(manager.snapshot.isUsable && manager.snapshot.channel == .lan)
 		let sessions = try await manager.request(.sessionList)
 		#expect(sessions?["sessions"] != nil)
@@ -314,6 +350,7 @@ import Testing
 
 	@Test func fallsBackToTheRelayFromTheInvite() async throws {
 		let desktop = FakeDesktop()
+		defer { closeDesktopFixture(desktop) }
 		desktop.onHello = { _ in .approve }
 		desktop.unreachable.insert("ws://192.168.1.20:43117")
 		try await desktop.connectRelay("pair-1234567890abcdef")
@@ -327,6 +364,7 @@ import Testing
 
 	@Test func triesEveryLanAddressAtOnce() async throws {
 		let desktop = FakeDesktop()
+		defer { closeDesktopFixture(desktop) }
 		desktop.onHello = { _ in .approve }
 		let bridges = (1 ... 8).map { "192.168.\(100 + $0).1:43117" }
 		for bridge in bridges { desktop.unreachable.insert("ws://\(bridge)") }
@@ -350,6 +388,7 @@ import Testing
 
 	@Test func rejectsForeignCodesAndImpostors() async {
 		let desktop = FakeDesktop()
+		defer { closeDesktopFixture(desktop) }
 		desktop.onHello = { _ in .approve }
 		var phases: [PairingPhase] = []
 		var options = PairingFlowOptions(link: makeLink(), createTransport: desktop.createTransport) { phases.append($0) }
@@ -357,6 +396,7 @@ import Testing
 		#expect(await PairingFlow(options: options).pairWithCode("https://example.com") == nil)
 		#expect(phases.last == .failed(.invalidCode))
 		let impostor = FakeDesktop()
+		defer { closeDesktopFixture(impostor) }
 		impostor.onHello = { _ in .approve }
 		options.createTransport = impostor.createTransport
 		#expect(await PairingFlow(options: options).pairWithCode(invite(desktop)) == nil)
@@ -365,44 +405,82 @@ import Testing
 
 	@Test func walksTheManualPath() async throws {
 		var approve: CheckedContinuation<Bool, Never>?
+		var cleanupStarted = false
+		var pairingFinished = false
 		let desktop = FakeDesktop()
+		defer { closeDesktopFixture(desktop) }
 		desktop.onHello = { _ in
-			.pending(approval: { await withCheckedContinuation { approve = $0 } })
+			.pending(approval: {
+				await withCheckedContinuation { continuation in
+					if cleanupStarted { continuation.resume(returning: false) }
+					else { approve = continuation }
+				}
+			})
 		}
 		var phases: [PairingPhase] = []
 		let flow = PairingFlow(options: PairingFlowOptions(link: makeLink(), createTransport: desktop.createTransport) { phases.append($0) })
-		let pairing = Task { await flow.pairManually("192.168.1.20:43117") }
-		#expect(await eventually { approve != nil })
+		let pairing = Task {
+			defer { pairingFinished = true }
+			return await flow.pairManually("192.168.1.20:43117")
+		}
+		func cleanup() {
+			guard !cleanupStarted else { return }
+			cleanupStarted = true
+			let pendingApproval = approve
+			approve = nil
+			pendingApproval?.resume(returning: false)
+			// Close the owned server peer first so a waiting connection observes its close.
+			closeDesktopFixture(desktop)
+			flow.cancel()
+			pairing.cancel()
+		}
+		defer { cleanup() }
+		#expect(await eventually {
+			guard approve != nil else { return false }
+			if case .awaitingApproval = phases.last { return true }
+			return false
+		})
 		guard case let .awaitingApproval(code, _) = phases.last else {
 			Issue.record("expected awaiting approval, got \(phases)")
+			cleanup()
+			#expect(await eventually { pairingFinished })
 			return
 		}
-		#expect(code.count == 6 && code.allSatisfy(\.isNumber))
-		let acceptor = try #require(desktop.acceptors.first)
-		#expect(acceptor.snapshot.verificationCode == code)
-		#expect(desktop.opened.first == "ws://192.168.1.20:43117/v2/lan/pair")
-		approve?.resume(returning: true)
-		#expect(await eventually { acceptor.state == .online })
-		let pairedEvent = try acceptor.emitEvent(.devicePaired, payload: [
-			"pairingId": "pair-manual-1234567890",
-			"mobileSecret": "secret-manual-1234567890",
-			"desktopName": "MacBook Pro",
-			"lanEndpoints": ["192.168.1.20:43117", "10.0.0.5:43117"],
-			"relayBaseUrl": "wss://relay.example",
-		])
-		let record = await pairing.value
-		#expect(record?.desktopIdentityKey == desktop.identityKey)
-		#expect(record?.pairingId == "pair-manual-1234567890")
-		#expect(record?.mobileSecret == "secret-manual-1234567890")
-		#expect(record?.lanEndpoints == ["192.168.1.20:43117", "10.0.0.5:43117"])
-		#expect(record?.relayBaseUrl == "wss://relay.example")
-		#expect(pairedEvent.sequence > 0)
-		#expect(record?.lastEventSequence == 0, "the manual approval stream belongs to a different journal than the new pairing identity")
-		if case .paired = phases.last {} else { Issue.record("expected paired") }
+		do {
+			#expect(code.count == 6 && code.allSatisfy(\.isNumber))
+			let acceptor = try #require(desktop.acceptors.first)
+			#expect(acceptor.snapshot.verificationCode == code)
+			#expect(desktop.opened.first == "ws://192.168.1.20:43117/v2/lan/pair")
+			let approval = approve
+			approve = nil
+			approval?.resume(returning: true)
+			#expect(await eventually { acceptor.state == .online })
+			let pairedEvent = try acceptor.emitEvent(.devicePaired, payload: [
+				"pairingId": "pair-manual-1234567890",
+				"mobileSecret": "secret-manual-1234567890",
+				"desktopName": "MacBook Pro",
+				"lanEndpoints": ["192.168.1.20:43117", "10.0.0.5:43117"],
+				"relayBaseUrl": "wss://relay.example",
+			])
+			let record = await pairing.value
+			#expect(record?.desktopIdentityKey == desktop.identityKey)
+			#expect(record?.pairingId == "pair-manual-1234567890")
+			#expect(record?.mobileSecret == "secret-manual-1234567890")
+			#expect(record?.lanEndpoints == ["192.168.1.20:43117", "10.0.0.5:43117"])
+			#expect(record?.relayBaseUrl == "wss://relay.example")
+			#expect(pairedEvent.sequence > 0)
+			#expect(record?.lastEventSequence == 0, "the manual approval stream belongs to a different journal than the new pairing identity")
+			if case .paired = phases.last {} else { Issue.record("expected paired") }
+		} catch {
+			cleanup()
+			#expect(await eventually { pairingFinished })
+			throw error
+		}
 	}
 
 	@Test func reportsRejectionAndInvalidEndpoints() async {
 		let desktop = FakeDesktop()
+		defer { closeDesktopFixture(desktop) }
 		desktop.onHello = { _ in .pending(approval: { false }) }
 		var phases: [PairingPhase] = []
 		var options = PairingFlowOptions(link: makeLink(), createTransport: desktop.createTransport) { phases.append($0) }

@@ -1,4 +1,5 @@
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, parse, posix } from "node:path";
 import type { SessionResourceRuntime } from "@vetta/coding-agent/resources";
@@ -12,19 +13,30 @@ const { createDesktopPromptRuntimeSources } = await import("./resource-runtime.j
 const directories: string[] = [];
 const pendingReloads = new Set<Promise<unknown>>();
 
+function trackReload<T>(loading: Promise<T>): Promise<T> {
+	pendingReloads.add(loading);
+	// Observe both outcomes without creating an unhandled rejecting finally-chain.
+	void loading.then(
+		() => pendingReloads.delete(loading),
+		() => pendingReloads.delete(loading),
+	);
+	return loading;
+}
+
 function temporaryDirectory(parent: string, prefix: string): string {
 	const directory = realpathSync(mkdtempSync(join(parent, prefix)));
 	directories.push(directory);
 	return directory;
 }
 
-afterEach(async () => {
+async function cleanupResources(): Promise<void> {
 	// A timed-out test still fails; finish only its owned I/O before deleting its fixture files.
 	await Promise.allSettled([...pendingReloads]);
 	vi.restoreAllMocks();
 	vi.unstubAllEnvs();
 	for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true });
-});
+}
+afterEach(cleanupResources);
 
 beforeAll(async () => {
 	// Establish the loopback SSH fixture before measuring resource discovery.
@@ -66,12 +78,14 @@ describe("远程项目会话的资源发现", () => {
 		};
 		const { remotePath, agentDir } = resourceFixture();
 
-		const { resourceSource } = await createDesktopPromptRuntimeSources({
-			cwd: `ssh://build-01${remotePath}`,
-			agentDir,
-			sessionOptions: { includeAgentSkills: true },
-			runtimeSkillPaths: [],
-		} as never);
+		const { resourceSource } = await trackReload(
+			createDesktopPromptRuntimeSources({
+				cwd: `ssh://build-01${remotePath}`,
+				agentDir,
+				sessionOptions: { includeAgentSkills: true },
+				runtimeSkillPaths: [],
+			} as never),
+		);
 
 		const agentsFiles = resourceSource.getAgentsFiles().agentsFiles;
 		expect(agentsFiles.map((file) => file.content)).toContain("REMOTE-PROJECT-RULES\n");
@@ -117,12 +131,14 @@ describe("已加载的远程资源再次刷新", () => {
 		report("hook:start", started);
 		// The composition view is read-only; this real Desktop factory returns its full session runtime.
 		source = (
-			await createDesktopPromptRuntimeSources({
-				cwd: `ssh://build-01${fixture.remotePath}`,
-				agentDir: fixture.agentDir,
-				sessionOptions: { includeAgentSkills: true },
-				runtimeSkillPaths: [],
-			} as never)
+			await trackReload(
+				createDesktopPromptRuntimeSources({
+					cwd: `ssh://build-01${fixture.remotePath}`,
+					agentDir: fixture.agentDir,
+					sessionOptions: { includeAgentSkills: true },
+					runtimeSkillPaths: [],
+				} as never),
+			)
 		).resourceSource as SessionResourceRuntime;
 		report("hook:end", started);
 		for (const query of Object.values(reads)) query.mockClear();
@@ -136,12 +152,10 @@ describe("已加载的远程资源再次刷新", () => {
 		);
 		const started = Date.now();
 		report("body:start", started);
-		const loading = source.reload();
-		pendingReloads.add(loading);
+		const loading = trackReload(source.reload());
 		try {
 			await loading;
 		} finally {
-			pendingReloads.delete(loading);
 			report("body:end", started);
 		}
 		const agents = source.getAgentsFiles().agentsFiles;
@@ -155,4 +169,39 @@ describe("已加载的远程资源再次刷新", () => {
 		expect(skill?.filePath).toBe(posix.join(fixture.remotePath, ".agents/skills/deploy/SKILL.md"));
 		expect(skill?.baseDir).toBe(posix.join(fixture.remotePath, ".agents/skills/deploy"));
 	});
+});
+
+it("cleanup waits for owned initial I/O before removing files or restoring env and preserves caller rejection", async () => {
+	const directory = temporaryDirectory(tmpdir(), "resource-cleanup-observation-");
+	const marker = join(directory, "owned.txt");
+	writeFileSync(marker, "actual owned data");
+	const previousHome = process.env.VETTA_HOME;
+	vi.stubEnv("VETTA_HOME", directory);
+	let release!: () => void;
+	const gate = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	const loading = trackReload(gate.then(() => readFile(marker, "utf8")));
+	let finished = false;
+	const cleanup = cleanupResources().then(() => {
+		finished = true;
+	});
+	try {
+		await Promise.resolve();
+		expect(finished).toBe(false);
+		expect(process.env.VETTA_HOME).toBe(directory);
+		expect(await readFile(marker, "utf8")).toBe("actual owned data");
+		release();
+		expect(await loading).toBe("actual owned data");
+		await cleanup;
+		expect(process.env.VETTA_HOME).toBe(previousHome);
+		await expect(readFile(marker, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+	} finally {
+		release();
+		await Promise.allSettled([loading, cleanup]);
+	}
+	const error = new Error("owned loader failed");
+	const failure = trackReload(Promise.reject(error));
+	await expect(failure).rejects.toBe(error);
+	await cleanupResources();
 });
