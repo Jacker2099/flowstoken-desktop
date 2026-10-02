@@ -12,6 +12,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import ts from "typescript";
+import { testSshPlatform, WINDOWS_DESKTOP_SSH_SUITES } from "../flowstoken/test-ssh-platform.mjs";
 import {
 	buildableTestDependencies,
 	changedFiles,
@@ -48,12 +49,15 @@ const WORKFLOW_CONTRACT_TESTS = new Map([
 /**
  * Keep narrowly reviewed source-to-test mappings here when Vitest's dependency
  * graph is unavailable or substantially broader than the component contract.
- * Every mapped test must directly render the source through a public host path.
+ * Every mapped test must exercise the source through a real host path.
  */
 const MODEL_SELECTOR_VIEW_TEST = "src/renderer/domains/conversation/components/ModelSelectorView.test.tsx";
 const TEAM_MODEL_SELECTOR_TEST = "src/renderer/domains/conversation/connectors/team/TeamModelSelector.test.tsx";
 const desktopTests = (...tests) => ({ workspaceKey: "desktop", tests });
+const sshFixtureTests = { ...desktopTests(...WINDOWS_DESKTOP_SSH_SUITES), sshPlatform: true };
 const EXPLICIT_SOURCE_TESTS = new Map([
+	["packages/ssh-transport/src/testing-process-runner.ts", sshFixtureTests],
+	["packages/ssh-transport/src/testing.ts", sshFixtureTests],
 	[
 		"apps/desktop/src/renderer/domains/conversation/connectors/team/TeamModelSelector.tsx",
 		desktopTests(TEAM_MODEL_SELECTOR_TEST),
@@ -205,6 +209,7 @@ export function createImpactTestPlan(
 	const qualityTests = qualityTestsForFiles(normalizedFiles, pathExists);
 	const runQuality = qualityTests.length > 0;
 	const selectionErrors = [];
+	let sshPlatform = false;
 
 	const grouped = new Map();
 	for (const impact of lockfileImpacts) {
@@ -251,6 +256,7 @@ export function createImpactTestPlan(
 			}
 			const target = targetForWorkspace(grouped, testWorkspace, selectionErrors);
 			target?.directTests.push(...mapped.tests);
+			if (target && mapped.sshPlatform) sshPlatform = true;
 			continue;
 		}
 		if (!CODE_FILE_PATTERN.test(relativeFile)) continue;
@@ -262,6 +268,7 @@ export function createImpactTestPlan(
 		lockfileImpacts,
 		qualityTests,
 		runQuality,
+		sshPlatform,
 		selectionErrors: [...new Set(selectionErrors)].sort(),
 		targets: [...grouped.values()]
 			.map((target) => ({
@@ -342,13 +349,16 @@ function printPlan(plan, selection) {
 	}
 }
 
-export function runImpactTestPlan(plan) {
+export function runImpactTestPlan(
+	plan,
+	{ run = runBun, target = runTargetedTests, ssh = testSshPlatform, platform = process.platform } = {},
+) {
 	if (plan.selectionErrors.length > 0) return 1;
 	if (plan.runQuality) {
-		const qualityCode = runBun([join(repoRoot, "scripts/quality/run-vitest.mjs"), "--run", ...plan.qualityTests]);
+		const qualityCode = run([join(repoRoot, "scripts/quality/run-vitest.mjs"), "--run", ...plan.qualityTests]);
 		if (qualityCode !== 0) return qualityCode;
 	}
-	if (plan.targets.length === 0) {
+	if (plan.targets.length === 0 && !plan.sshPlatform) {
 		ok("[test:impact] no affected testable code; skip");
 		return 0;
 	}
@@ -356,7 +366,7 @@ export function runImpactTestPlan(plan) {
 	const buildDependencies = buildableTestDependencies(plan.targets.map((target) => target.key));
 	if (buildDependencies.length > 0) {
 		ok(`[test:impact] building workspace dependencies: ${buildDependencies.join(", ")}`);
-		const buildCode = runBun([
+		const buildCode = run([
 			"x",
 			"turbo",
 			"run",
@@ -367,11 +377,11 @@ export function runImpactTestPlan(plan) {
 		if (buildCode !== 0) return buildCode;
 	}
 
-	for (const target of plan.targets) {
-		const code = runTargetedTests(target);
+	for (const selected of plan.targets) {
+		const code = target(selected);
 		if (code !== 0) return code;
 	}
-	return 0;
+	return plan.sshPlatform ? ssh({ platform }) : 0;
 }
 
 export function main(args = process.argv.slice(2)) {
