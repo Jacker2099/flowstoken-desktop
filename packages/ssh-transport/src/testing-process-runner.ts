@@ -2,23 +2,48 @@ import { type ChildProcess, type ChildProcessWithoutNullStreams, spawn } from "n
 import { createHash } from "node:crypto";
 import { createNodeSshProcessRunner } from "./node-process-runner.js";
 import type { SshProcessResult, SshProcessRunner } from "./process-runner.js";
+import {
+	acceptOwnedJobReady,
+	stopOwnedJob,
+	waitForOwnedJobEmpty,
+	waitForOwnedSupervisorLaunch,
+} from "./testing-owned-job.js";
+import type { NativeWindowsTestJob } from "./testing-windows-job.cjs";
+import { createOwnedWindowsTestJob } from "./testing-windows-job.js";
 import type { NativeWindowsProcessWitness } from "./testing-windows-witness.cjs";
 import { openOwnedWindowsProcessWitness, windowsWitnessModulePath } from "./testing-windows-witness.js";
 
+interface JobOwnership {
+	job: NativeWindowsTestJob;
+	assigned: boolean;
+	stopped: boolean;
+	closed?: boolean;
+}
+const windowsJobs = new WeakMap<ChildProcess, JobOwnership>();
+
 const WINDOWS_PARENT_WRAPPER = [
 	'const { spawn } = require("node:child_process");',
+	"const __name = (value) => value;",
 	`const native = process.env.VETTA_LOOPBACK_TRACE === "1" ? require(${JSON.stringify(windowsWitnessModulePath)}) : null;`,
-	"const report = (phase, witness) => { if (!process.send || !native) return; try { if (process.connected) process.send({ phase, ...(witness ? witness.read() : {}) }, () => {}); } catch (error) { if (process.connected) process.send({ phase, error: String(error) }, () => {}); } };",
-	'let self; try { self = native?.openNativeWindowsProcessWitness(process.pid); report("wrapper-start", self); } catch (error) { if (process.connected) process.send?.({phase: "wrapper-witness-error", error: String(error)}, () => {}); }',
-	'const child = spawn(process.argv[1], process.argv.slice(2), { stdio: ["pipe", "pipe", "pipe"] });',
-	'let inner; try { if (native && child.pid) inner = native.openNativeWindowsProcessWitness(child.pid); report("shell-start", inner); } catch (error) { if (process.connected) process.send?.({phase: "shell-witness-error", error: String(error)}, () => {}); }',
+	"const send = (data) => { try { if (process.send && process.connected) process.send(data, () => {}); } catch {} };",
+	"const report = (phase, witness) => { if (!native) return; try { send({ phase, ...(witness ? witness.read() : {}) }); } catch (error) { send({ phase, error: String(error) }); } };",
+	"const close = (witness) => { try { witness?.close(); } catch (error) { send({phase: 'witness-close-error', error: String(error)}); } };",
+	'let self; try { self = native?.openNativeWindowsProcessWitness(process.pid); report("wrapper-start", self); } catch (error) { send({phase: "wrapper-witness-error", error: String(error)}); }',
+	'const launch = () => { const child = spawn(process.argv[1], process.argv.slice(2), { stdio: ["pipe", "pipe", "pipe"] });',
+	'let inner; try { if (native && child.pid) inner = native.openNativeWindowsProcessWitness(child.pid); report("shell-start", inner); } catch (error) { send({phase: "shell-witness-error", error: String(error)}); }',
 	'child.on("exit", (code, signal) => { report("shell-exit", inner); });',
 	"process.stdin.pipe(child.stdin);",
 	"child.stdout.pipe(process.stdout);",
 	"child.stderr.pipe(process.stderr);",
 	'child.stdin.on("error", () => {});',
 	'child.on("error", () => { process.stderr.write("Loopback shell failed to start\\n"); process.exitCode = 1; });',
-	'child.on("close", (code) => { report("shell-close", inner); inner?.close(); self?.close(); process.exitCode = code ?? 1; });',
+	'child.on("close", (code) => { report("shell-close", inner); close(inner); close(self); process.exitCode = code ?? 1; });',
+	"};",
+	'if (process.env.VETTA_LOOPBACK_JOB === "1") { const identity = require(' +
+		JSON.stringify(windowsWitnessModulePath) +
+		").openNativeWindowsProcessWitness(process.pid); const birth = identity.read(); identity.close(); (" +
+		waitForOwnedSupervisorLaunch.toString() +
+		')(process, launch, () => process.exit(1)); send({type: "owned-supervisor-ready", pid: birth.pid, creationTicks: birth.creationTicks}); } else launch();',
 ].join("\n");
 
 /** Test-only remote host boundary: execute the real shell script, not a simulated command parser. */
@@ -72,6 +97,7 @@ export function createShellLoopbackRunner(options: {
 				let finishClosing: ((error?: Error) => void) | undefined;
 				let closed: Promise<void> | undefined;
 				let witness: NativeWindowsProcessWitness | undefined;
+				let ownership: JobOwnership | undefined;
 				let firstStdout = true;
 				let firstStderr = true;
 				const result = (exitCode: number | null): SshProcessResult => ({
@@ -87,6 +113,28 @@ export function createShellLoopbackRunner(options: {
 					invocation.signal?.removeEventListener("abort", onAbort);
 				};
 				const fail = (error: Error): void => {
+					if (ownership) ownership.stopped = true;
+					if (ownership && child && child.exitCode === null && child.signalCode === null) {
+						try {
+							if (ownership.assigned) ownership.job.terminate();
+							else child.kill();
+						} catch (cleanupError) {
+							trace("job-cleanup-error", { error: String(cleanupError) });
+							try {
+								ownership.job.close();
+								ownership.closed = true;
+							} catch (closeError) {
+								trace("job-close-error", { error: String(closeError) });
+							}
+						}
+					} else if (ownership && !child) {
+						try {
+							ownership.job.close();
+							ownership.closed = true;
+						} catch (closeError) {
+							trace("job-close-error", { error: String(closeError) });
+						}
+					}
 					finishClosing?.(error);
 					if (settled) return;
 					trace(stopped && child ? "kill-error" : "error");
@@ -96,6 +144,7 @@ export function createShellLoopbackRunner(options: {
 				const stop = (timeout: boolean): void => {
 					if (settled || stopped) return;
 					stopped = true;
+					if (ownership) ownership.stopped = true;
 					timedOut = timeout;
 					trace(timeout ? "timeout" : "abort");
 					if (!child) {
@@ -135,6 +184,9 @@ export function createShellLoopbackRunner(options: {
 						const needsParent =
 							process.platform === "win32" &&
 							(invocation.signal !== undefined || invocation.timeoutMs !== undefined);
+						const useJob =
+							needsParent && (invocation.env?.VETTA_LOOPBACK_JOB ?? options.baseEnv.VETTA_LOOPBACK_JOB) === "1";
+						if (useJob) ownership = { job: createOwnedWindowsTestJob(), assigned: false, stopped: false };
 						const spawned = spawn(
 							needsParent ? process.execPath : options.shellBinary,
 							needsParent
@@ -142,12 +194,49 @@ export function createShellLoopbackRunner(options: {
 								: [options.scriptPath, ...invocation.argv],
 							{
 								env: { ...options.baseEnv, ...invocation.env },
-								stdio: needsParent && traceEnabled ? ["pipe", "pipe", "pipe", "ipc"] : ["pipe", "pipe", "pipe"],
+								stdio:
+									needsParent && (traceEnabled || useJob)
+										? ["pipe", "pipe", "pipe", "ipc"]
+										: ["pipe", "pipe", "pipe"],
 							},
 						);
 						if (!spawned.stdin || !spawned.stdout || !spawned.stderr)
 							throw new Error("Loopback pipe contract unavailable");
 						child = spawned as ChildProcessWithoutNullStreams;
+						if (ownership) {
+							windowsJobs.set(child, ownership);
+							child.on("message", (message: unknown) => {
+								if (
+									!message ||
+									typeof message !== "object" ||
+									!("type" in message) ||
+									message.type !== "owned-supervisor-ready"
+								)
+									return;
+								try {
+									if (!ownership || !child || stopped || settled) return;
+									const peer = {
+										pid: child.pid,
+										alive: () => child?.exitCode === null && child?.signalCode === null,
+										killOwned: () => {
+											child?.kill();
+										},
+										launch: () => {
+											child?.send({ type: "start-owned-shell" }, (error) => {
+												if (error) fail(error);
+											});
+										},
+									};
+									if (acceptOwnedJobReady(ownership, peer, message))
+										trace("job-assigned", {
+											pid: child.pid,
+											activeProcesses: ownership.job.activeProcesses(),
+										});
+								} catch (error) {
+									fail(error instanceof Error ? error : new Error("Owned supervisor assignment failed"));
+								}
+							});
+						}
 						trace("spawn", { pid: child.pid, needsParent, commandKind, commandHash });
 						if (needsParent && traceEnabled && child.pid) {
 							try {
@@ -164,6 +253,15 @@ export function createShellLoopbackRunner(options: {
 								if (witness) trace("native-exit", witness.read());
 							} catch (error) {
 								trace("native-witness-error", { error: String(error) });
+							}
+							if (ownership && !ownership.closed) {
+								try {
+									witness?.close();
+									witness = undefined;
+									ownership.job.terminate();
+								} catch (error) {
+									fail(error instanceof Error ? error : new Error("Owned job exit cleanup failed"));
+								}
 							}
 						});
 						const gate = new Promise<void>((resolveClosed, rejectClosed) => {
@@ -193,17 +291,36 @@ export function createShellLoopbackRunner(options: {
 						});
 						child.on("error", fail);
 						child.once("close", (exitCode) => {
-							trace("close", { exitCode, stdoutBytes: stdout.reduce((size, chunk) => size + chunk.length, 0) });
-							try {
-								if (witness) trace("native-close", witness.read());
-							} catch (error) {
-								trace("native-witness-error", { error: String(error) });
-							}
-							witness?.close();
-							finishClosing?.();
-							if (settled) return;
-							cleanup();
-							resolve(result(exitCode));
+							void (async () => {
+								trace("close", {
+									exitCode,
+									stdoutBytes: stdout.reduce((size, chunk) => size + chunk.length, 0),
+								});
+								try {
+									if (witness) trace("native-close", witness.read());
+								} catch (error) {
+									trace("native-witness-error", { error: String(error) });
+								}
+								try {
+									witness?.close();
+								} catch (error) {
+									trace("native-witness-close-error", { error: String(error) });
+								}
+								if (ownership && !ownership.closed) {
+									try {
+										await waitForOwnedJobEmpty(ownership.job);
+										trace("job-empty", { activeProcesses: 0 });
+									} finally {
+										ownership.job.close();
+										if (child) windowsJobs.delete(child);
+									}
+								}
+								if (child) windowsJobs.delete(child);
+								finishClosing?.();
+								if (settled) return;
+								cleanup();
+								resolve(result(exitCode));
+							})().catch(fail);
 						});
 						child.stdin.on("error", () => {});
 						child.stdin.end(invocation.stdin);
@@ -216,6 +333,20 @@ export function createShellLoopbackRunner(options: {
 
 /** Git Bash does not supply sshd's POSIX session boundary. Clean only our live child tree. */
 export function terminateWindowsLoopbackTree(child: ChildProcess): void {
+	const owned = windowsJobs.get(child);
+	if (owned) {
+		stopOwnedJob(owned, {
+			pid: child.pid,
+			alive: () => child.exitCode === null && child.signalCode === null,
+			killOwned: () => {
+				child.kill();
+			},
+			launch: () => {
+				throw new Error("Stop never launches a child");
+			},
+		});
+		return;
+	}
 	if (child.pid === undefined || child.exitCode !== null || child.signalCode !== null) return;
 	const killer = spawn("taskkill.exe", ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore" });
 	// A missing taskkill is a fixture error, not a successful remote stop.

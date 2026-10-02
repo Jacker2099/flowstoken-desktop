@@ -197,16 +197,40 @@ describe("插件的长驻进程与远程项目", () => {
 			expect(nativePids.every((pid) => pid > 1)).toBe(true);
 		});
 
-		const witnesses =
-			process.platform === "win32" && process.env.VETTA_LOOPBACK_TRACE === "1"
-				? nativePids.map((pid) => openOwnedWindowsProcessWitness(pid))
-				: [];
+		const witnesses: ReturnType<typeof openOwnedWindowsProcessWitness>[] = [];
 		const report = (phase: string): void => {
-			for (const witness of witnesses) console.error(`[owned-tree] ${phase} ${JSON.stringify(witness.read())}`);
+			for (const witness of witnesses) {
+				try {
+					console.error(`[owned-tree] ${phase} ${JSON.stringify(witness.read())}`);
+				} catch (error) {
+					console.error(`[owned-tree] ${phase}-witness-error ${JSON.stringify({ error: String(error) })}`);
+				}
+			}
 		};
 		try {
+			if (process.platform === "win32" && process.env.VETTA_LOOPBACK_TRACE === "1") {
+				for (const pid of nativePids) {
+					try {
+						witnesses.push(openOwnedWindowsProcessWitness(pid));
+					} catch (error) {
+						console.error(`[owned-tree] acquire-error ${JSON.stringify({ pid, error: String(error) })}`);
+					}
+				}
+			}
 			report("before-stop");
-			await stopPluginCommandSpawn("demo", started.spawnId);
+			const stopping = stopPluginCommandSpawn("demo", started.spawnId);
+			void stopping.catch(() => {});
+			if (process.env.VETTA_LOOPBACK_JOB === "1" && witnesses.length > 0) {
+				try {
+					await vi.waitFor(() => {
+						for (const witness of witnesses) expect(witness.read().active).toBe(false);
+					});
+					report("terminated-before-release");
+				} finally {
+					for (const witness of witnesses.splice(0)) witness.close();
+				}
+			}
+			await stopping;
 			report("after-stop");
 			expect(getPluginCommandSpawnStatus("demo", started.spawnId).running).toBe(false);
 			await vi.waitFor(() => {
@@ -215,7 +239,13 @@ describe("插件的长驻进程与远程项目", () => {
 			});
 		} finally {
 			report("final");
-			for (const witness of witnesses) witness.close();
+			for (const witness of witnesses) {
+				try {
+					witness.close();
+				} catch (error) {
+					console.error(`[owned-tree] close-error ${JSON.stringify({ error: String(error) })}`);
+				}
+			}
 		}
 		const next = await spawnPluginCommand("demo", "sh", ["-c", "printf reconnected"], { cwd: project.uri });
 		await vi.waitFor(() => {

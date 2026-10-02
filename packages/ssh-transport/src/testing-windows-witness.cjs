@@ -110,10 +110,10 @@ exports.openNativeWindowsProcessWitness = function openNativeWindowsProcessWitne
 		return {
 			read() {
 				if (closed) throw new Error("Native witness handle is closed");
-				const current = readTimes(api, handle);
-				if (ticks(current.created) !== ticks(initial.created)) throw new Error("Native witness identity changed");
 				const wait = api.WaitForSingleObject(handle, 0);
 				if (wait !== 0 && wait !== 258) throw new Error(`Native witness wait failed: ${api.GetLastError()}`);
+				const current = readTimes(api, handle);
+				if (ticks(current.created) !== ticks(initial.created)) throw new Error("Native witness identity changed");
 				const code = [0];
 				if (!api.GetExitCodeProcess(handle, code))
 					throw new Error(`Native witness exit code failed: ${api.GetLastError()}`);
