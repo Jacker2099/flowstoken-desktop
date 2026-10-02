@@ -35,8 +35,38 @@ vi.mock("./plugin-catalog.js", () => ({
 const { getPluginCommandSpawnStatus, spawnPluginCommand, stopPluginCommandSpawn } = await import(
 	"./command-spawner.js"
 );
+const commandLauncher = await import("./command-launcher.js");
 
 const directories: string[] = [];
+
+function observeLocalLaunch() {
+	const launch = commandLauncher.spawnCrossPlatformCommand;
+	let child: ChildProcess | undefined;
+	let closed: Promise<number | null> | undefined;
+	const observer = vi.spyOn(commandLauncher, "spawnCrossPlatformCommand").mockImplementation((...args) => {
+		child = launch(...args);
+		closed = new Promise((resolve) => child?.once("close", resolve));
+		return child;
+	});
+	return {
+		get child() {
+			if (!child) throw new Error("Expected the real local launcher to create an owned child");
+			return child;
+		},
+		get closed() {
+			if (!closed) throw new Error("Expected the real local ChildProcess close barrier");
+			return closed;
+		},
+		async cleanup() {
+			try {
+				if (child?.exitCode === null && child.signalCode === null) child.kill();
+				if (closed) await closed;
+			} finally {
+				observer.mockRestore();
+			}
+		},
+	};
+}
 
 function createRemoteProject(): { dir: string; uri: string } {
 	const dir = realpathSync(mkdtempSync(join(tmpdir(), "vetta-remote-spawn-")));
@@ -259,14 +289,47 @@ describe("插件的长驻进程与远程项目", () => {
 	it("本地项目照旧，并且报得出真实进程号", async () => {
 		const dir = realpathSync(mkdtempSync(join(tmpdir(), "vetta-local-spawn-")));
 		directories.push(dir);
-		const started = await spawnPluginCommand("demo", process.execPath, ["-e", "process.stdout.write('local')"], {
-			cwd: dir,
-		});
+		const observed = observeLocalLaunch();
+		try {
+			const started = await spawnPluginCommand("demo", process.execPath, ["-e", "process.stdout.write('local')"], {
+				cwd: dir,
+			});
+			expect(started.pid).toBeGreaterThan(0);
+			expect(started.pid).toBe(observed.child.pid);
+			expect(await observed.closed).toBe(0);
+			expect(getPluginCommandSpawnStatus("demo", started.spawnId)).toMatchObject({
+				running: false,
+				exit: { exitCode: 0 },
+				recentOutput: "local",
+			});
+			expect(() => process.kill(started.pid, 0)).toThrow();
+		} finally {
+			await observed.cleanup();
+		}
+	});
 
-		expect(started.pid).toBeGreaterThan(0);
-		await vi.waitFor(
-			() => expect(getPluginCommandSpawnStatus("demo", started.spawnId).recentOutput).toContain("local"),
-			{ timeout: 15_000 },
-		);
+	it("本地 stdout 已出现仍可能活着：实际 close 后才可清理自己的 cwd", async () => {
+		const dir = realpathSync(mkdtempSync(join(tmpdir(), "vetta-local-close-gate-")));
+		directories.push(dir);
+		const gate = join(dir, "release-owned-child");
+		const program = `process.stdout.write('local');const timer=setInterval(()=>{if(require('node:fs').existsSync(${JSON.stringify(gate)}))clearInterval(timer)},10);`;
+		const observed = observeLocalLaunch();
+		try {
+			const started = await spawnPluginCommand("demo", process.execPath, ["-e", program], { cwd: dir });
+			await vi.waitFor(() => {
+				expect(getPluginCommandSpawnStatus("demo", started.spawnId).recentOutput).toContain("local");
+			});
+			// The old output-only predicate is satisfied while the real process still holds its cwd.
+			expect(observed.child.exitCode).toBeNull();
+			expect(() => process.kill(started.pid, 0)).not.toThrow();
+			writeFileSync(gate, "release");
+			expect(await observed.closed).toBe(0);
+			expect(() => process.kill(started.pid, 0)).toThrow();
+			rmSync(dir, { recursive: true });
+		} finally {
+			await observed.cleanup();
+		}
 	});
 });
+
+import type { ChildProcess } from "node:child_process";
