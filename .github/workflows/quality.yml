@@ -51,7 +51,9 @@ jobs:
   unit-tests:
     name: affected unit tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    # Windows installs and compiled CLI checks precede the full Desktop suite.
+    # Allow the whole job to finish; individual test deadlines and coverage stay unchanged.
+    timeout-minutes: ${{ matrix.os == 'windows-latest' && 60 || 45 }}
     strategy:
       fail-fast: true
       matrix:
