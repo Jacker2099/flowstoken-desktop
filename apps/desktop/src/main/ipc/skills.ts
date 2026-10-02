@@ -1,4 +1,3 @@
-import { execSync } from "node:child_process";
 import { cpSync, existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -9,6 +8,7 @@ import { ipcMain } from "electron";
 import { recordAbilityInstall } from "../abilities/ability-ledger.js";
 import { getBuiltinSkillPaths } from "../builtin-skills.js";
 import { pluginAgentContributionService } from "../plugins/plugin-catalog.js";
+import { extractSkillTarGz } from "../skills/skill-archive-extractor.js";
 import { parseFrontmatter, rewriteFrontmatterDescription } from "../skills/skill-frontmatter.js";
 import { installSkillFromMarketArchive, installSkillFromMarketSlug } from "../skills/skill-market-install.js";
 import {
@@ -168,7 +168,7 @@ export function registerSkillsIpc(): () => void {
 				const tmpFile = join(tmpBaseDir, `_import_${stamp}.tar.gz`);
 				try {
 					await writeFile(tmpFile, buffer);
-					execSync(`tar -xzf "${tmpFile}" -C "${extractDir}"`, { timeout: 30000 });
+					await extractSkillTarGz(tmpFile, extractDir);
 				} finally {
 					await rm(tmpFile, { force: true }).catch(() => {});
 				}

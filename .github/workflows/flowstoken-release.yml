@@ -82,6 +82,14 @@ jobs:
       - name: Verify updater account boundary and remote process lifecycle
         working-directory: apps/desktop
         run: bun ../../scripts/quality/run-vitest.mjs --run scripts/updater-ui-host-access.test.ts scripts/updater-auth-fixture.test.ts src/main/plugins/command-spawner.remote.test.ts
+      - name: Set up Go for IM gateway
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/im-gateway/go.mod
+          cache-dependency-path: apps/im-gateway/go.sum
+      - name: Verify IM gateway sidecar
+        working-directory: apps/im-gateway
+        run: go test ./...
 
   build:
     needs: validate-related

@@ -123,6 +123,10 @@ jobs:
           src/main/agent-runtime/resource-runtime.remote.test.ts
           --reporter=verbose
 
+      - name: Verify Windows installer archive reader
+        if: runner.os == 'Windows'
+        run: node --test apps/desktop/scripts/verify-windows-packages.node-test.mjs
+
       - name: Test affected workspaces
         if: ${{ !inputs.source_sha }}
         run: node scripts/flowstoken/test-pr-source.mjs "${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}"

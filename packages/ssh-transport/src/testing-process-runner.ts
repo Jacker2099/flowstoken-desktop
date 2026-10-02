@@ -1,7 +1,14 @@
 import { type ChildProcess, type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
+import { delimiter, dirname } from "node:path";
 import { createNodeSshProcessRunner } from "./node-process-runner.js";
 import type { SshProcessResult, SshProcessRunner } from "./process-runner.js";
+import {
+	buildListDirectoryCommand,
+	buildRealPathCommand,
+	buildStatCommand,
+	quoteShellArgument,
+} from "./remote-command.js";
 import {
 	acceptOwnedJobReady,
 	stopOwnedJob,
@@ -46,12 +53,53 @@ const WINDOWS_PARENT_WRAPPER = [
 		')(process, launch, () => process.exit(1)); send({type: "owned-supervisor-ready", pid: birth.pid, creationTicks: birth.creationTicks}); } else launch();',
 ].join("\n");
 
+function quotedPath(source: string): string | undefined {
+	if (!source.startsWith("'")) return undefined;
+	let path = "";
+	for (let index = 1; index < source.length; index++) {
+		if (source[index] !== "'") path += source[index];
+		else if (source.slice(index, index + 4) === "'\\''") {
+			path += "'";
+			index += 3;
+		} else return quoteShellArgument(path) === source.slice(0, index + 1) ? path : undefined;
+	}
+	return undefined;
+}
+
+/** Route only exact readonly scripts produced by the transport, never arbitrary commands mentioning stat. */
+function isReadonlyFileCommand(command: string): boolean {
+	if (command.startsWith("cat -- ")) {
+		const path = quotedPath(command.slice("cat -- ".length));
+		return path !== undefined && command === `cat -- ${quoteShellArgument(path)}`;
+	}
+	if (command.startsWith("[ -e ")) {
+		const path = quotedPath(command.slice("[ -e ".length));
+		if (path === undefined) return false;
+		return (
+			command === buildRealPathCommand(path) ||
+			(["gnu", "bsd"] as const).some((flavor) =>
+				[false, true].some((followSymlinks) => command === buildStatCommand(path, flavor, { followSymlinks })),
+			)
+		);
+	}
+	if (command.startsWith("cd ")) {
+		const path = quotedPath(command.slice("cd ".length));
+		return (
+			path !== undefined &&
+			(["gnu", "bsd"] as const).some((flavor) => command === buildListDirectoryCommand(path, flavor))
+		);
+	}
+	return false;
+}
+
 /** Test-only remote host boundary: execute the real shell script, not a simulated command parser. */
 export function createShellLoopbackRunner(options: {
 	readonly shellBinary: string;
 	readonly scriptPath: string;
 	readonly baseEnv: NodeJS.ProcessEnv;
 	readonly terminateTree: (child: ChildProcess) => void;
+	/** Explicit file-fixture opt-in; signals, deadlines, arbitrary commands and channels keep the SSH wrapper. */
+	readonly fileShellBinary?: string;
 }): SshProcessRunner {
 	const closing = new Set<Promise<void>>();
 	let nextRun = 0;
@@ -185,14 +233,43 @@ export function createShellLoopbackRunner(options: {
 							process.platform === "win32" &&
 							(invocation.signal !== undefined || invocation.timeoutMs !== undefined);
 						const useJob = needsParent;
+						const directFileCommand =
+							options.fileShellBinary !== undefined &&
+							invocation.signal === undefined &&
+							invocation.timeoutMs === undefined &&
+							isReadonlyFileCommand(command);
+						const childEnv: NodeJS.ProcessEnv = {
+							...options.baseEnv,
+							...invocation.env,
+							...(useJob ? { VETTA_LOOPBACK_JOB: "1" } : {}),
+						};
+						if (directFileCommand && process.platform === "win32") {
+							const keys = Object.keys(childEnv).filter((key) => key.toLowerCase() === "path");
+							const pathKey =
+								Object.keys(invocation.env ?? {}).find((key) => key.toLowerCase() === "path") ??
+								keys[0] ??
+								"PATH";
+							const path = childEnv[pathKey] ?? "";
+							for (const key of keys) if (key !== pathKey) delete childEnv[key];
+							childEnv[pathKey] = `${dirname(options.fileShellBinary!)}${delimiter}${path}`;
+						}
 						if (useJob) ownership = { job: createOwnedWindowsTestJob(), assigned: false, stopped: false };
 						const spawned = spawn(
-							needsParent ? process.execPath : options.shellBinary,
-							needsParent
-								? ["-e", WINDOWS_PARENT_WRAPPER, options.shellBinary, options.scriptPath, ...invocation.argv]
-								: [options.scriptPath, ...invocation.argv],
+							directFileCommand
+								? options.fileShellBinary!
+								: needsParent
+									? process.execPath
+									: options.shellBinary,
+							directFileCommand
+								? [
+										"-c",
+										`if [ -n "\${VETTA_LOOPBACK_COMMAND_DIRECTORY:-}" ]; then export PATH="$VETTA_LOOPBACK_COMMAND_DIRECTORY:$PATH"; fi\n${command}`,
+									]
+								: needsParent
+									? ["-e", WINDOWS_PARENT_WRAPPER, options.shellBinary, options.scriptPath, ...invocation.argv]
+									: [options.scriptPath, ...invocation.argv],
 							{
-								env: { ...options.baseEnv, ...invocation.env, ...(useJob ? { VETTA_LOOPBACK_JOB: "1" } : {}) },
+								env: childEnv,
 								stdio:
 									needsParent && (traceEnabled || useJob)
 										? ["pipe", "pipe", "pipe", "ipc"]
@@ -236,7 +313,13 @@ export function createShellLoopbackRunner(options: {
 								}
 							});
 						}
-						trace("spawn", { pid: child.pid, needsParent, commandKind, commandHash });
+						trace("spawn", {
+							pid: child.pid,
+							needsParent,
+							...(directFileCommand ? { directFileCommand: true } : {}),
+							commandKind,
+							commandHash,
+						});
 						if (needsParent && traceEnabled && child.pid) {
 							try {
 								witness = openOwnedWindowsProcessWitness(child.pid);

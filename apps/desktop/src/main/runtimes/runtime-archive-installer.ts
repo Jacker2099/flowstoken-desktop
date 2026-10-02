@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { cp, mkdir, mkdtemp, rename, rm, stat } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, win32 } from "node:path";
 
 export interface RuntimeArchiveInstallOptions {
 	archivePath: string;
@@ -15,10 +15,23 @@ export interface RuntimeDirectoryInstallOptions {
 	targetDirectory: string;
 }
 
+export function runtimeArchiveTarCommand(
+	platform: NodeJS.Platform = process.platform,
+	env: NodeJS.ProcessEnv = process.env,
+): string {
+	if (platform !== "win32") return "tar";
+	const systemRoot = env.SystemRoot || env.WINDIR;
+	if (!systemRoot || !win32.isAbsolute(systemRoot)) {
+		throw new Error("Windows system tar requires an absolute SystemRoot or WINDIR");
+	}
+	// Git Bash's GNU tar treats drive-letter archives as remote hosts and cannot read ZIP.
+	return win32.join(systemRoot, "System32", "tar.exe");
+}
+
 function extractArchive(archivePath: string, destination: string, archiveType: string): void {
 	// Windows 10+ 的 bsdtar 与 Unix tar 都支持项目使用的 tar.gz；Windows
 	// bsdtar 同时支持 Node 官方发布的 zip。
-	const result = spawnSync("tar", ["-xf", archivePath, "-C", destination], {
+	const result = spawnSync(runtimeArchiveTarCommand(), ["-xf", archivePath, "-C", destination], {
 		encoding: "utf-8",
 		timeout: 180_000,
 	});

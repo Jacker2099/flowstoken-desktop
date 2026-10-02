@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { WINDOWS_DESKTOP_SSH_SUITES } from "../flowstoken/test-ssh-platform.mjs";
 import { createQuickGuardPlan } from "./check-guards.mjs";
 import {
 	findDurablePackageBoundaryViolations,
@@ -32,7 +33,7 @@ import {
 } from "./lib.mjs";
 import { changedLockfileWorkspaceImpacts, changedLockfileWorkspaceKeys } from "./lockfile-impact.mjs";
 import { createChangedTestPlan, parseArgs } from "./test-changed.mjs";
-import { createImpactTestPlan, parseImpactArgs } from "./test-impact.mjs";
+import { createImpactTestPlan, parseImpactArgs, runImpactTestPlan } from "./test-impact.mjs";
 
 describe("changed file selection", () => {
 	it("combines committed, working tree, and untracked paths", () => {
@@ -514,6 +515,92 @@ describe("affected package selection", () => {
 		]);
 	});
 
+	it("maps the two reviewed SSH fixture helpers to real host consumers and strict native platform validation", () => {
+		const plan = createImpactTestPlan([
+			"packages/ssh-transport/src/testing-process-runner.ts",
+			"packages/ssh-transport/src/testing.ts",
+		]);
+		expect(plan.selectionErrors).toEqual([]);
+		expect(plan.sshPlatform).toBe(true);
+		expect(plan.targets).toMatchObject([
+			{
+				key: "desktop",
+				directTests: [...WINDOWS_DESKTOP_SSH_SUITES].sort(),
+				relatedSources: [],
+			},
+		]);
+		const unknown = createImpactTestPlan(["packages/ssh-transport/src/unmapped-source.ts"], () => true);
+		expect(unknown.selectionErrors).toEqual([
+			"ssh-transport has no targeted test entry point for packages/ssh-transport/src/unmapped-source.ts",
+		]);
+		expect(unknown.sshPlatform).toBe(false);
+	});
+
+	it.each(["linux", "darwin", "win32"])(
+		"executes the mapped consumers before strict SSH on %s and propagates failure",
+		(platform) => {
+			const plan = createImpactTestPlan(["packages/ssh-transport/src/testing.ts"]);
+			const events = [];
+			const code = runImpactTestPlan(plan, {
+				platform,
+				run: () => 0,
+				target: (selected) => {
+					events.push(["consumers", selected.directTests]);
+					return 0;
+				},
+				ssh: (options) => {
+					events.push(["strict", options.platform]);
+					return 17;
+				},
+			});
+			expect(code).toBe(17);
+			expect(events).toEqual([
+				["consumers", [...WINDOWS_DESKTOP_SSH_SUITES].sort()],
+				["strict", platform],
+			]);
+		},
+	);
+
+	it("refuses missing SSH host mappings and does not execute a partially selected plan", () => {
+		const plan = createImpactTestPlan(
+			["packages/ssh-transport/src/testing.ts"],
+			(file) => file !== "apps/desktop/src/main/agent-runtime/resource-runtime.remote.test.ts",
+		);
+		expect(plan.selectionErrors).toEqual([
+			"packages/ssh-transport/src/testing.ts has an invalid explicit test mapping",
+		]);
+		let called = false;
+		expect(
+			runImpactTestPlan(plan, {
+				run: () => {
+					called = true;
+					return 0;
+				},
+				ssh: () => {
+					called = true;
+					return 0;
+				},
+			}),
+		).toBe(1);
+		expect(called).toBe(false);
+	});
+
+	it("does not run strict SSH after a mapped host consumer fails", () => {
+		const plan = createImpactTestPlan(["packages/ssh-transport/src/testing-process-runner.ts"]);
+		let strictCalled = false;
+		expect(
+			runImpactTestPlan(plan, {
+				run: () => 0,
+				target: () => 23,
+				ssh: () => {
+					strictCalled = true;
+					return 0;
+				},
+			}),
+		).toBe(23);
+		expect(strictCalled).toBe(false);
+	});
+
 	it("keeps packages with test prerequisites on targeted tests", () => {
 		const plan = createImpactTestPlan(["packages/plugins/presets/vetta-ui-design/src/vetd/tool-gate.ts"]);
 		expect(plan.selectionErrors).toEqual([]);
@@ -612,6 +699,16 @@ describe("CI unit test coverage", () => {
 		expect(nativeTools).toContain("Get-Command rg -ErrorAction SilentlyContinue");
 		expect(nativeTools).toContain("rg --version");
 		expect(nativeTools).toContain("fd --version 2>/dev/null || fdfind --version");
+	});
+
+	it("executes native Windows installer archive tests before both PR and release source suites", () => {
+		const name = "- name: Verify Windows installer archive reader";
+		const step = workflow.split(name)[1]?.split("\n      - name:")[0];
+		expect(step).toBeDefined();
+		expect(step).toContain("if: runner.os == 'Windows'");
+		expect(step).toContain("node --test apps/desktop/scripts/verify-windows-packages.node-test.mjs");
+		expect(workflow.indexOf(name)).toBeLessThan(workflow.indexOf("- name: Test affected workspaces"));
+		expect(workflow.indexOf(name)).toBeLessThan(workflow.indexOf("- name: Test complete release client workspaces"));
 	});
 
 	it("cancels stale PR runs while preserving release validation, fails the matrix fast and uses the exact-lockfile cache", () => {

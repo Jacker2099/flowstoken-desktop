@@ -2,7 +2,6 @@
  * 从 Vetta 能力市场按 slug 下载并安装 skill/scene。
  * 市场下载可匿名；有登录 token 时附带 Authorization。
  */
-import { execSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -13,6 +12,7 @@ import { DEFAULT_SERVER_URL } from "../constants.js";
 import { readSettings } from "../ipc/settings.js";
 import { getAppLogger } from "../logger.js";
 import { verifySha256 } from "../utils/integrity.js";
+import { extractSkillTarGz } from "./skill-archive-extractor.js";
 import {
 	ensureDirWritable,
 	getSkillBaseDir,
@@ -144,7 +144,7 @@ export async function installSkillFromMarketArchive(
 	const tmpFile = join(tmpBaseDir, `_install_${name}_${Date.now()}.tar.gz`);
 	try {
 		await writeFile(tmpFile, buffer);
-		execSync(`tar -xzf "${tmpFile}" -C "${skillDir}"`, { timeout: 30000 });
+		await extractSkillTarGz(tmpFile, skillDir);
 	} finally {
 		try {
 			await rm(tmpFile, { force: true });

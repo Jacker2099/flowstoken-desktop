@@ -152,6 +152,24 @@ describe("Native SSH test tool prerequisites", () => {
 });
 
 describe("Desktop release workflow contracts", () => {
+	it("requires IM gateway tests to pass before creating the FlowsToken release tag", () => {
+		const outer = parse(
+			readFileSync(join(import.meta.dirname, "../../.github/workflows/flowstoken-release.yml"), "utf8"),
+		).jobs;
+		const steps = outer["validate-related"].steps;
+		const setup = steps.findIndex(
+			(step) => step.uses === "actions/setup-go@v5" && step.with?.["go-version-file"] === "apps/im-gateway/go.mod",
+		);
+		const test = steps.findIndex(
+			(step) => step["working-directory"] === "apps/im-gateway" && step.run === "go test ./...",
+		);
+		expect(setup).toBeGreaterThanOrEqual(0);
+		expect(test).toBeGreaterThan(setup);
+		const dependencies = Array.isArray(outer.build.needs) ? outer.build.needs : [outer.build.needs];
+		expect(dependencies).toContain("validate-related");
+		expect(outer.build.steps.some((step) => step.name === "Tag the release commit")).toBe(true);
+	});
+
 	it("saves successful dependency downloads before later build or verification failures", () => {
 		const steps = actionSteps("install-bun-dependencies");
 		const restore = steps.findIndex((step) => step.uses === "actions/cache/restore@v4");
