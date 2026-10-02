@@ -12,6 +12,8 @@ const mocks = vi.hoisted(() => ({
 	replaceConfig: vi.fn(),
 	fetchSelf: vi.fn(),
 	listTokens: vi.fn(),
+	revealTokenKey: vi.fn(),
+	authRevision: 0,
 }));
 
 vi.mock("electron", () => ({
@@ -59,7 +61,8 @@ vi.mock("./newapi-client.js", () => ({
 	findManagedToken: (tokens: Array<{ id: number; name: string }>, group: string) =>
 		tokens.find((t) => t.name.endsWith(group)),
 	listTokens: mocks.listTokens,
-	revealTokenKey: async (_s: unknown, id: number) => `sk-${id}`,
+	revealTokenKey: mocks.revealTokenKey,
+	getFlowstokenAuthRevision: () => mocks.authRevision,
 }));
 
 const { getAccountSnapshot, ensureGroupKeysAndProviders, getCatalogAndRefreshProviders } = await import(
@@ -163,6 +166,7 @@ beforeEach(async () => {
 	resetGroupCatalogCacheForTests();
 	mocks.listTokens.mockResolvedValue([]);
 	mocks.fetchSelf.mockResolvedValue({});
+	mocks.revealTokenKey.mockImplementation(async (_s: unknown, id: number) => `sk-${id}`);
 });
 
 afterEach(async () => {
@@ -177,6 +181,27 @@ afterEach(async () => {
 });
 
 describe("FlowsToken group model lists", () => {
+	it("does not wire an old account's revealed key after the login session changes", async () => {
+		respond();
+		mocks.config = { defaultModel: "flowstoken-smart/Bestoo-Auto", providers: Object.fromEntries([
+			"flowstoken-default", "flowstoken-smart", "flowstoken-official",
+		].map((id) => [id, wiredProvider(1_000, [])])) };
+		mocks.listTokens.mockResolvedValue([{ id: 1, name: "FlowsToken-Desktop-default" }]);
+		let finish!: (key: string) => void;
+		let started!: () => void;
+		const revealed = new Promise<string>((resolve) => { finish = resolve; });
+		const revealStarted = new Promise<void>((resolve) => { started = resolve; });
+		mocks.revealTokenKey.mockImplementationOnce(() => { started(); return revealed; });
+		const preparing = ensureGroupKeysAndProviders(["default"]);
+		await revealStarted;
+		mocks.authRevision++;
+		finish("sk-old-account");
+		const result = await preparing;
+		expect(result.ok).toBe(false);
+		expect(mocks.config.providers["flowstoken-default"].apiKey).toBe("sk-kept");
+		expect(mocks.replaceConfig).not.toHaveBeenCalled();
+	});
+
 	it("wires groups with catalog-ordered models, catalog display names and the smart default", async () => {
 		respond();
 		mocks.config = { providers: {}, defaultModel: "" };
@@ -289,6 +314,23 @@ describe("FlowsToken group model lists", () => {
 });
 
 describe("picker-driven catalog refresh", () => {
+	it("honors a deliberately empty group instead of retaining removed models or reviving fallback models", async () => {
+		const catalog = makeCatalog("pv-empty");
+		catalog.groups[1].vendors = [];
+		mocks.fetch.mockResolvedValue({ ok: true, json: async () => catalog });
+		mocks.config = { defaultModel: "flowstoken-smart/Bestoo-Auto", providers: {
+			"flowstoken-default": wiredProvider(1_000, [{ id: "removed" }]),
+			"flowstoken-smart": wiredProvider(1_000, [{ id: "Bestoo-Auto" }]),
+			"flowstoken-official": wiredProvider(1_000, [{ id: "openai/gpt-4o" }]),
+		} };
+		await getCatalogAndRefreshProviders();
+		expect(mocks.config.providers["flowstoken-default"].models).toEqual([]);
+		expect(mocks.config.providers["flowstoken-default"].apiKey).toBe("sk-kept");
+		mocks.listTokens.mockResolvedValue([{ id: 1, name: "FlowsToken-Desktop-default" }]);
+		expect((await ensureGroupKeysAndProviders(["default"])).ok).toBe(true);
+		expect(mocks.config.providers["flowstoken-default"].models).toEqual([]);
+	});
+
 	it("updates a fresh wired provider from new server data without touching account tokens or custom tuning", async () => {
 		const catalog = makeCatalog("pv-menu");
 		catalog.groups[1].vendors[0].models[0].vision = true;

@@ -16,6 +16,7 @@ const FETCH_TIMEOUT_MS = 6000;
 const CATALOG_URL = `${FLOWSTOKEN_SITE_URL}/brand/desktop-catalog.json`;
 
 let cached: { at: number; catalog: FlowstokenCatalog } | null = null;
+let catalogRequest: Promise<FlowstokenCatalog | null> | null = null;
 let diskPathOverride: string | null = null;
 
 function diskPath(): string {
@@ -66,8 +67,25 @@ function asGroup(value: unknown): FlowstokenCatalogGroup | null {
 	const providerId = asString(row.providerId);
 	const title = asString(row.title);
 	if (!id || !providerId || !title || !Array.isArray(row.vendors)) return null;
+	const group = FLOWSTOKEN_GROUPS.find((entry) => entry.id === id);
+	if (!group || providerId !== group.providerId) return null;
 	const vendors = row.vendors.map(asVendor);
 	if (vendors.some((v) => v === null)) return null;
+	const vendorIds = new Set<string>();
+	const modelIds = new Set<string>();
+	const uniqueVendors: FlowstokenCatalogVendor[] = [];
+	for (const vendor of vendors) {
+		if (!vendor || vendorIds.has(vendor.id)) return null;
+		vendorIds.add(vendor.id);
+		uniqueVendors.push({
+			...vendor,
+			models: vendor.models.filter((model) => {
+				if (modelIds.has(model.id)) return false;
+				modelIds.add(model.id);
+				return true;
+			}),
+		});
+	}
 	const highlight =
 		typeof row.highlight === "object" && row.highlight !== null
 			? (() => {
@@ -81,13 +99,13 @@ function asGroup(value: unknown): FlowstokenCatalogGroup | null {
 				})()
 			: null;
 	return {
-		id: id as FlowstokenCatalogGroup["id"],
+		id: group.id,
 		providerId,
 		title,
 		subtitle: typeof row.subtitle === "string" ? row.subtitle : "",
 		defaultModel: typeof row.defaultModel === "string" ? row.defaultModel : undefined,
 		highlight: highlight ?? undefined,
-		vendors: vendors as FlowstokenCatalogVendor[],
+		vendors: uniqueVendors,
 	};
 }
 
@@ -100,7 +118,7 @@ export function parseCatalog(data: unknown): FlowstokenCatalog | null {
 	if (groups.some((g) => g === null)) return null;
 	const typed = groups as FlowstokenCatalogGroup[];
 	if (!typed.every((g) => g.id === "smart" || g.id === "default" || g.id === "vip")) return null;
-	if (typed.length === 0) return null;
+	if (typed.length === 0 || new Set(typed.map((group) => group.id)).size !== typed.length) return null;
 	return {
 		schema: 1,
 		generated: typeof row.generated === "number" ? row.generated : 0,
@@ -144,21 +162,25 @@ async function writeDiskCatalog(catalog: FlowstokenCatalog): Promise<void> {
  * Server-delivered catalog: in-memory TTL → network → disk cache. Returns null when
  * everything fails; callers fall back to the static lists.
  */
-export async function fetchCatalog(now: number = Date.now()): Promise<FlowstokenCatalog | null> {
-	if (cached && now - cached.at < CATALOG_CACHE_MS) return cached.catalog;
-	const remote = await fetchCatalogRemote();
-	if (remote) {
-		cached = { at: now, catalog: remote };
-		try {
-			await writeDiskCatalog(remote);
-		} catch {
-			// Cache write failure is non-fatal — the catalog already arrived.
+export function fetchCatalog(now: number = Date.now()): Promise<FlowstokenCatalog | null> {
+	if (catalogRequest) return catalogRequest;
+	if (cached && now - cached.at < CATALOG_CACHE_MS) return Promise.resolve(cached.catalog);
+	catalogRequest = (async () => {
+		const remote = await fetchCatalogRemote();
+		if (remote) {
+			cached = { at: now, catalog: remote };
+			try {
+				await writeDiskCatalog(remote);
+			} catch {
+				// Cache write failure is non-fatal — the catalog already arrived.
+			}
+			return remote;
 		}
-		return remote;
-	}
-	const disk = await readDiskCatalog();
-	if (disk) cached = { at: now, catalog: disk };
-	return disk;
+		const disk = await readDiskCatalog();
+		if (disk) cached = { at: now, catalog: disk };
+		return disk;
+	})().finally(() => { catalogRequest = null; });
+	return catalogRequest;
 }
 
 /** Flattened model list of one group in server order (vendors order × models order). */

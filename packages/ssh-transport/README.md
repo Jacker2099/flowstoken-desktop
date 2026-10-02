@@ -61,10 +61,23 @@ base64（GNU 的 `-d` 与 BSD 的 `-D` 不兼容）。
 
 ## 测试
 
-命令引用、URI 往返和失败分类是本包的核心风险，各有定向测试：
+命令引用、URI 往返和失败分类是本包的核心风险，各有定向测试。使用仓库统一入口：
 
 ```bash
-node scripts/quality/run-vitest.mjs run packages/ssh-transport
+bun scripts/quality/run-vitest.mjs --run packages/ssh-transport
 ```
 
 `SshProcessRunner` 是可注入端口，因此以上全部可以在没有 SSH 服务器的情况下验证。
+
+POSIX 主机的真实 `/bin/sh`、进程组 TERM/KILL 与 PID 保护由 macOS/Linux 测试验证；
+本地 OpenSSH/ProxyCommand 进程组的取消和通道关闭由 `node-process-runner.test.ts` 验证。
+Windows 客户端用 Git Bash 表达远端 POSIX 命令，可取消操作由独立 Node 父进程保留
+原生 PID，再用 `taskkill /T` 回收自己的进程树。夹具必须等待真实管道关闭后再执行排队请求，
+并保留排队期间的取消、超时与终止错误。
+
+Desktop 的插件端口分配、停止及再次执行，以及远程资源发现共同验证这条跨包接线。
+在 `apps/desktop` 中运行以下命令；这些测试不使用真实 SSH 主机或用户状态目录：
+
+```bash
+bun ../../scripts/quality/run-vitest.mjs --run src/main/ssh/loopback-fixture.test.ts src/main/plugins/command-spawner.remote.test.ts src/main/agent-runtime/resource-runtime.remote.test.ts
+```

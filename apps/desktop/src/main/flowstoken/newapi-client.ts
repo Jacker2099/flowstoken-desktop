@@ -28,18 +28,34 @@ export class FlowstokenApiError extends Error {
  * never resolved after the popup reached the console.
  */
 let cachedAccessToken: string | null = null;
+let authRevision = 0;
+let refreshRequest: {
+	session: Session;
+	revision: number;
+	promise: Promise<{ accessToken: string; user: FlowstokenUserSnapshot }>;
+} | null = null;
 
 export function clearCachedAccessToken(): void {
 	cachedAccessToken = null;
+	authRevision++;
 }
 
 export function getCachedAccessToken(): string | null {
 	return cachedAccessToken;
 }
 
+export function getFlowstokenAuthRevision(): number {
+	return authRevision;
+}
+
 export function setCachedAccessToken(token: string | null | undefined): void {
 	const trimmed = typeof token === "string" ? token.trim() : "";
 	cachedAccessToken = trimmed || null;
+	authRevision++;
+}
+
+function assertCurrentAuth(revision: number): void {
+	if (revision !== authRevision) throw new FlowstokenApiError("会话已变更，请重新登录");
 }
 
 type RefreshPayload = {
@@ -56,8 +72,10 @@ function pickAccessToken(data: RefreshPayload | null | undefined): string | null
 }
 
 function mapUser(data: Record<string, unknown>): FlowstokenUserSnapshot {
+	const id = Number(data.id);
+	if (!Number.isSafeInteger(id) || id <= 0) throw new FlowstokenApiError("会话未返回有效的账户，请重新登录");
 	return {
-		id: Number(data.id),
+		id,
 		username: String(data.username ?? ""),
 		displayName: String(data.display_name || data.username || ""),
 		email: data.email ? String(data.email) : undefined,
@@ -102,7 +120,7 @@ async function sessionFetch(session: Session, url: string, init: RequestInit): P
 	} as RequestInit);
 }
 
-export async function refreshAuth(session: Session): Promise<{
+async function performRefresh(session: Session, revision: number): Promise<{
 	accessToken: string;
 	user: FlowstokenUserSnapshot;
 }> {
@@ -116,6 +134,7 @@ export async function refreshAuth(session: Session): Promise<{
 	});
 
 	const text = await response.text();
+	assertCurrentAuth(revision);
 	let json: ApiEnvelope<RefreshPayload> | null = null;
 	try {
 		json = text ? (JSON.parse(text) as ApiEnvelope<RefreshPayload>) : null;
@@ -134,15 +153,27 @@ export async function refreshAuth(session: Session): Promise<{
 		clearCachedAccessToken();
 		throw new FlowstokenApiError("刷新会话未返回 access_token", response.status);
 	}
-	setCachedAccessToken(accessToken);
-
+	let user: FlowstokenUserSnapshot;
 	if (data?.user && typeof data.user === "object") {
-		return { accessToken, user: mapUser(data.user) };
+		user = mapUser(data.user);
+	} else if (data && data.id !== undefined) {
+		user = mapUser(data);
+	} else {
+		user = await fetchSelfWithBearer(session, accessToken);
 	}
-	if (data && data.id !== undefined) {
-		return { accessToken, user: mapUser(data) };
-	}
-	return { accessToken, user: await fetchSelfWithBearer(session, accessToken) };
+	assertCurrentAuth(revision);
+	cachedAccessToken = accessToken;
+	return { accessToken, user };
+}
+
+export function refreshAuth(session: Session): Promise<{ accessToken: string; user: FlowstokenUserSnapshot }> {
+	if (refreshRequest?.session === session && refreshRequest.revision === authRevision) return refreshRequest.promise;
+	const revision = authRevision;
+	const promise = performRefresh(session, revision).finally(() => {
+		if (refreshRequest?.promise === promise) refreshRequest = null;
+	});
+	refreshRequest = { session, revision, promise };
+	return promise;
 }
 
 async function ensureAccessToken(session: Session): Promise<string> {
@@ -155,6 +186,7 @@ async function apiFetch<T>(
 	path: string,
 	init: RequestInit & { query?: Record<string, string | number | undefined> } = {},
 ): Promise<T> {
+	const revision = authRevision;
 	const url = new URL(path, FLOWSTOKEN_API_ORIGIN);
 	if (init.query) {
 		for (const [key, value] of Object.entries(init.query)) {
@@ -164,6 +196,7 @@ async function apiFetch<T>(
 	}
 
 	const send = async (accessToken: string): Promise<Response> => {
+		assertCurrentAuth(revision);
 		const headers = new Headers(init.headers);
 		if (init.body && !headers.has("Content-Type")) {
 			headers.set("Content-Type", "application/json");
@@ -179,13 +212,15 @@ async function apiFetch<T>(
 
 	let accessToken = await ensureAccessToken(session);
 	let response = await send(accessToken);
+	assertCurrentAuth(revision);
 	if (response.status === 401) {
-		clearCachedAccessToken();
+		cachedAccessToken = null;
 		accessToken = (await refreshAuth(session)).accessToken;
 		response = await send(accessToken);
 	}
 
 	const text = await response.text();
+	assertCurrentAuth(revision);
 	let json: ApiEnvelope<T> | null = null;
 	try {
 		json = text ? (JSON.parse(text) as ApiEnvelope<T>) : null;
@@ -201,7 +236,8 @@ async function apiFetch<T>(
 	return (json?.data ?? (json as unknown as T)) as T;
 }
 
-async function fetchSelfWithBearer(session: Session, accessToken: string): Promise<FlowstokenUserSnapshot> {
+async function fetchSelfWithBearer(session: Session, accessToken: string, revision = authRevision): Promise<FlowstokenUserSnapshot> {
+	assertCurrentAuth(revision);
 	const url = new URL("/api/user/self", FLOWSTOKEN_API_ORIGIN).toString();
 	const response = await sessionFetch(session, url, {
 		method: "GET",
@@ -211,6 +247,7 @@ async function fetchSelfWithBearer(session: Session, accessToken: string): Promi
 		},
 	});
 	const text = await response.text();
+	assertCurrentAuth(revision);
 	let json: ApiEnvelope<Record<string, unknown>> | null = null;
 	try {
 		json = text ? (JSON.parse(text) as ApiEnvelope<Record<string, unknown>>) : null;
@@ -224,13 +261,16 @@ async function fetchSelfWithBearer(session: Session, accessToken: string): Promi
 }
 
 export async function fetchSelf(session: Session): Promise<FlowstokenUserSnapshot> {
+	const revision = authRevision;
 	try {
 		return (await refreshAuth(session)).user;
 	} catch (refreshError) {
+		assertCurrentAuth(revision);
 		if (cachedAccessToken) {
 			try {
-				return await fetchSelfWithBearer(session, cachedAccessToken);
+				return await fetchSelfWithBearer(session, cachedAccessToken, revision);
 			} catch {
+				assertCurrentAuth(revision);
 				clearCachedAccessToken();
 			}
 		}
@@ -244,6 +284,7 @@ export async function loginWithPassword(
 	password: string,
 	turnstileToken: string,
 ): Promise<FlowstokenUserSnapshot> {
+	const revision = authRevision;
 	const url = new URL("/api/user/login", FLOWSTOKEN_API_ORIGIN);
 	url.searchParams.set("turnstile", turnstileToken);
 	const response = await sessionFetch(session, url.toString(), {
@@ -255,6 +296,7 @@ export async function loginWithPassword(
 		body: JSON.stringify({ username, password }),
 	});
 	const json = (await response.json()) as ApiEnvelope<RefreshPayload>;
+	assertCurrentAuth(revision);
 	if (!response.ok || json.success === false) {
 		throw new FlowstokenApiError(json.message || "登录失败", response.status);
 	}

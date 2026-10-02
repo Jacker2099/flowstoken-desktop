@@ -1,6 +1,12 @@
 name: quality
 
 on:
+  workflow_call:
+    inputs:
+      source_sha:
+        description: "Exact application source commit for complete release client validation"
+        required: true
+        type: string
   push:
     branches:
       - dev
@@ -8,7 +14,7 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ !inputs.source_sha }}
 
 jobs:
   check-and-test:
@@ -20,6 +26,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          ref: ${{ inputs.source_sha || github.sha }}
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
@@ -54,6 +61,22 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          ref: ${{ github.sha }}
+
+      - name: Preserve release quality controller before checking out application source
+        if: inputs.source_sha
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/release-quality-controller/scripts" "$RUNNER_TEMP/release-quality-controller/branding/flowstoken"
+          cp -R scripts/flowstoken scripts/quality "$RUNNER_TEMP/release-quality-controller/scripts/"
+          cp branding/flowstoken/release-source-policy.json "$RUNNER_TEMP/release-quality-controller/branding/flowstoken/"
+          echo "RELEASE_QUALITY_CONTROLLER=$RUNNER_TEMP/release-quality-controller" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@v7
+        if: inputs.source_sha
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.source_sha }}
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
@@ -95,7 +118,19 @@ jobs:
         run: bun ../../scripts/quality/run-vitest.mjs --run src/main/ssh/loopback-fixture.test.ts src/main/plugins/command-spawner.remote.test.ts src/main/agent-runtime/resource-runtime.remote.test.ts --reporter=verbose
 
       - name: Test affected workspaces
+        if: ${{ !inputs.source_sha }}
         run: bun run test:changed --base "${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}"
+
+      - name: Test complete release client workspaces and SSH transport
+        if: inputs.source_sha
+        env:
+          RELEASE_SOURCE_SHA: ${{ inputs.source_sha }}
+        shell: bash
+        run: |
+          UPSTREAM_TAG="$(tr -d '\r\n' < branding/flowstoken/UPSTREAM_SYNCED)"
+          [[ "$UPSTREAM_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Invalid upstream marker" >&2; exit 1; }
+          git fetch --no-tags https://github.com/openvetta/open-vetta.git "refs/tags/${UPSTREAM_TAG}:refs/tags/upstream/${UPSTREAM_TAG}"
+          node "$RELEASE_QUALITY_CONTROLLER/scripts/flowstoken/test-release-source.mjs" "upstream/${UPSTREAM_TAG}" "$RELEASE_SOURCE_SHA"
 
       - name: Upload Turbo run summaries
         if: always()

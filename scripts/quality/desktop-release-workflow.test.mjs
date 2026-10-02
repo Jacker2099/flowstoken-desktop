@@ -164,13 +164,13 @@ describe("Desktop release workflow contracts", () => {
 		expect(workflow).toContain("run: bun run test:quality");
 		expect(workflow).toContain("run: bun run verify:desktop:contracts");
 		expect(workflow).toContain("run: bun run test:desktop:packaging");
-		expect(workflow).toContain("needs: [prepare, quality]");
+		expect(jobs.build.needs).toEqual(["prepare", "quality", "source-quality"]);
 	});
 
 	it("verifies the public update feed after either publish target", () => {
 		expect(workflow.match(/node scripts\/verify-update-feed\.mjs/g)).toHaveLength(2);
-		expect(workflow.match(/needs: \[prepare, quality, build, verify\]/g)).toHaveLength(2);
 		for (const target of ["r2", "github"]) {
+			expect(jobs[`publish-${target}`].needs).toEqual(["prepare", "quality", "source-quality", "build", "verify"]);
 			const feed = jobs[`verify-feed-${target}`];
 			expect(feed.needs).toEqual(["prepare", `publish-${target}`]);
 			expect(feed.steps.some((step) => step.run?.includes("verify-update-feed.mjs"))).toBe(true);

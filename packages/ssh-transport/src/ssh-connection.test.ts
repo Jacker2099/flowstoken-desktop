@@ -194,7 +194,8 @@ describe("失败分类（ADR-0124 执行边界）", () => {
 		const error = await connection.exec("sleep 999", { timeoutMs: 30 }).catch((e: unknown) => e);
 
 		expect((error as SshOperationAbortedError).reason).toBe("timeout");
-		expect(calls.some((command) => command.includes("kill -TERM"))).toBe(true);
+		const token = calls[1].match(/vetta-exec-[0-9a-f]+/)?.[0] ?? "";
+		expect(calls[2]).toBe(buildKillCommand(token));
 	});
 
 	it("本地 ssh 被外部杀掉时不报成功：远端命令的结局不可知", async () => {

@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- FlowsToken backport: accept Anthropic-compatible thinking starts without a signature, retaining later signature deltas (upstream `6a325e8b4`).
+- FlowsToken backport: project image input to the selected model's declared capabilities without mutating stored history (upstream `8b1ed7b2e`).
+
 ### Added
 
 - `StreamOptions` 支持独立 `promptCacheKey`；OpenAI、Azure 与 Codex Responses 请求优先用它选择缓存分区，未提供时保持 `sessionId` 回退，连接/会话身份不变。

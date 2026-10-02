@@ -79,7 +79,8 @@ export function useFlowstokenPicker(
 
 	return useMemo(() => {
 		const providers = new Set(grouped.keys());
-		const groups = (catalog?.groups ?? []).filter((g) => providers.has(g.providerId));
+		const groups = (catalog?.groups ?? []).filter((g) => providers.has(g.providerId)
+			|| (g.id === "default" && providers.has("flowstoken-normal")));
 		if (groups.length === 0) {
 			return { enabled: false, tabs: [], initialTab: "all", vendorBarByTab: {}, highlight: null, groupBadge: null };
 		}
@@ -97,35 +98,37 @@ export function useFlowstokenPicker(
 		tabs.push({ id: "all", label: i18n.t("common:modelSelect.groupAll"), icon: "", providers: [] });
 
 		const selectedProvider = options.find((m) => m.key === selectedModel)?.provider;
-		const selectedGroup = groups.find((g) => g.providerId === selectedProvider);
-		const initialTab = selectedGroup?.id ?? "smart";
+		const selectedTab = tabs.find((tab) => selectedProvider && tab.providers.includes(selectedProvider));
+		const selectedGroup = groups.find((g) => g.id === selectedTab?.id);
+		const initialTab = selectedGroup?.id ?? (groups.some((g) => g.id === "smart") ? "smart" : groups[0].id);
 
 		const vendorBarByTab: Record<string, FlowstokenVendorChip[]> = {};
 		for (const group of groups) {
+			const groupModels = (tabs.find((tab) => tab.id === group.id)?.providers ?? [])
+				.flatMap((provider) => grouped.get(provider) ?? []);
 			vendorBarByTab[group.id] = group.vendors
 				.map((vendor) => ({
 					id: vendor.id,
 					name: vendor.name,
 					iconUrl: vendor.icon ? `${catalog?.iconBase ?? ""}${vendor.icon}` : undefined,
 					mono: vendor.mono,
-					count:
-						grouped.get(group.providerId)?.filter((m) => m.vendorId === vendor.id).length ?? vendor.models.length,
+					count: groupModels.filter((m) => m.vendorId === vendor.id).length,
 				}))
 				.filter((chip) => chip.count > 0);
 		}
 
 		const smart = groups.find((g) => g.id === "smart");
+		const smartModels = smart ? grouped.get(smart.providerId) ?? [] : [];
+		const recommendation = smartModels.find((model) => model.modelId === smart?.defaultModel)
+			?? smartModels.find((model) => smart?.vendors.some((vendor) => vendor.models.some((entry) =>
+				entry.id === model.modelId && !entry.image)));
 		const highlight: FlowstokenPickerHighlight | null = smart
 			? {
 					tabId: "smart",
 					title: smart.highlight?.title ?? i18n.t("common:modelSelect.smartHighlightTitle"),
 					badge: smart.highlight?.badge ?? i18n.t("common:modelSelect.smartHighlightBadge"),
 					description: smart.highlight?.description ?? i18n.t("common:modelSelect.smartHighlightDescription"),
-					modelKey: smart.defaultModel
-						? `${smart.providerId}/${smart.defaultModel}`
-						: smart.vendors[0]?.models[0]
-							? `${smart.providerId}/${smart.vendors[0].models[0].id}`
-							: undefined,
+					modelKey: recommendation?.key,
 				}
 			: null;
 

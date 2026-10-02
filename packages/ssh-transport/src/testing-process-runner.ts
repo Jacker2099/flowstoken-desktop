@@ -2,6 +2,17 @@ import { type ChildProcess, type ChildProcessWithoutNullStreams, spawn } from "n
 import { createNodeSshProcessRunner } from "./node-process-runner.js";
 import type { SshProcessResult, SshProcessRunner } from "./process-runner.js";
 
+const WINDOWS_PARENT_WRAPPER = [
+	'const { spawn } = require("node:child_process");',
+	'const child = spawn(process.argv[1], process.argv.slice(2), { stdio: ["pipe", "pipe", "pipe"] });',
+	"process.stdin.pipe(child.stdin);",
+	"child.stdout.pipe(process.stdout);",
+	"child.stderr.pipe(process.stderr);",
+	'child.stdin.on("error", () => {});',
+	'child.on("error", () => { process.stderr.write("Loopback shell failed to start\\n"); process.exitCode = 1; });',
+	'child.on("close", (code) => { process.exitCode = code ?? 1; });',
+].join("\n");
+
 /** Test-only remote host boundary: execute the real shell script, not a simulated command parser. */
 export function createShellLoopbackRunner(options: {
 	readonly shellBinary: string;
@@ -89,10 +100,22 @@ export function createShellLoopbackRunner(options: {
 					.then(() => {
 						if (settled) return;
 						trace("start");
-						child = spawn(options.shellBinary, [options.scriptPath, ...invocation.argv], {
-							env: { ...options.baseEnv, ...invocation.env },
-							stdio: ["pipe", "pipe", "pipe"],
-						});
+						// MSYS exec replaces its native process. A Node parent retains the
+						// taskkill /T root until the shell and all inherited pipes close.
+						// Ordinary discovery avoids this extra process for every stat/read.
+						const needsParent =
+							process.platform === "win32" &&
+							(invocation.signal !== undefined || invocation.timeoutMs !== undefined);
+						child = spawn(
+							needsParent ? process.execPath : options.shellBinary,
+							needsParent
+								? ["-e", WINDOWS_PARENT_WRAPPER, options.shellBinary, options.scriptPath, ...invocation.argv]
+								: [options.scriptPath, ...invocation.argv],
+							{
+								env: { ...options.baseEnv, ...invocation.env },
+								stdio: ["pipe", "pipe", "pipe"],
+							},
+						);
 						const gate = new Promise<void>((resolveClosed, rejectClosed) => {
 							finishClosing = (error) => (error ? rejectClosed(error) : resolveClosed());
 						});

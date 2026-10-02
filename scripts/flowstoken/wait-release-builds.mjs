@@ -5,6 +5,10 @@ import { parseArgs } from "node:util";
 
 export const RELEASE_BUILD_JOBS = [
 	"validate and test Desktop release",
+	"source quality / check + quality tests",
+	"source quality / affected unit tests (ubuntu-latest)",
+	"source quality / affected unit tests (macos-latest)",
+	"source quality / affected unit tests (windows-latest)",
 	"build linux",
 	"build windows",
 	"build macos-arm64",

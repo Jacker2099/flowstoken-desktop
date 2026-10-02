@@ -18,6 +18,7 @@ import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { assertTag, githubJson } from "./publish-release.mjs";
 import { checkpoint, digest } from "./release-artifacts.mjs";
+import { assertReleaseSourceEligible } from "./release-source-policy.mjs";
 import {
 	buildRecoveryPlan,
 	originalSubmissionFromLog,
@@ -162,6 +163,7 @@ async function planRecovery(output) {
 			process.env.RECOVERY_X64_SUBMISSION
 		)
 			throw new Error("Incomplete recovery inputs");
+		assertReleaseSourceEligible(controllerSha);
 		appendOutputs({
 			recovery: "false",
 			source_sha: controllerSha,
@@ -179,6 +181,7 @@ async function planRecovery(output) {
 		sourceAttempt < 1
 	)
 		throw new Error("Recovery requires an exact original run, attempt and source SHA");
+	assertReleaseSourceEligible(sourceSha);
 	const sourceRun = await githubJson(`repos/${repo}/actions/runs/${sourceRunId}`);
 	const { jobs } = await githubJson(
 		`repos/${repo}/actions/runs/${sourceRunId}/attempts/${sourceAttempt}/jobs?per_page=100`,

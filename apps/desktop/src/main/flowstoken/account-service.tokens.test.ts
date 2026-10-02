@@ -93,3 +93,15 @@ it.each([
 		1,
 	);
 });
+
+it("concurrent login and recovery requests create only one managed token per group", async () => {
+	state.tokens = [];
+	const results = await Promise.all([
+		ensureGroupKeysAndProviders(["default"]),
+		ensureGroupKeysAndProviders(["default"]),
+	]);
+	expect(results.every((result) => result.ok)).toBe(true);
+	expect(state.tokens).toHaveLength(1);
+	expect(state.requests.filter((request) => request.method === "POST" && request.path === "/api/token/")).toHaveLength(1);
+	expect(state.config.providers["flowstoken-default"].apiKey).toBe("sk-fixture-new-key");
+});

@@ -30,6 +30,7 @@ import {
 	fetchSelf,
 	fetchSelfLogs,
 	findManagedToken,
+	getFlowstokenAuthRevision,
 	listTokens,
 	revealTokenKey,
 } from "./newapi-client.js";
@@ -189,9 +190,11 @@ async function wireAllProviders(
 		models: readonly FlowstokenCatalogModel[];
 	}>,
 	smartDefaultModel: string,
+	revision: number,
 ): Promise<void> {
 	const service = getDesktopModelSettingsService();
 	const config = await service.getConfig();
+	assertAccountRevision(revision);
 	const nextProviders = { ...config.providers };
 	for (const item of items) {
 		const existing = nextProviders[item.providerId];
@@ -204,7 +207,7 @@ async function wireAllProviders(
 			api: "openai-completions",
 			baseUrl: FLOWSTOKEN_OPENAI_BASE_URL,
 			apiKey: item.apiKey,
-			models: item.models.length > 0 ? toProviderModels(item.models, existing?.models) : (existing?.models ?? []),
+			models: toProviderModels(item.models, existing?.models),
 			modelsSyncedAt: new Date().toISOString(),
 		};
 	}
@@ -233,7 +236,7 @@ async function syncCatalogProviders(catalog: FlowstokenCatalog): Promise<void> {
 		for (const group of FLOWSTOKEN_GROUPS) {
 			const existing = providers[group.providerId];
 			const models = catalogGroupModels(catalog, group.id);
-			if (!existing?.apiKey || models.length === 0) continue;
+				if (!existing?.apiKey || !catalog.groups.some((entry) => entry.id === group.id)) continue;
 			const next = toProviderModels(models, existing.models);
 			const syncedAt = Date.parse(existing.modelsSyncedAt ?? "");
 			if (
@@ -281,14 +284,31 @@ function triggerBackgroundModelRefreshIfStale(groups: FlowstokenGroupKeyState[])
 	})().catch((error) => console.warn("[FlowsToken] Background model list refresh failed:", error));
 }
 
-export async function ensureGroupKeysAndProviders(groupIds?: FlowstokenGroupId[]): Promise<FlowstokenEnsureKeysResult> {
+let keyEnsureQueue: Promise<void> = Promise.resolve();
+
+function assertAccountRevision(revision: number): void {
+	if (revision !== getFlowstokenAuthRevision()) throw new FlowstokenApiError("登录会话已变更，请重试");
+}
+
+export function ensureGroupKeysAndProviders(groupIds?: FlowstokenGroupId[]): Promise<FlowstokenEnsureKeysResult> {
+	const revision = getFlowstokenAuthRevision();
+	const task = keyEnsureQueue.then(() => ensureGroupKeys(groupIds, revision));
+	keyEnsureQueue = task.then(() => {}, () => {});
+	return task;
+}
+
+async function ensureGroupKeys(groupIds: FlowstokenGroupId[] | undefined, revision: number): Promise<FlowstokenEnsureKeysResult> {
 	const created: string[] = [];
 	const reused: string[] = [];
 	try {
+		assertAccountRevision(revision);
 		await fetchSelf(getFlowstokenSession());
+		assertAccountRevision(revision);
 		const targets = FLOWSTOKEN_GROUPS.filter((g) => !groupIds || groupIds.includes(g.id));
 		let tokens = await listTokens(getFlowstokenSession());
+		assertAccountRevision(revision);
 		const catalog = await getCatalog();
+		assertAccountRevision(revision);
 		const smartDefault = catalog.groups.find((g) => g.id === "smart")?.defaultModel ?? "Bestoo-Auto";
 		const wireBatch: Array<{
 			providerId: string;
@@ -301,26 +321,29 @@ export async function ensureGroupKeysAndProviders(groupIds?: FlowstokenGroupId[]
 			let managed = findManagedToken(tokens, group.id);
 			if (!managed) {
 				await createToken(getFlowstokenSession(), { name: group.tokenName, group: group.id });
+				assertAccountRevision(revision);
 				created.push(group.labelZh);
 				tokens = await listTokens(getFlowstokenSession());
+				assertAccountRevision(revision);
 				managed = findManagedToken(tokens, group.id);
 			} else {
 				reused.push(group.labelZh);
 			}
 			if (!managed) throw new FlowstokenApiError(`无法准备「${group.labelZh}」令牌`);
 			const key = await revealTokenKey(getFlowstokenSession(), managed.id);
+			assertAccountRevision(revision);
 			wireBatch.push({
 				providerId: group.providerId,
 				labelZh: group.labelZh,
 				apiKey: key,
-				models: catalogGroupModels(catalog, group.id).length
+				models: catalog.groups.some((entry) => entry.id === group.id)
 					? catalogGroupModels(catalog, group.id)
 					: fallbackGroupModels(group.id),
 			});
 		}
 
 		if (wireBatch.length > 0) {
-			await wireAllProviders(wireBatch, smartDefault);
+			await wireAllProviders(wireBatch, smartDefault, revision);
 		}
 
 		return { ok: true, created, reused, snapshot: await getAccountSnapshot() };

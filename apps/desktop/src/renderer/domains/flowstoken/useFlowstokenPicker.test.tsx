@@ -85,12 +85,33 @@ const grouped = new Map<string, ModelOption[]>([
 	["flowstoken-official", [options[4]]],
 ]);
 
-function setup(selectedModel: string | null, cat: unknown = catalog) {
+function setup(selectedModel: string | null, cat: unknown = catalog, available = options, providers = grouped) {
 	const store = createStore();
 	store.set(flowstokenCatalogAtom, cat as never);
 	const wrapper = ({ children }: { children: ReactNode }) => <Provider store={store}>{children}</Provider>;
-	return renderHook(() => useFlowstokenPicker(options, grouped, selectedModel), { wrapper });
+	return renderHook(() => useFlowstokenPicker(available, providers, selectedModel), { wrapper });
 }
+
+it("opens the first available billing group when no smart provider is configured", () => {
+	const defaults = options.filter((o) => o.provider === "flowstoken-default");
+	const { result } = setup(null, catalog, defaults, new Map([["flowstoken-default", defaults]]));
+	expect(result.current.initialTab).toBe("default");
+});
+
+it("recognizes the normal provider from earlier clients as the default billing group", () => {
+	const legacy = option("flowstoken-normal", "gpt-6-sol", "openai");
+	const { result } = setup(legacy.key, catalog, [legacy], new Map([[legacy.provider, [legacy]]]));
+	expect(result.current.enabled).toBe(true);
+	expect(result.current.initialTab).toBe("default");
+	expect(result.current.tabs[0].providers).toContain("flowstoken-normal");
+	expect(result.current.groupBadge?.text).toBe("普通组");
+});
+
+it("recommends only an available chat model when the catalog's preferred model was removed", () => {
+	const changed = { ...catalog, groups: catalog.groups.map((group) => group.id === "smart"
+		? { ...group, defaultModel: "removed-model" } : group) };
+	expect(setup(null, changed).result.current.highlight?.modelKey).toBe("flowstoken-smart/Bestoo-Auto");
+});
 
 it("builds tabs in catalog order plus an all tab", () => {
 	const { result } = setup(null);

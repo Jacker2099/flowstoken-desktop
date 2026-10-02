@@ -349,9 +349,17 @@ jobs:
           VETTA_TEST_REMOTE_SHELL: /bin/dash
         run: bun scripts/quality/run-vitest.mjs --run packages/ssh-transport/src/remote-command.test.ts packages/ssh-transport/src/remote-command-signals.test.ts
 
+  source-quality:
+    name: source quality
+    needs: prepare
+    if: needs.prepare.outputs.should-build == 'true'
+    uses: ./.github/workflows/quality.yml
+    with:
+      source_sha: ${{ needs.prepare.outputs.source-sha }}
+
   build:
     name: build ${{ matrix.platform }}
-    needs: [prepare, quality]
+    needs: [prepare, quality, source-quality]
     if: needs.prepare.outputs.should-build == 'true'
     runs-on: ${{ matrix.runner }}
     # FlowsToken: leave room around the bounded packaging step for setup, verification and diagnostics.
@@ -869,7 +877,7 @@ jobs:
   publish-r2:
     name: publish R2
     if: needs.prepare.outputs.recovery != 'true' && needs.prepare.outputs.should-build == 'true' && needs.prepare.outputs.should-publish == 'true' && needs.prepare.outputs.release_target == 'r2'
-    needs: [prepare, quality, build, verify]
+    needs: [prepare, quality, source-quality, build, verify]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: ${{ needs.prepare.outputs.channel == 'test' && 'desktop-test' || 'desktop-production' }}
@@ -933,7 +941,7 @@ jobs:
   publish-github:
     name: publish GitHub Release
     if: needs.prepare.outputs.recovery != 'true' && needs.prepare.outputs.should-build == 'true' && needs.prepare.outputs.should-publish == 'true' && needs.prepare.outputs.channel != 'test'
-    needs: [prepare, quality, build, verify]
+    needs: [prepare, quality, source-quality, build, verify]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: desktop-production

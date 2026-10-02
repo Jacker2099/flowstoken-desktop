@@ -5,7 +5,7 @@ import { getDefaultStore } from "jotai";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useModelOptions } from "../components/ModelSelect/useModelOptions";
 import { useModelCatalogSync } from "../hooks/useModelCatalogSync";
-import { revalidateFlowstokenCatalog } from "./flowstoken-catalog";
+import { catalogModelEntry, revalidateFlowstokenCatalog } from "./flowstoken-catalog";
 import { modelCatalog } from "./model-catalog";
 import { flowstokenCatalogAtom, localModelsConfigAtom, remoteProvidersAtom } from "./model-catalog-atoms";
 
@@ -58,6 +58,12 @@ beforeEach(() => {
 });
 
 afterEach(() => vi.useRealTimers());
+
+it("keeps catalog names and capabilities for the default provider from earlier clients", () => {
+	expect(catalogModelEntry(catalog(["gpt-6-sol"], "legacy"), "flowstoken-normal", "gpt-6-sol")).toMatchObject({
+		name: "Name gpt-6-sol", vendorId: "openai", vision: true,
+	});
+});
 
 it("loads catalog order, vendor metadata and vision while excluding image-generation models from chat", async () => {
 	const { result } = renderHook(() => useModelOptions());

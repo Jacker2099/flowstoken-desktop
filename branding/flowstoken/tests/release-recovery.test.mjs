@@ -160,6 +160,10 @@ test("failed macOS files are archived separately, preserving the bundle but excl
 
 test("all four verification jobs are mandatory even after quality and every build pass", () => {
 	const expected = [inner.jobs.quality.name];
+	const quality = workflow("quality");
+	expected.push(`${inner.jobs["source-quality"].name} / ${quality.jobs["check-and-test"].name}`);
+	for (const os of quality.jobs["unit-tests"].strategy.matrix.os)
+		expected.push(`${inner.jobs["source-quality"].name} / affected unit tests (${os})`);
 	for (const job of ["build", "verify"]) {
 		for (const { platform } of inner.jobs[job].strategy.matrix.include) expected.push(`${job} ${platform}`);
 	}

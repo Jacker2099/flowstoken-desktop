@@ -159,6 +159,34 @@ describe("desktop catalog fetch", () => {
 		expect(mocks.fetch).toHaveBeenCalledTimes(1);
 	});
 
+	it("shares a cold catalog request across simultaneous account and picker refreshes", async () => {
+		respond(catalogFixture);
+		const [account, picker] = await Promise.all([fetchCatalog(), fetchCatalog()]);
+		expect(account).toEqual(picker);
+		expect(mocks.fetch).toHaveBeenCalledTimes(1);
+	});
+
+	it("refuses catalogs that relabel another billing provider or repeat a group", () => {
+		const mislabeled = structuredClone(catalogFixture);
+		mislabeled.groups[1].providerId = "flowstoken-official";
+		expect(parseCatalog(mislabeled)).toBeNull();
+		const repeated = structuredClone(catalogFixture);
+		repeated.groups.push(repeated.groups[1]);
+		expect(parseCatalog(repeated)).toBeNull();
+	});
+
+	it("keeps the first model occurrence in server order within each billing group", () => {
+		const repeated = structuredClone(catalogFixture);
+		repeated.groups[1].vendors[0].models.push(repeated.groups[1].vendors[0].models[0]);
+		repeated.groups[1].vendors[1].models.unshift(repeated.groups[1].vendors[0].models[0]);
+		const catalog = parseCatalog(repeated)!;
+		expect(catalogGroupModels(catalog, "default").map((m) => m.id)).toEqual([
+			"claude-opus-5-5", "claude-sonnet-5-5", "gpt-6-sol",
+		]);
+		expect(catalog.groups[1].vendors[1].models.map((m) => m.id)).toEqual(["gpt-6-sol"]);
+		expect(catalogGroupModels(catalog, "vip")).toHaveLength(1);
+	});
+
 	it("falls back to the disk cache when the schema is invalid", async () => {
 		respond(catalogFixture);
 		await fetchCatalog();

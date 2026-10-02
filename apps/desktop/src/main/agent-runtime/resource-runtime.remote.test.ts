@@ -1,13 +1,25 @@
-import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, posix } from "node:path";
+import { join, parse, posix } from "node:path";
 import { createLoopbackSshConnection, loopbackRemotePath } from "@vetta/ssh-transport/testing";
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 const connection = createLoopbackSshConnection();
 vi.mock("../ssh/ssh-runtime.js", () => ({ getSshConnection: () => connection }));
 
 const { createDesktopPromptRuntimeSources } = await import("./resource-runtime.js");
+const directories: string[] = [];
+
+function temporaryDirectory(parent: string, prefix: string): string {
+	const directory = realpathSync(mkdtempSync(join(parent, prefix)));
+	directories.push(directory);
+	return directory;
+}
+
+afterEach(() => {
+	vi.unstubAllEnvs();
+	for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true });
+});
 
 beforeAll(async () => {
 	// Establish the loopback SSH fixture before measuring resource discovery.
@@ -16,7 +28,12 @@ beforeAll(async () => {
 
 describe("远程项目会话的资源发现", () => {
 	it("读到远端项目自己的 AGENTS.md 与项目技能，不读本机的", async () => {
-		const remoteRoot = realpathSync(mkdtempSync(join(tmpdir(), "vetta-remote-project-")));
+		const testHome = temporaryDirectory(tmpdir(), "vetta-resource-home-");
+		vi.stubEnv("VETTA_HOME", testHome);
+		vi.stubEnv(process.platform === "win32" ? "USERPROFILE" : "HOME", testHome);
+		// Remote ancestor discovery must not traverse the developer's Windows profile.
+		const fixtureParent = process.platform === "win32" ? parse(tmpdir()).root : tmpdir();
+		const remoteRoot = temporaryDirectory(fixtureParent, "vetta-remote-project-");
 		const remotePath = loopbackRemotePath(remoteRoot);
 		mkdirSync(join(remoteRoot, ".agents/skills/deploy"), { recursive: true });
 		writeFileSync(join(remoteRoot, "AGENTS.md"), "REMOTE-PROJECT-RULES\n");
@@ -24,7 +41,7 @@ describe("远程项目会话的资源发现", () => {
 			join(remoteRoot, ".agents/skills/deploy/SKILL.md"),
 			"---\nname: deploy\ndescription: Deploy the remote service.\n---\n\nRun the deploy script.\n",
 		);
-		const agentDir = mkdtempSync(join(tmpdir(), "vetta-agent-dir-"));
+		const agentDir = temporaryDirectory(tmpdir(), "vetta-agent-dir-");
 
 		const { resourceSource } = await createDesktopPromptRuntimeSources({
 			cwd: `ssh://build-01${remotePath}`,
@@ -41,6 +58,7 @@ describe("远程项目会话的资源发现", () => {
 			true,
 		);
 		const deploy = resourceSource.getSkills().skills.find((skill) => skill.name === "deploy");
+		expect(resourceSource.getSkills().skills.map((skill) => skill.name)).toEqual(["deploy"]);
 		// 模型会把这条路径直接交给跑在远端的 bash：必须是那台机器上的绝对路径，不是 URI。
 		expect(deploy?.baseDir).toBe(posix.join(remotePath, ".agents/skills/deploy"));
 		expect(deploy?.filePath).toBe(posix.join(remotePath, ".agents/skills/deploy/SKILL.md"));

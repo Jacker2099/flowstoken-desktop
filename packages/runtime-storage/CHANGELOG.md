@@ -4,6 +4,10 @@ All notable changes to `@vetta/runtime-storage` are documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- FlowsToken backport: persist structured provider response-validation failures while rejecting unknown diagnostic fields (upstream `fd4b5775a`).
+
 ### Breaking Changes
 
 - **协议与 Node 实现分离**：`@vetta/runtime-storage` 只保留 Conversation 持久化端口、错误模型和 Schema；`FileConversationRepository`、`InMemoryConversationRepository`、文件锁、会话目录和 Legacy 文件迁移等具体实现迁至 `@vetta/runtime-node/conversation`。

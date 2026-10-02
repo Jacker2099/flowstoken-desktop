@@ -1,7 +1,7 @@
 import type { Session } from "electron";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FLOWSTOKEN_API_ORIGIN, FLOWSTOKEN_GROUPS } from "./constants.js";
-import { clearCachedAccessToken, findManagedToken, listTokens, refreshAuth } from "./newapi-client.js";
+import { clearCachedAccessToken, fetchSelf, findManagedToken, getCachedAccessToken, listTokens, refreshAuth, setCachedAccessToken } from "./newapi-client.js";
 
 vi.mock("electron", () => ({
 	net: {
@@ -14,6 +14,72 @@ vi.mock("electron", () => ({
 beforeEach(() => clearCachedAccessToken());
 
 describe("FlowsToken cookie scope", () => {
+	it("shares concurrent refreshes so rotated refresh cookies produce one current access token", async () => {
+		const fetch = vi.fn(async () => Response.json({
+			success: true, data: { access_token: "fixture-access", user: { id: 7, username: "fixture" } },
+		}));
+		const session = { cookies: { get: async () => [] }, fetch } as unknown as Session;
+		const results = await Promise.all([refreshAuth(session), refreshAuth(session)]);
+		expect(results.map((r) => r.accessToken)).toEqual(["fixture-access", "fixture-access"]);
+		expect(fetch).toHaveBeenCalledTimes(1);
+	});
+
+	it.each([false, true])("does not revive the previous account when a delayed refresh completes after logout or a new login: %s", async (newLogin) => {
+		let finish!: (response: Response) => void;
+		const pending = new Promise<Response>((resolve) => { finish = resolve; });
+		const session = { cookies: { get: async () => [] }, fetch: () => pending } as unknown as Session;
+		const old = refreshAuth(session).catch((error: unknown) => error);
+		clearCachedAccessToken();
+		if (newLogin) setCachedAccessToken("fixture-new-account");
+		finish(Response.json({ success: true, data: { access_token: "fixture-old-account", user: { id: 7 } } }));
+		expect(await old).toBeInstanceOf(Error);
+		expect(getCachedAccessToken()).toBe(newLogin ? "fixture-new-account" : null);
+	});
+
+	it("refuses a late account response after logout without starting another authenticated request", async () => {
+		let finish!: (response: Response) => void;
+		let started!: () => void;
+		const requestStarted = new Promise<void>((resolve) => { started = resolve; });
+		const response = new Promise<Response>((resolve) => { finish = resolve; });
+		const fetch = vi.fn(() => { started(); return response; });
+		const session = { cookies: { get: async () => [] }, fetch } as unknown as Session;
+		setCachedAccessToken("fixture-old-account");
+		const listing = listTokens(session).catch((error: unknown) => error);
+		await requestStarted;
+		clearCachedAccessToken();
+		finish(Response.json({ success: true, data: { items: [{ id: 1, name: "old-account-token" }] } }));
+		expect(await listing).toBeInstanceOf(Error);
+		expect(fetch).toHaveBeenCalledTimes(1);
+		expect(getCachedAccessToken()).toBeNull();
+	});
+
+	it("does not clear a new login or restore the old user when an offline bearer fallback finishes late", async () => {
+		let finish!: (response: Response) => void;
+		let started!: () => void;
+		const fallbackStarted = new Promise<void>((resolve) => { started = resolve; });
+		const response = new Promise<Response>((resolve) => { finish = resolve; });
+		const session = { cookies: { get: async () => [] }, fetch: (url: string) => {
+			if (url.endsWith("/auth/refresh")) return Promise.reject(new Error("offline"));
+			started();
+			return response;
+		} } as unknown as Session;
+		setCachedAccessToken("fixture-old-account");
+		const probe = fetchSelf(session).catch((error: unknown) => error);
+		await fallbackStarted;
+		setCachedAccessToken("fixture-new-account");
+		finish(Response.json({ success: true, data: { id: 7, username: "old-account" } }));
+		expect(await probe).toBeInstanceOf(Error);
+		expect(getCachedAccessToken()).toBe("fixture-new-account");
+	});
+
+	it("rejects a successful refresh envelope without a valid account identity", async () => {
+		const session = { cookies: { get: async () => [] }, fetch: async () => Response.json({
+			success: true, data: { access_token: "fixture-access", user: { username: "fixture" } },
+		}) } as unknown as Session;
+		await expect(refreshAuth(session)).rejects.toThrow();
+		expect(getCachedAccessToken()).toBeNull();
+	});
+
 	it("refreshes with the matching refresh cookie but does not send it or OAuth cookies to token endpoints", async () => {
 		const refreshUrl = `${FLOWSTOKEN_API_ORIGIN}/api/user/auth/refresh`;
 		const requests: Array<{ url: string; headers: Headers }> = [];
