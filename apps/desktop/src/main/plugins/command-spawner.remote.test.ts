@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
 	createLoopbackSshConnection,
+	createLoopbackTestScope,
 	loopbackRemotePath,
 	openOwnedWindowsProcessWitness,
 } from "@vetta/ssh-transport/testing";
@@ -38,6 +39,30 @@ const { getPluginCommandSpawnStatus, spawnPluginCommand, stopPluginCommandSpawn 
 const commandLauncher = await import("./command-launcher.js");
 
 const directories: string[] = [];
+const scopes: ReturnType<typeof createCommandScope>[] = [];
+const restoreConnections: (() => Promise<void>)[] = [];
+
+function createCommandScope() {
+	const scope = createLoopbackTestScope();
+	scope.onClosing(() => connection.abortOwnedOperations());
+	return Object.assign(scope, {
+		spawn: (...args: Parameters<typeof spawnPluginCommand>) =>
+			scope.start(
+				() => spawnPluginCommand(...args),
+				(result) => stopPluginCommandSpawn(args[0], result.spawnId),
+			),
+		waitFor: (check: () => void, options?: Parameters<typeof vi.waitFor>[1]) =>
+			scope.until(check, (predicate) => vi.waitFor(predicate, options)),
+	});
+}
+
+function ownedIt(name: string, body: (scope: ReturnType<typeof createCommandScope>) => Promise<void>) {
+	it(name, () => {
+		const scope = createCommandScope();
+		scopes.push(scope);
+		return scope.track(body(scope));
+	});
+}
 
 function observeLocalLaunch() {
 	const launch = commandLauncher.spawnCrossPlatformCommand;
@@ -74,21 +99,27 @@ function createRemoteProject(): { dir: string; uri: string } {
 	return { dir, uri: `ssh://build-01${loopbackRemotePath(dir)}` };
 }
 
-afterEach(() => {
+afterEach(async () => {
+	const results = await Promise.allSettled(
+		scopes.splice(0).map((scope) => scope.close(() => connection.waitForIdle())),
+	);
+	results.push(...(await Promise.allSettled(restoreConnections.splice(0).map((restore) => restore()))));
+	const failed = results.find((result) => result.status === "rejected");
+	if (failed?.status === "rejected") throw failed.reason;
 	for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true });
 });
 
 describe("插件的长驻进程与远程项目", () => {
-	it("npm install 这类长跑命令在项目所在的机器上执行——本机跑它看不到任何项目文件", async () => {
+	ownedIt("npm install 这类长跑命令在项目所在的机器上执行——本机跑它看不到任何项目文件", async (scope) => {
 		// 回归：守卫原先拒绝一切带远程 cwd 的 spawn，设计稿的依赖因此装不上。
 		const project = createRemoteProject();
 		writeFileSync(join(project.dir, "package.json"), '{"name":"demo"}');
 
-		const started = await spawnPluginCommand("demo", "sh", ["-c", "cat package.json; echo done"], {
+		const started = await scope.spawn("demo", "sh", ["-c", "cat package.json; echo done"], {
 			cwd: project.uri,
 		});
 
-		await vi.waitFor(
+		await scope.waitFor(
 			() => {
 				const status = getPluginCommandSpawnStatus("demo", started.spawnId);
 				expect(status.running).toBe(false);
@@ -101,7 +132,7 @@ describe("插件的长驻进程与远程项目", () => {
 		);
 	});
 
-	it("要端口的进程：端口在远端分配，再转发回本机——插件拿到的始终是本机可连的那个", async () => {
+	ownedIt("要端口的进程：端口在远端分配，再转发回本机——插件拿到的始终是本机可连的那个", async (scope) => {
 		// 界面只能连本机端口，而服务器必须跑在项目所在的机器上。宿主把这两件事接起来，
 		// 插件不必知道自己的进程在哪。
 		const project = createRemoteProject();
@@ -115,6 +146,20 @@ describe("插件的长驻进程与远程项目", () => {
 		let releaseCancel = (): void => {};
 		const cancelAllowed = new Promise<void>((resolve) => {
 			releaseCancel = resolve;
+		});
+		scope.onClosing(() => releaseCancel());
+		const originalForward = connection.forwardPort;
+		const originalCancel = connection.cancelPortForward;
+		restoreConnections.push(async () => {
+			for (const listener of listeners.values()) {
+				if (listener.listening)
+					await new Promise<void>((resolve, reject) =>
+						listener.close((error) => (error ? reject(error) : resolve())),
+					);
+			}
+			listeners.clear();
+			connection.forwardPort = originalForward;
+			connection.cancelPortForward = originalCancel;
 		});
 		connection.forwardPort = async (localPort: number, remotePort: number) => {
 			const listener = createServer();
@@ -134,7 +179,7 @@ describe("插件的长驻进程与远程项目", () => {
 			cancelled.push({ localPort, remotePort });
 		};
 
-		const started = await spawnPluginCommand("demo", "sh", ["-c", "echo port=$MY_PORT; sleep 30"], {
+		const started = await scope.spawn("demo", "sh", ["-c", "echo port=$MY_PORT; sleep 30"], {
 			cwd: project.uri,
 			allocatePort: true,
 			env: { MY_PORT: "{{PORT}}" },
@@ -145,7 +190,7 @@ describe("插件的长驻进程与远程项目", () => {
 		expect(forwards[0].localPort).toBe(started.port);
 		// 进程拿到的是远端那个端口，与插件看到的本机端口不是同一个。
 		expect(forwards[0].remotePort).not.toBe(started.port);
-		await vi.waitFor(
+		await scope.waitFor(
 			() =>
 				expect(getPluginCommandSpawnStatus("demo", started.spawnId).recentOutput).toContain(
 					`port=${forwards[0].remotePort}`,
@@ -178,12 +223,12 @@ describe("插件的长驻进程与远程项目", () => {
 			await new Promise<void>((resolve) => reused.close(() => resolve()));
 		}
 		// The same SSH connection can allocate, forward and stop a new plugin server.
-		const next = await spawnPluginCommand("demo", "sh", ["-c", "echo next=$MY_PORT; sleep 30"], {
+		const next = await scope.spawn("demo", "sh", ["-c", "echo next=$MY_PORT; sleep 30"], {
 			cwd: project.uri,
 			allocatePort: true,
 			env: { MY_PORT: "{{PORT}}" },
 		});
-		await vi.waitFor(() => {
+		await scope.waitFor(() => {
 			expect(getPluginCommandSpawnStatus("demo", next.spawnId).recentOutput).toContain(
 				`next=${forwards[1].remotePort}`,
 			);
@@ -192,10 +237,10 @@ describe("插件的长驻进程与远程项目", () => {
 		expect(cancelled).toEqual(forwards);
 	});
 
-	it("停止远端进程后状态转为已结束", async () => {
+	ownedIt("停止远端进程后状态转为已结束", async (scope) => {
 		const project = createRemoteProject();
-		const started = await spawnPluginCommand("demo", "sh", ["-c", "echo up; sleep 60"], { cwd: project.uri });
-		await vi.waitFor(
+		const started = await scope.spawn("demo", "sh", ["-c", "echo up; sleep 60"], { cwd: project.uri });
+		await scope.waitFor(
 			() => expect(getPluginCommandSpawnStatus("demo", started.spawnId).recentOutput).toContain("up"),
 			{ timeout: 15_000 },
 		);
@@ -205,7 +250,7 @@ describe("插件的长驻进程与远程项目", () => {
 		expect(getPluginCommandSpawnStatus("demo", started.spawnId).running).toBe(false);
 	});
 
-	it("停止多层 shell 下的远端进程树后，子进程消失且同一连接可以再次执行", async () => {
+	ownedIt("停止多层 shell 下的远端进程树后，子进程消失且同一连接可以再次执行", async (scope) => {
 		const project = createRemoteProject();
 		const source = [
 			'const { spawn } = require("node:child_process");',
@@ -215,11 +260,11 @@ describe("插件的长驻进程与远程项目", () => {
 			'child.once("exit", () => process.exit());',
 		].join("\n");
 		writeFileSync(join(project.dir, "owned-process-tree.cjs"), source);
-		const started = await spawnPluginCommand("demo", "sh", ["-c", "sh -c 'node owned-process-tree.cjs'"], {
+		const started = await scope.spawn("demo", "sh", ["-c", "sh -c 'node owned-process-tree.cjs'"], {
 			cwd: project.uri,
 		});
 		let nativePids: number[] = [];
-		await vi.waitFor(() => {
+		await scope.waitFor(() => {
 			const output = getPluginCommandSpawnStatus("demo", started.spawnId).recentOutput;
 			const match = /owned-tree=(\d+),(\d+)\n/.exec(output);
 			expect(match).not.toBeNull();
@@ -260,7 +305,7 @@ describe("插件的长驻进程与远程项目", () => {
 			void stopping.catch(() => {});
 			if (witnesses.length > 0) {
 				try {
-					await vi.waitFor(() => {
+					await scope.waitFor(() => {
 						for (const witness of witnesses) expect(witness.read().active).toBe(false);
 					});
 					report("terminated-before-release");
@@ -271,7 +316,7 @@ describe("插件的长驻进程与远程项目", () => {
 			await stopping;
 			report("after-stop");
 			expect(getPluginCommandSpawnStatus("demo", started.spawnId).running).toBe(false);
-			await vi.waitFor(() => {
+			await scope.waitFor(() => {
 				// Read-only liveness probes address only the two native PIDs reported by our owned tree.
 				for (const pid of nativePids) expect(() => process.kill(pid, 0)).toThrow();
 			});
@@ -279,19 +324,20 @@ describe("插件的长驻进程与远程项目", () => {
 			report("final");
 			closeWitnesses();
 		}
-		const next = await spawnPluginCommand("demo", "sh", ["-c", "printf reconnected"], { cwd: project.uri });
-		await vi.waitFor(() => {
+		const next = await scope.spawn("demo", "sh", ["-c", "printf reconnected"], { cwd: project.uri });
+		await scope.waitFor(() => {
 			const status = getPluginCommandSpawnStatus("demo", next.spawnId);
 			expect(status).toMatchObject({ running: false, exit: { exitCode: 0 }, recentOutput: "reconnected" });
 		});
 	});
 
-	it("本地项目照旧，并且报得出真实进程号", async () => {
+	ownedIt("本地项目照旧，并且报得出真实进程号", async (scope) => {
 		const dir = realpathSync(mkdtempSync(join(tmpdir(), "vetta-local-spawn-")));
 		directories.push(dir);
 		const observed = observeLocalLaunch();
+		scope.onCleanup(() => observed.cleanup());
 		try {
-			const started = await spawnPluginCommand("demo", process.execPath, ["-e", "process.stdout.write('local')"], {
+			const started = await scope.spawn("demo", process.execPath, ["-e", "process.stdout.write('local')"], {
 				cwd: dir,
 			});
 			expect(started.pid).toBeGreaterThan(0);
@@ -308,15 +354,16 @@ describe("插件的长驻进程与远程项目", () => {
 		}
 	});
 
-	it("本地 stdout 已出现仍可能活着：实际 close 后才可清理自己的 cwd", async () => {
+	ownedIt("本地 stdout 已出现仍可能活着：实际 close 后才可清理自己的 cwd", async (scope) => {
 		const dir = realpathSync(mkdtempSync(join(tmpdir(), "vetta-local-close-gate-")));
 		directories.push(dir);
 		const gate = join(dir, "release-owned-child");
 		const program = `process.stdout.write('local');const timer=setInterval(()=>{if(require('node:fs').existsSync(${JSON.stringify(gate)}))clearInterval(timer)},10);`;
 		const observed = observeLocalLaunch();
+		scope.onCleanup(() => observed.cleanup());
 		try {
-			const started = await spawnPluginCommand("demo", process.execPath, ["-e", program], { cwd: dir });
-			await vi.waitFor(() => {
+			const started = await scope.spawn("demo", process.execPath, ["-e", program], { cwd: dir });
+			await scope.waitFor(() => {
 				expect(getPluginCommandSpawnStatus("demo", started.spawnId).recentOutput).toContain("local");
 			});
 			// The old output-only predicate is satisfied while the real process still holds its cwd.

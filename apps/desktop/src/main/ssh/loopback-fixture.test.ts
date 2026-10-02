@@ -4,8 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
 	acceptOwnedJobReady,
+	createLoopbackTestScope,
 	createOwnedJobFromNativeCallsForTests,
 	createShellLoopbackRunner,
+	loopbackCommandShellBinary,
 	loopbackRemotePath,
 	loopbackShellBinary,
 	stopOwnedJob,
@@ -16,6 +18,10 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const directories: string[] = [];
+const ownedBoundaries: {
+	scope: ReturnType<typeof createLoopbackTestScope>;
+	runner: ReturnType<typeof createShellLoopbackRunner>;
+}[] = [];
 
 it("releases exactly the owned native handles on limit setup and assignment failure without allowing breakaway", () => {
 	const closed: unknown[] = [],
@@ -172,6 +178,7 @@ function fixture(terminationDelayMs = 0, terminateOverride?: (child: ChildProces
 	const stopped: ChildProcess[] = [];
 	const runner = createShellLoopbackRunner({
 		shellBinary: loopbackShellBinary(),
+		commandShellBinary: loopbackCommandShellBinary(),
 		scriptPath: loopbackRemotePath(script),
 		baseEnv: { ...process.env, ...(trace === undefined ? {} : { VETTA_LOOPBACK_TRACE: trace ? "1" : "0" }) },
 		terminateTree(child) {
@@ -188,10 +195,28 @@ function fixture(terminationDelayMs = 0, terminateOverride?: (child: ChildProces
 			else setTimeout(terminate, terminationDelayMs);
 		},
 	});
-	return { directory, runner, stopped };
+	const scope = createLoopbackTestScope();
+	scope.onClosing(() => runner.abortOwnedOperations());
+	ownedBoundaries.push({ scope, runner });
+	const ownedRunner = {
+		...runner,
+		run: (invocation: Parameters<typeof runner.run>[0]) => scope.step(() => runner.run(invocation)),
+		open: (invocation: Parameters<NonNullable<typeof runner.open>>[0]) => {
+			scope.assertOpen();
+			const channel = runner.open?.(invocation);
+			if (!channel) throw new Error("Owned channel unavailable");
+			scope.onCleanup(async () => {
+				channel.kill();
+				await channel.exited;
+			});
+			return channel;
+		},
+	};
+	return { directory, runner: ownedRunner, stopped };
 }
 
-afterEach(() => {
+afterEach(async () => {
+	for (const { scope, runner } of ownedBoundaries.splice(0)) await scope.close(() => runner.waitForIdle());
 	vi.restoreAllMocks();
 	for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true });
 });
@@ -374,6 +399,7 @@ describe("loopback remote shell boundary", () => {
 				"commandHash",
 				"pid",
 				"needsParent",
+				"nativeCommandEndpoint",
 				"bytes",
 				"code",
 				"signal",
