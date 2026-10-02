@@ -1,4 +1,14 @@
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+	chmodSync,
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	realpathSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, parse, posix } from "node:path";
@@ -24,6 +34,7 @@ vi.mock("../ssh/ssh-runtime.js", () => ({ getSshConnection: () => connection }))
 const { createDesktopPromptRuntimeSources } = await import("./resource-runtime.js");
 const directories: string[] = [];
 const pendingReloads = new Set<Promise<unknown>>();
+const readonlyRunners = new Set<{ closeReadonlyEndpoint(error?: Error): Promise<void> }>();
 
 function trackReload<T>(loading: Promise<T>): Promise<T> {
 	pendingReloads.add(loading);
@@ -44,6 +55,9 @@ function temporaryDirectory(parent: string, prefix: string): string {
 async function cleanupResources(): Promise<void> {
 	// A timed-out test still fails; finish only its owned I/O before deleting its fixture files.
 	await Promise.allSettled([...pendingReloads]);
+	await connection.closeReadonlyEndpoint();
+	await Promise.all([...readonlyRunners].map((runner) => runner.closeReadonlyEndpoint()));
+	readonlyRunners.clear();
 	vi.restoreAllMocks();
 	vi.unstubAllEnvs();
 	for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true });
@@ -140,9 +154,17 @@ describe("readonly loopback endpoint matches the actual SSH wrapper", () => {
 				else child.kill();
 			},
 		};
+		const wrapped = createShellLoopbackRunner(options);
+		const direct = createShellLoopbackRunner({
+			...options,
+			fileShellBinary,
+			fileResultRoot: { native: directory, remote: remoteDirectory },
+		});
+		readonlyRunners.add(wrapped);
+		readonlyRunners.add(direct);
 		return {
-			wrapped: createShellLoopbackRunner(options),
-			direct: createShellLoopbackRunner({ ...options, fileShellBinary }),
+			wrapped,
+			direct,
 			remoteFile: posix.join(remoteDirectory, "data", "quoted 'stat' file.txt"),
 			remoteDataDirectory: posix.join(remoteDirectory, "data"),
 			remoteMissing: posix.join(remoteDirectory, "data", "missing.txt"),
@@ -150,6 +172,11 @@ describe("readonly loopback endpoint matches the actual SSH wrapper", () => {
 			data,
 			marker,
 			envMarker,
+			directory,
+			remoteDirectory,
+			catPath,
+			options,
+			fileShellBinary,
 		};
 	}
 	it.each(["read", "stat", "list", "realpath"] as const)(
@@ -208,6 +235,181 @@ describe("readonly loopback endpoint matches the actual SSH wrapper", () => {
 				expect((await channel.exited).exitCode).toBe(0);
 				expect(Buffer.concat(chunks)).toEqual(fixture.data);
 				expect(readFileSync(fixture.marker, "utf8")).toBe("wrappedwrappedwrappedwrappedwrapped");
+			})(),
+		));
+	it("serializes concurrent real commands and isolates per-request environment and cwd", () =>
+		trackReload(
+			(async () => {
+				const command = `cat -- ${quoteShellArgument(fixture.remoteFile)}`;
+				const results = await Promise.all([
+					fixture.direct.run({
+						argv: [
+							buildListDirectoryCommand(
+								fixture.remoteDataDirectory,
+								process.platform === "darwin" ? "bsd" : "gnu",
+							),
+						],
+					}),
+					fixture.direct.run({ argv: [command], env: { DIFF_ENV: "first-only" } }),
+					fixture.direct.run({ argv: [command] }),
+				]);
+				expect(results.every((result) => result.exitCode === 0)).toBe(true);
+				expect(Buffer.from(results[1].stdout)).toEqual(fixture.data);
+				expect(Buffer.from(results[2].stdout)).toEqual(fixture.data);
+				expect(readFileSync(fixture.envMarker, "utf8")).toBe(`${fixture.expectedHome}|/bin/sh|`);
+				expect(() => readFileSync(fixture.marker)).toThrow();
+			})(),
+		));
+
+	it("stdin and streaming callbacks use the original SSH wrapper", () =>
+		trackReload(
+			(async () => {
+				const command = `cat -- ${quoteShellArgument(fixture.remoteFile)}`;
+				await fixture.direct.run({ argv: [command], stdin: Buffer.from("unused") });
+				const chunks: Uint8Array[] = [];
+				const streamed = await fixture.direct.run({ argv: [command], onStdout: (chunk) => chunks.push(chunk) });
+				expect(streamed.stdout.length).toBe(0);
+				expect(Buffer.concat(chunks)).toEqual(fixture.data);
+				expect(readFileSync(fixture.marker, "utf8")).toBe("wrappedwrapped");
+			})(),
+		));
+
+	it.each(["graceful", "abort"] as const)(
+		"%s closure waits for owned I/O or rejects it before deleting the result directory",
+		(mode) =>
+			trackReload(
+				(async () => {
+					const gate = join(fixture.directory, "release.gate");
+					const started = join(fixture.directory, "started.gate");
+					writeFileSync(
+						fixture.catPath,
+						[
+							"#!/bin/sh",
+							`printf started > ${quoteShellArgument(posix.join(fixture.remoteDirectory, "started.gate"))}`,
+							`while [ ! -f ${quoteShellArgument(posix.join(fixture.remoteDirectory, "release.gate"))} ]; do sleep 0.01; done`,
+							'exec /bin/cat "$@"',
+						].join("\n"),
+					);
+					const error = new Error("owned readonly endpoint abort");
+					let onStarted!: () => void;
+					const observed = new Promise<void>((resolve) => {
+						onStarted = resolve;
+					});
+					const observer = setInterval(() => {
+						if (existsSync(started)) onStarted();
+					}, 10);
+					const loading = fixture.direct.run({ argv: [`cat -- ${quoteShellArgument(fixture.remoteFile)}`] });
+					let closing: Promise<void> | undefined;
+					try {
+						await Promise.race([
+							observed,
+							loading.then(() => {
+								throw new Error("Owned gate did not block the command");
+							}),
+						]);
+						let finished = false;
+						closing = fixture.direct.closeReadonlyEndpoint(mode === "abort" ? error : undefined);
+						void closing.then(
+							() => {
+								finished = true;
+							},
+							() => {
+								finished = true;
+							},
+						);
+						await expect(
+							fixture.direct.run({ argv: [`cat -- ${quoteShellArgument(fixture.remoteFile)}`] }),
+						).rejects.toThrow("closing");
+						if (mode === "graceful") {
+							expect(finished).toBe(false);
+							expect(readdirSync(fixture.directory).some((name) => name.startsWith("readonly-"))).toBe(true);
+							writeFileSync(gate, "released");
+							expect(Buffer.from((await loading).stdout)).toEqual(fixture.data);
+							await closing;
+						} else {
+							await expect(loading).rejects.toBe(error);
+							await expect(closing).rejects.toBe(error);
+						}
+						expect(readdirSync(fixture.directory).some((name) => name.startsWith("readonly-"))).toBe(false);
+					} finally {
+						clearInterval(observer);
+						writeFileSync(gate, "released");
+						await Promise.allSettled([loading, ...(closing ? [closing] : [])]);
+					}
+				})(),
+			),
+	);
+
+	it.each(["directory-failure", "missing-executable", "unexpected-zero-exit", "invalid-frame"] as const)(
+		"%s rejects pending requests, including a concurrent close, and cleans only after real closure",
+		(failure) =>
+			trackReload(
+				(async () => {
+					const runner = createShellLoopbackRunner({
+						...fixture.options,
+						fileShellBinary:
+							failure === "missing-executable"
+								? join(fixture.directory, "missing-shell")
+								: fixture.fileShellBinary,
+						fileResultRoot: {
+							native:
+								failure === "directory-failure" ? join(fixture.directory, "missing-parent") : fixture.directory,
+							remote: fixture.remoteDirectory,
+						},
+						...(failure === "invalid-frame"
+							? {
+									readonlyWorkerScriptForTests:
+										'directory=$1; printf "ready\\n"; IFS= read -r request; ( . "$directory/$request.sh" ) </dev/null >"$directory/$request.out" 2>"$directory/$request.err"; printf "invalid\\ndone %s 0\\n" "$request"; IFS= read -r next',
+								}
+							: {}),
+						...(failure === "unexpected-zero-exit"
+							? { readonlyWorkerScriptForTests: 'printf "ready\\n"; IFS= read -r request; exit 0' }
+							: {}),
+					});
+					const command = `cat -- ${quoteShellArgument(fixture.remoteFile)}`;
+					const reads = [runner.run({ argv: [command] }), runner.run({ argv: [command] })];
+					const handledReads = Promise.allSettled(reads);
+					await new Promise<void>((resolve) => {
+						const timer = setInterval(() => {
+							if (
+								readdirSync(fixture.directory).some((name) => name.startsWith("readonly-")) ||
+								failure === "directory-failure"
+							) {
+								clearInterval(timer);
+								resolve();
+							}
+						}, 5);
+					});
+					const closing = runner.closeReadonlyEndpoint();
+					const results = [...(await handledReads), ...(await Promise.allSettled([closing]))];
+					expect(results.every((result) => result.status === "rejected")).toBe(true);
+					expect(readdirSync(fixture.directory).some((name) => name.startsWith("readonly-"))).toBe(false);
+				})(),
+			),
+	);
+	it("a failed closure verification remains sticky across repeated close and later queries", () =>
+		trackReload(
+			(async () => {
+				const error = new Error("owned close verification failed");
+				const runner = createShellLoopbackRunner({
+					...fixture.options,
+					fileShellBinary: fixture.fileShellBinary,
+					fileResultRoot: { native: fixture.directory, remote: fixture.remoteDirectory },
+					readonlyWorkerScriptForTests: 'printf "ready\\n"; IFS= read -r request; exit 0',
+					verifyReadonlyCloseForTests: async () => {
+						throw error;
+					},
+				});
+				const invocation = { argv: [`cat -- ${quoteShellArgument(fixture.remoteFile)}`] };
+				const failure: unknown = await runner.run(invocation).catch((reason: unknown) => reason);
+				expect(failure).toBeInstanceOf(Error);
+				await expect(runner.closeReadonlyEndpoint()).rejects.toBe(failure);
+				await expect(runner.closeReadonlyEndpoint()).rejects.toBe(failure);
+				await expect(runner.run(invocation)).rejects.toBe(failure);
+				expect(readdirSync(fixture.directory).some((name) => name.startsWith("readonly-"))).toBe(true);
+				const resultDirectory = readdirSync(fixture.directory).find((name) => name.startsWith("readonly-"))!;
+				expect(readdirSync(join(fixture.directory, resultDirectory))).toContain("1.sh");
+				// Only the post-close verifier is injected: the actual worker EOF/close has already completed.
 			})(),
 		));
 });

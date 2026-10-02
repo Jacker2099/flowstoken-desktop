@@ -15,6 +15,7 @@ import {
 	waitForOwnedJobEmpty,
 	waitForOwnedSupervisorLaunch,
 } from "./testing-owned-job.js";
+import { ReadonlyLoopbackEndpoint } from "./testing-readonly-endpoint.js";
 import type { NativeWindowsTestJob } from "./testing-windows-job.cjs";
 import { createOwnedWindowsTestJob } from "./testing-windows-job.js";
 import type { NativeWindowsProcessWitness } from "./testing-windows-witness.cjs";
@@ -100,11 +101,37 @@ export function createShellLoopbackRunner(options: {
 	readonly terminateTree: (child: ChildProcess) => void;
 	/** Explicit file-fixture opt-in; signals, deadlines, arbitrary commands and channels keep the SSH wrapper. */
 	readonly fileShellBinary?: string;
-}): SshProcessRunner {
+	readonly fileResultRoot?: { readonly native: string; readonly remote: string };
+	/** Owned lifecycle fault injection; never supplied by the real resource fixture. */
+	readonly readonlyWorkerScriptForTests?: string;
+	readonly verifyReadonlyCloseForTests?: () => Promise<void>;
+}): SshProcessRunner & { closeReadonlyEndpoint(error?: Error): Promise<void> } {
 	const closing = new Set<Promise<void>>();
 	let nextRun = 0;
 	const channelRunner = createNodeSshProcessRunner({ sshBinary: options.shellBinary, baseEnv: options.baseEnv });
+	let fileEndpoint: ReadonlyLoopbackEndpoint | undefined;
+	let fileEndpointClosing: Promise<void> | undefined;
+	let fileEndpointFailure: Error | undefined;
 	return {
+		async closeReadonlyEndpoint(error?: Error) {
+			if (fileEndpointClosing) return fileEndpointClosing;
+			const endpoint = fileEndpoint;
+			if (!endpoint) return;
+			fileEndpointClosing = endpoint.close(error);
+			try {
+				await fileEndpointClosing;
+			} catch (error) {
+				if (!endpoint.safeToRelease)
+					fileEndpointFailure = error instanceof Error ? error : new Error("Readonly endpoint cleanup failed");
+				throw error;
+			} finally {
+				if (endpoint.safeToRelease) {
+					fileEndpoint = undefined;
+					fileEndpointClosing = undefined;
+					fileEndpointFailure = undefined;
+				}
+			}
+		},
 		open(invocation) {
 			if (!channelRunner.open) throw new Error("Loopback channel runner unavailable");
 			return channelRunner.open({ ...invocation, argv: [options.scriptPath, ...invocation.argv] });
@@ -115,6 +142,42 @@ export function createShellLoopbackRunner(options: {
 			const traceEnabled = (invocation.env?.VETTA_LOOPBACK_TRACE ?? options.baseEnv.VETTA_LOOPBACK_TRACE) === "1";
 			const command = String(invocation.argv.at(-1) ?? "");
 			const commandHash = createHash("sha256").update(command).digest("hex").slice(0, 16);
+			const readonlyFiles =
+				options.fileShellBinary !== undefined &&
+				invocation.signal === undefined &&
+				invocation.timeoutMs === undefined &&
+				invocation.stdin === undefined &&
+				invocation.onStdout === undefined &&
+				invocation.onStderr === undefined &&
+				isReadonlyFileCommand(command) &&
+				Object.keys(invocation.env ?? {}).every(
+					(key) =>
+						/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) &&
+						!/^(?:path|home|tmpdir|shell|pwd|msystem|msys|bash_env|env)$/i.test(key),
+				);
+			let requestEndpoint: ReadonlyLoopbackEndpoint | undefined;
+			if (readonlyFiles && options.fileResultRoot) {
+				if (fileEndpointClosing)
+					return Promise.reject(fileEndpointFailure ?? new Error("Readonly loopback endpoint is closing"));
+				const persistentEnv: NodeJS.ProcessEnv = { ...options.baseEnv };
+				if (process.platform === "win32") {
+					const keys = Object.keys(persistentEnv).filter((key) => key.toLowerCase() === "path");
+					const key = keys[0] ?? "PATH";
+					const value = persistentEnv[key] ?? "";
+					for (const other of keys) if (other !== key) delete persistentEnv[other];
+					persistentEnv[key] = dirname(options.fileShellBinary!) + delimiter + value;
+				}
+				fileEndpoint ??= new ReadonlyLoopbackEndpoint({
+					shellBinary: options.fileShellBinary!,
+					supervisorScript: WINDOWS_PARENT_WRAPPER,
+					baseEnv: persistentEnv,
+					resultRoot: options.fileResultRoot,
+					workerScriptForTests: options.readonlyWorkerScriptForTests,
+					verifyCloseForTests: options.verifyReadonlyCloseForTests,
+				});
+				requestEndpoint = fileEndpoint;
+			}
+
 			const commandKind = /\bstat\b/.test(command)
 				? "stat"
 				: /\bcat\b|\bhead\b/.test(command)
@@ -233,11 +296,7 @@ export function createShellLoopbackRunner(options: {
 							process.platform === "win32" &&
 							(invocation.signal !== undefined || invocation.timeoutMs !== undefined);
 						const useJob = needsParent;
-						const directFileCommand =
-							options.fileShellBinary !== undefined &&
-							invocation.signal === undefined &&
-							invocation.timeoutMs === undefined &&
-							isReadonlyFileCommand(command);
+						const directFileCommand = readonlyFiles;
 						const childEnv: NodeJS.ProcessEnv = {
 							...options.baseEnv,
 							...invocation.env,
@@ -252,6 +311,13 @@ export function createShellLoopbackRunner(options: {
 							const path = childEnv[pathKey] ?? "";
 							for (const key of keys) if (key !== pathKey) delete childEnv[key];
 							childEnv[pathKey] = `${dirname(options.fileShellBinary!)}${delimiter}${path}`;
+						}
+						if (requestEndpoint) {
+							void requestEndpoint.run(invocation, trace).then((value) => {
+								cleanup();
+								resolve(value);
+							}, fail);
+							return;
 						}
 						if (useJob) ownership = { job: createOwnedWindowsTestJob(), assigned: false, stopped: false };
 						const spawned = spawn(

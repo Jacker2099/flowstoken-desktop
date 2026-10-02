@@ -23,7 +23,7 @@ export function createLoopbackSshConnection(
 		/** Resource-only Windows fixture: avoid redundant shells for exact readonly file scripts. */
 		readonly directFileCommands?: boolean;
 	} = {},
-): SshConnection {
+): SshConnection & { closeReadonlyEndpoint(): Promise<void> } {
 	const directory = mkdtempSync(join(tmpdir(), "vetta-loopback-ssh-"));
 	// 「远端」有自己的家目录：helper 会往 ~/.cache 里装东西，不能装进开发者真实的家目录。
 	const home = join(directory, "home");
@@ -68,9 +68,12 @@ export function createLoopbackSshConnection(
 					baseEnv: { ...baseEnv, VETTA_LOOPBACK_WINDOWS: "1" },
 					terminateTree: terminateWindowsLoopbackTree,
 					fileShellBinary,
+					fileResultRoot: fileShellBinary
+						? { native: directory, remote: loopbackRemotePath(directory) }
+						: undefined,
 				})
 			: createNodeSshProcessRunner({ sshBinary: fakeSsh, baseEnv });
-	return new SshConnection(
+	const connection = new SshConnection(
 		{ id: hostId, label: hostId, target: hostId, source: "manual" },
 		{
 			// 固定 /bin/sh 当登录 shell：开发者自己的 zsh profile 既慢，又让结果因人而异。
@@ -79,6 +82,13 @@ export function createLoopbackSshConnection(
 			helper: options.helper,
 		},
 	);
+	return Object.assign(connection, {
+		closeReadonlyEndpoint: async () => {
+			if ("closeReadonlyEndpoint" in runner && typeof runner.closeReadonlyEndpoint === "function") {
+				await runner.closeReadonlyEndpoint();
+			}
+		},
+	});
 }
 
 export {

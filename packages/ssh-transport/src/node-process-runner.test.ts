@@ -5,6 +5,16 @@ import { assertNativePosixTestHost } from "./testing-platform.js";
 // 当前 Node 顶替 ssh：这一层验证本地子进程与管道，不需要把 Windows 伪装成 POSIX 主机。
 const runner = createNodeSshProcessRunner({ sshBinary: process.execPath });
 const decode = (bytes: Uint8Array): string => new TextDecoder().decode(bytes);
+// The runner must signal the descendant itself. The fixture parent only reaps its child before
+// exiting: a leader-only kill still leaves the child and inherited output pipe alive.
+const ownedDescendantProgram = [
+	'const { spawn } = require("node:child_process");',
+	'process.on("SIGTERM", () => {});',
+	'const descendant = "process.send(\\"ready\\", () => process.disconnect()); setInterval(() => {}, 1000);";',
+	'const child = spawn(process.execPath, ["-e", descendant], { stdio: ["inherit", "inherit", "inherit", "ipc"] });',
+	'child.once("message", () => process.stdout.write(String(child.pid) + "\\n"));',
+	'child.once("close", () => process.exit(0));',
+].join("\n");
 
 describe("ssh 子进程执行器", () => {
 	it("不流式消费时，完整输出在结果里", async () => {
@@ -58,13 +68,8 @@ describe("ssh 子进程执行器", () => {
 		const descendantStarted = new Promise<number>((resolve) => {
 			reportDescendant = resolve;
 		});
-		const program = [
-			'const { spawn } = require("node:child_process");',
-			'const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "inherit" });',
-			'process.stdout.write(String(child.pid) + "\\n");',
-		].join("\n");
 		const pending = runner.run({
-			argv: ["-e", program],
+			argv: ["-e", ownedDescendantProgram],
 			timeoutMs: 30_000,
 			onStdout: (chunk) => reportDescendant(Number.parseInt(decode(chunk).trim(), 10)),
 		});
@@ -90,16 +95,12 @@ describe("ssh 子进程执行器", () => {
 			const descendantStarted = new Promise<number>((resolve) => {
 				reportDescendant = resolve;
 			});
-			const program = [
-				'const { spawn } = require("node:child_process");',
-				'const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "inherit" });',
-				'process.stdout.write(String(child.pid) + "\\n");',
-			].join("\n");
 			const onStdout = (chunk: Uint8Array): void => reportDescendant(Number.parseInt(decode(chunk).trim(), 10));
-			const channel = mode === "channel" ? runner.open?.({ argv: ["-e", program], onStdout }) : undefined;
+			const channel =
+				mode === "channel" ? runner.open?.({ argv: ["-e", ownedDescendantProgram], onStdout }) : undefined;
 			const pending = channel
 				? channel.exited
-				: runner.run({ argv: ["-e", program], signal: controller.signal, onStdout });
+				: runner.run({ argv: ["-e", ownedDescendantProgram], signal: controller.signal, onStdout });
 			const pid = await descendantStarted;
 			expect(pid).toBeGreaterThan(1);
 			let deadline: ReturnType<typeof setTimeout> | undefined;
