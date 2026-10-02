@@ -11,7 +11,16 @@ let package = Package(
 		.library(name: "VettaKit", targets: ["VettaKit"]),
 	],
 	targets: [
-		.target(name: "VettaKit", resources: [.process("Resources")], swiftSettings: isolation, linkerSettings: [.linkedLibrary("sqlite3")]),
+		.target(
+			name: "VettaKit",
+			// Native SwiftPM copies xcstrings unchanged; the plugin compiles standard locale
+			// resources. Copying the source prevents Xcode from compiling it a second time.
+			resources: [.copy("Resources/Localizable.xcstrings")],
+			swiftSettings: isolation,
+			linkerSettings: [.linkedLibrary("sqlite3")],
+			plugins: [.plugin(name: "CompileLocalizations")]
+		),
 		.testTarget(name: "VettaKitTests", dependencies: ["VettaKit"], swiftSettings: isolation),
+		.plugin(name: "CompileLocalizations", capability: .buildTool()),
 	]
 )

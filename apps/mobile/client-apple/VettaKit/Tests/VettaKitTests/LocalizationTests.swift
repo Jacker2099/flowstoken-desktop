@@ -7,6 +7,17 @@ import Testing
 /// a string added in one place but not the other fails here instead of showing
 /// a raw key on the phone.
 @Suite(.serialized) struct LocalizationTests {
+	@Test func bundlesCompiledTranslationsAndPluralResources() throws {
+		for language in Self.languages {
+			let path = try #require(Bundle.module.path(forResource: language, ofType: "lproj"))
+			let localized = try #require(Bundle(path: path))
+			#expect(localized.path(forResource: "Localizable", ofType: "strings") != nil)
+			if language == "en" {
+				#expect(localized.path(forResource: "Localizable", ofType: "stringsdict") != nil)
+			}
+		}
+	}
+
 	private static let languages = ["en", "zh-Hans"]
 	private static let sources = URL(fileURLWithPath: #filePath)
 		.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()

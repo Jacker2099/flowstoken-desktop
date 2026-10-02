@@ -1,5 +1,6 @@
 package org.vetta.android.ui.work
 
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -15,8 +16,8 @@ import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeDown
-import androidx.test.espresso.Espresso
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Rule
 import org.junit.runner.RunWith
 import org.vetta.android.app.ThemeMode
@@ -43,6 +44,7 @@ import org.vetta.android.resources.chat_question_title
 import org.vetta.android.resources.chat_model
 import org.vetta.android.resources.chat_steps_done
 import org.vetta.android.ui.str
+import org.vetta.android.ui.captureDeviceTestFailure
 import org.vetta.android.ui.theme.VettaTheme
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -154,31 +156,41 @@ class SessionScreenTest {
 
     @Test
     fun sendsWhatIsTypedAndStopsARunningTurn() {
-        val actions = RecordingActions()
-        var current by mutableStateOf(state(RemoteSessionStatus.Completed, finishedTurn))
-        // What the composer holds, fed back into the screen as the view model would.
-        var typed by mutableStateOf(PromptDraft())
-        val typing =
-            object : WorkActions by actions {
-                override fun setDraft(sessionId: String, draft: PromptDraft) {
-                    typed = draft
+        val activity = composeRule.activity
+        try {
+            InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                // Match MainActivity's manifest; a bare ComponentActivity otherwise pans for the IME.
+                activity.window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+            }
+            val actions = RecordingActions()
+            var current by mutableStateOf(state(RemoteSessionStatus.Completed, finishedTurn))
+            // What the composer holds, fed back into the screen as the view model would.
+            var typed by mutableStateOf(PromptDraft())
+            val typing =
+                object : WorkActions by actions {
+                    override fun setDraft(sessionId: String, draft: PromptDraft) {
+                        typed = draft
+                    }
+                }
+            composeRule.setContent {
+                VettaTheme(ThemeMode.Light) {
+                    SessionScreen("s1", current, typed, typing, onOpenHome = {})
                 }
             }
-        composeRule.setContent {
-            VettaTheme(ThemeMode.Light) {
-                SessionScreen("s1", current, typed, typing, onOpenHome = {})
-            }
-        }
-        composeRule.onNodeWithTag("composer.field").performTextInput("再写一份月报")
-        composeRule.onNodeWithTag("composer.send").performClick()
-        assertEquals("send s1 再写一份月报", actions.calls.last())
+            composeRule.onNodeWithTag("composer.field").performTextInput("再写一份月报")
+            composeRule.onNodeWithTag("composer.send").performClick()
+            assertEquals("send s1 再写一份月报", actions.calls.last())
 
-        // The bare test activity pans for the keyboard, which the app itself does not.
-        Espresso.closeSoftKeyboard()
-        current = state(RemoteSessionStatus.Running, finishedTurn)
-        composeRule.onNodeWithTag("composer.stop").performClick()
-        assertEquals("stop s1", actions.calls.last())
-        composeRule.onNodeWithTag("turn.status").assertIsDisplayed()
+            current = state(RemoteSessionStatus.Running, finishedTurn)
+            composeRule.onNodeWithTag("composer.stop").assertIsDisplayed()
+            composeRule.onNodeWithTag("composer.stop").performClick()
+            assertEquals("stop s1", actions.calls.last())
+            composeRule.onNodeWithTag("turn.status").assertIsDisplayed()
+        } catch (failure: Throwable) {
+            // Capture before the Compose/Activity rules tear down the failed window.
+            captureDeviceTestFailure(activity, "SessionScreenTest.sendsWhatIsTypedAndStopsARunningTurn", failure)
+            throw failure
+        }
     }
 
     @Test
