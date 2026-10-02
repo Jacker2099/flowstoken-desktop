@@ -5,7 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { parse } from "yaml";
-import { windowsSupplementalArtifactNames } from "./windows-packaging-contract.mjs";
+import { windowsSupplementalArtifactNames, windowsSystemTarCommand } from "./windows-packaging-contract.mjs";
 
 const execFileAsync = promisify(execFile);
 const packageDir = resolve(import.meta.dirname, "..");
@@ -77,7 +77,7 @@ export async function readExpectedWindowsVersion(releaseDir) {
 }
 
 async function extractZip(packagePath, destination) {
-	await execFileAsync("tar.exe", ["-xf", packagePath, "-C", destination]);
+	await execFileAsync(windowsSystemTarCommand(), ["-xf", packagePath, "-C", destination]);
 }
 
 async function extractMsi(packagePath, destination) {

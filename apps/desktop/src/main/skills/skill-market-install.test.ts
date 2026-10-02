@@ -36,6 +36,8 @@ vi.mock("@vetta/action-rpc", () => ({
 }));
 
 vi.mock("node:fs/promises", () => ({
+	cp: vi.fn().mockResolvedValue(undefined),
+	mkdtemp: vi.fn(async (prefix: string) => `${prefix}stage`),
 	mkdir: vi.fn().mockResolvedValue(undefined),
 	rm: vi.fn().mockResolvedValue(undefined),
 	writeFile: vi.fn().mockResolvedValue(undefined),
@@ -50,8 +52,9 @@ vi.mock("node:fs", async () => {
 	};
 });
 
-vi.mock("node:child_process", () => ({
-	execSync: vi.fn(),
+vi.mock("node:child_process", async () => ({
+	...(await vi.importActual<typeof import("node:child_process")>("node:child_process")),
+	execFileSync: vi.fn(),
 }));
 
 import { setCloudBridge } from "../cloud-bridge.js";

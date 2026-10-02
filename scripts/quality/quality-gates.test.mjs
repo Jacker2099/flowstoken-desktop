@@ -614,6 +614,16 @@ describe("CI unit test coverage", () => {
 		expect(nativeTools).toContain("fd --version 2>/dev/null || fdfind --version");
 	});
 
+	it("executes native Windows installer archive tests before both PR and release source suites", () => {
+		const name = "- name: Verify Windows installer archive reader";
+		const step = workflow.split(name)[1]?.split("\n      - name:")[0];
+		expect(step).toBeDefined();
+		expect(step).toContain("if: runner.os == 'Windows'");
+		expect(step).toContain("node --test apps/desktop/scripts/verify-windows-packages.node-test.mjs");
+		expect(workflow.indexOf(name)).toBeLessThan(workflow.indexOf("- name: Test affected workspaces"));
+		expect(workflow.indexOf(name)).toBeLessThan(workflow.indexOf("- name: Test complete release client workspaces"));
+	});
+
 	it("cancels stale PR runs while preserving release validation, fails the matrix fast and uses the exact-lockfile cache", () => {
 		// biome-ignore lint/suspicious/noTemplateCurlyInString: this is a literal GitHub Actions expression.
 		expect(workflow).toContain("cancel-in-progress: ${{ !inputs.source_sha }}");
