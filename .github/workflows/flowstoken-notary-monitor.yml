@@ -1,0 +1,60 @@
+name: FlowsToken 0.6.9 notarization monitor
+
+on:
+  schedule:
+    - cron: "7,22,37,52 * * * *"
+  workflow_dispatch:
+    inputs:
+      test_notification:
+        description: "Send one connection test to the authorized Telegram recipient"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: flowstoken-notary-monitor-v069
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    runs-on: macos-15
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            scripts/release/notary_monitor.py
+          sparse-checkout-cone-mode: false
+
+      - name: Restore notification state
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/flowstoken-notary-monitor-state
+          key: flowstoken-notary-monitor-v069-v1-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            flowstoken-notary-monitor-v069-v1-
+
+      - name: Query original submissions and notify on meaningful changes
+        env:
+          SECRET_APPLE_API_KEY_P8_BASE64: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
+          SECRET_APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          SECRET_APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          NOTARY_TELEGRAM_BOT_TOKEN: ${{ secrets.NOTARY_TELEGRAM_BOT_TOKEN }}
+          NOTARY_TELEGRAM_CHAT_ID: ${{ secrets.NOTARY_TELEGRAM_CHAT_ID }}
+          TEST_NOTIFICATION: ${{ inputs.test_notification && 'true' || 'false' }}
+        shell: bash
+        run: |
+          ARGS=(--state "$RUNNER_TEMP/flowstoken-notary-monitor-state/state.json")
+          if [[ "$TEST_NOTIFICATION" == "true" ]]; then
+            ARGS+=(--test-notification)
+          fi
+          python3 scripts/release/notary_monitor.py "${ARGS[@]}"
+
+      - name: Preserve notification state, including uncertain delivery
+        if: always() && !cancelled()
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/flowstoken-notary-monitor-state
+          key: flowstoken-notary-monitor-v069-v1-${{ github.run_id }}-${{ github.run_attempt }}
