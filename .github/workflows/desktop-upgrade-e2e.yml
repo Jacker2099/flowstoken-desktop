@@ -58,6 +58,8 @@ jobs:
         working-directory: apps/desktop
         env:
           VETTA_DESKTOP_UPGRADE_URL: ${{ inputs.update_url || vars.VETTA_UPDATE_URL_TEST }}
+          VETTA_PRODUCT_NAME: FlowsToken
+          VETTA_EXECUTABLE_NAME: FlowsToken
           VETTA_DESKTOP_UPGRADE_BASELINE: ${{ inputs.baseline_version }}
           VETTA_DESKTOP_UPGRADE_CANDIDATE: ${{ inputs.candidate_version }}
           VETTA_DESKTOP_UPGRADE_WORKDIR: ${{ runner.temp }}
