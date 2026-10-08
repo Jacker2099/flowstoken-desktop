@@ -303,7 +303,7 @@ async function main() {
 		VETTA_CONFIG_DIR: ".vetta-upgrade-e2e",
 		VETTA_SPEECH_INPUT_ENABLED: "false",
 	};
-	const child = await launch(binary, environment, logPath);
+	let child = await launch(binary, environment, logPath);
 	// ShipIt/NSIS relaunch the app without our env, so the updated process can only
 	// report through the ~/.vetta fallback marker; poll both copies.
 	const watchPaths = [state, join(homedir(), ".vetta", "desktop-upgrade-e2e.json")];
@@ -326,8 +326,8 @@ async function main() {
 				candidateVersion,
 				baselineVersion,
 			);
-			const updated = await launch(executablePath, environment, logPath);
-			result = (await waitForVerification(watchPaths, updated, 10 * 60 * 1000)).state;
+			child = await launch(executablePath, environment, logPath);
+			result = (await waitForVerification(watchPaths, child, 10 * 60 * 1000)).state;
 		} else {
 			result = first.state;
 		}
@@ -335,8 +335,24 @@ async function main() {
 		result = (await waitForVerification(watchPaths, child, verifyDeadline)).state;
 	}
 	console.log(`[desktop-upgrade-e2e] verified ${result.currentVersion}; log=${logPath}`);
-	await rm(join(homedir(), ".vetta", "desktop-upgrade-e2e.json"), { force: true });
-	await rm(root, { recursive: true, force: true });
+	// 验证进程写完 verified 约 500ms 后才自行退出，期间还在往 VETTA_HOME 写运行时
+	// 目录；立刻 rm 会在 Windows/Linux 撞上 ENOTEMPTY/EBUSY。先等它退场再尽力清理，
+	// 清理失败不能掩盖已经通过的验收。
+	try {
+		if (!child.killed) child.kill();
+	} catch {
+		// best-effort: the verified process is expected to have exited itself
+	}
+	await new Promise((resolve) => setTimeout(resolve, 3000));
+	for (const target of [join(homedir(), ".vetta", "desktop-upgrade-e2e.json"), root]) {
+		try {
+			await rm(target, { recursive: true, force: true, maxRetries: 3, retryDelay: 500 });
+		} catch (error) {
+			console.warn(
+				`[desktop-upgrade-e2e] cleanup skipped for ${target}: ${error instanceof Error ? error.message : error}`,
+			);
+		}
+	}
 }
 
 export { artifactMatches, baselineArtifactName, compareVersions, metadataFile };
