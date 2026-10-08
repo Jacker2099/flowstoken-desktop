@@ -125,7 +125,9 @@ function installIsolatedFixture(source, temporary, pkg) {
 }
 
 async function makeFixture(platform = "linux", { isolated = false } = {}) {
-	const temporary = mkdtempSync(join(tmpdir(), "flowstoken-verification-harness-"));
+	const temporary = mkdtempSync(
+		join(realpathSync(process.env.RUNNER_TEMP ?? tmpdir()), "flowstoken-verification-harness-"),
+	);
 	const source = join(temporary, "source");
 	const controller = join(temporary, "controller");
 	const snapshot = join(temporary, "controller-snapshot");
