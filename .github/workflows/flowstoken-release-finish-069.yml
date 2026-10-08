@@ -1,0 +1,180 @@
+name: flowstoken-release-finish-069
+
+# Finish only the already verified 0.6.9 recovery. No build, signing, notarization or dispatch is permitted here.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: flowstoken-release
+  cancel-in-progress: false
+
+env:
+  REPO: Jacker2099/flowstoken-desktop
+  VERSION: "0.6.9"
+  SOURCE_SHA: 4f66a2400331f870963c71cfd783b38b9d3440e6
+  ARTIFACT_CONTROLLER_SHA: 2a8901a54c94c6ec603cd7d8a788d20f93938e70
+  RECOVERY_RUN: "37706471601"
+  RECOVERY_ATTEMPT: "1"
+  ORIGINAL_RUN: "37078343531"
+  ORIGINAL_ATTEMPT: "1"
+  PUBLISHER_CODE_BASE_SHA: ea112db5237ca31bfe960744ebcd9c7b0bba3426
+
+jobs:
+  publish:
+    if: github.repository == 'Jacker2099/flowstoken-desktop'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      GH_TOKEN: ${{ github.token }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Bind the publisher checkout without changing the artifact controller
+        run: |
+          test "$GITHUB_REPOSITORY" = "$REPO"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git merge-base --is-ancestor "$PUBLISHER_CODE_BASE_SHA" HEAD
+          git diff --exit-code "$PUBLISHER_CODE_BASE_SHA" HEAD -- \
+            scripts/flowstoken scripts/release/release-notes.mjs scripts/quality/install-ci-dependencies.mjs \
+            .github/actions/install-bun-dependencies apps/desktop/scripts apps/desktop/package.json package.json bun.lock
+          test "$(node -p 'JSON.parse(require("node:fs").readFileSync("apps/desktop/package.json", "utf8")).version')" = "$VERSION"
+
+      - name: Require the existing 0.6.9 draft with this workflow token
+        run: |
+          test "$(node scripts/flowstoken/publish-release.mjs --check --repo "$REPO" --version 0.6.9)" = draft
+
+      - name: Require every completed build and verification gate before recovery download
+        run: node scripts/flowstoken/wait-release-builds.mjs --repo "$REPO" --run "$RECOVERY_RUN" --sha "$ARTIFACT_CONTROLLER_SHA" --attempt "$RECOVERY_ATTEMPT" --check
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Authenticate the fixed completed recovery lineage
+        run: node scripts/flowstoken/recover-release.mjs --mode load-plan --repo "$REPO" --run "$RECOVERY_RUN" --controller-sha "$ARTIFACT_CONTROLLER_SHA" --source-sha "$SOURCE_SHA" --origin-run "$ORIGINAL_RUN" --origin-attempt "$ORIGINAL_ATTEMPT" --out "$RUNNER_TEMP/recovery-plan.json"
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+
+      - name: Install the frozen publisher dependencies
+        uses: ./.github/actions/install-bun-dependencies
+
+      - name: Collect only the four verified 0.6.9 build checkpoints
+        run: |
+          mkdir -p ckpt apps/desktop/release "$RUNNER_TEMP/release-lineage"
+          for platform in linux windows macos-arm64 macos-x64; do
+            gh run download "$RECOVERY_RUN" -R "$REPO" -n "release-build-${platform}" -D "ckpt/${platform}"
+            mkdir -p "ckpt/${platform}/x"
+            tar -xf "ckpt/${platform}/release-build.tar" -C "ckpt/${platform}/x"
+            src="ckpt/${platform}/x/release"
+            [ "$(cat "$src/release-publish.txt" 2>/dev/null)" = "false" ] || {
+              echo "::error::${platform} checkpoint did not come from a non-publishing dispatch"; exit 1; }
+            node scripts/flowstoken/release-artifacts.mjs --mode check-checkpoint --dir "$src" --version "$VERSION" --sha "$SOURCE_SHA" --controller-sha "$ARTIFACT_CONTROLLER_SHA" --run "$RECOVERY_RUN" --attempt "$RECOVERY_ATTEMPT" --platform "$platform" --recovery-plan "$RUNNER_TEMP/recovery-plan.json"
+            cp "$src/release-provenance.json" "$RUNNER_TEMP/release-lineage/${platform}.json"
+            case "$platform" in
+              macos-*) [ "$(cat "$src/require-mac-signature.txt" 2>/dev/null)" = "1" ] || {
+                echo "::error::${platform} checkpoint lacks the required signature and notarization proof"; exit 1; } ;;
+            esac
+            case "$platform" in
+              macos-arm64) mv "$src/latest-mac.yml" "$src/latest-mac-arm64.yml" ;;
+              macos-x64) mv "$src/latest-mac.yml" "$src/latest-mac-x64.yml" ;;
+            esac
+            find "$src" -maxdepth 1 -type f ! -name '._*' ! -name 'default._*' \( -name '*.AppImage' -o -name '*.blockmap' -o -name '*.deb' -o -name '*.dmg' \
+              -o -name '*.exe' -o -name '*.msi' -o -name '*.rpm' -o -name '*.zip' -o -name 'latest*.yml' \) \
+              -exec mv -f {} apps/desktop/release/ \;
+          done
+          rm -rf ckpt
+          ls -la apps/desktop/release
+
+      - name: Recheck the completed run after all checkpoint downloads
+        run: node scripts/flowstoken/wait-release-builds.mjs --repo "$REPO" --run "$RECOVERY_RUN" --sha "$ARTIFACT_CONTROLLER_SHA" --attempt "$RECOVERY_ATTEMPT" --check
+
+      - name: Verify Linux packages and FlowsToken install paths
+        working-directory: apps/desktop
+        env:
+          VETTA_PRODUCT_NAME: FlowsToken
+          VETTA_EXECUTABLE_NAME: FlowsToken
+        run: |
+          sudo apt-get update -q && sudo apt-get install --no-install-recommends -y rpm >/dev/null
+          node scripts/verify-linux-update.mjs --release
+          node scripts/verify-linux-packages.mjs
+          docker run --rm --volume "${PWD}/release:/release:ro" ubuntu:24.04 bash -euo pipefail -c '
+            apt-get update -q >/dev/null && apt-get install --yes /release/*.deb >/dev/null
+            test -x /opt/FlowsToken/FlowsToken && test -f /opt/FlowsToken/resources/package-type'
+
+      - name: Merge the verified macOS update metadata
+        working-directory: apps/desktop
+        run: bun run merge:updates:mac
+
+      - name: Verify all release files and record the original artifact lineage
+        run: node scripts/flowstoken/release-artifacts.mjs --mode release --dir apps/desktop/release --version "$VERSION" --sha "$SOURCE_SHA" --controller-sha "$ARTIFACT_CONTROLLER_SHA" --run "$RECOVERY_RUN" --attempt "$RECOVERY_ATTEMPT" --lineage-dir "$RUNNER_TEMP/release-lineage" --recovery-plan "$RUNNER_TEMP/recovery-plan.json"
+
+      - name: Record publisher identity separately from artifact provenance
+        run: |
+          node --input-type=module <<'NODE'
+          import { createHash } from 'node:crypto';
+          import { readFileSync, writeFileSync } from 'node:fs';
+          import { join } from 'node:path';
+          const env = process.env;
+          const manifestBytes = readFileSync('apps/desktop/release/release-manifest.json');
+          const manifest = JSON.parse(manifestBytes);
+          if (manifest.controllerSha !== env.ARTIFACT_CONTROLLER_SHA || manifest.sha !== env.SOURCE_SHA || manifest.version !== env.VERSION)
+            throw new Error('Publisher may not replace the verified artifact identity');
+          const record = {
+            version: env.VERSION,
+            sourceSha: env.SOURCE_SHA,
+            artifactControllerSha: env.ARTIFACT_CONTROLLER_SHA,
+            artifactRun: env.RECOVERY_RUN,
+            artifactAttempt: Number(env.RECOVERY_ATTEMPT),
+            originalRun: env.ORIGINAL_RUN,
+            originalAttempt: Number(env.ORIGINAL_ATTEMPT),
+            publisherSha: env.GITHUB_SHA,
+            publisherCodeBaseSha: env.PUBLISHER_CODE_BASE_SHA,
+            publisherRun: env.GITHUB_RUN_ID,
+            publisherAttempt: Number(env.GITHUB_RUN_ATTEMPT),
+            releaseManifestSha256: createHash('sha256').update(manifestBytes).digest('hex'),
+          };
+          writeFileSync(join(env.RUNNER_TEMP, 'publisher-execution-069.json'), JSON.stringify(record, null, 2) + '\n');
+          NODE
+
+      - name: Recheck the fixed build gates immediately before publishing
+        run: node scripts/flowstoken/wait-release-builds.mjs --repo "$REPO" --run "$RECOVERY_RUN" --sha "$ARTIFACT_CONTROLLER_SHA" --attempt "$RECOVERY_ATTEMPT" --check
+
+      - name: Publish only the existing verified 0.6.9 draft
+        run: |
+          NOTES="$(node scripts/release/release-notes.mjs --version "$VERSION")"
+          node scripts/flowstoken/publish-release.mjs --repo "$REPO" --version "$VERSION" --sha "$SOURCE_SHA" --controller-sha "$ARTIFACT_CONTROLLER_SHA" --dir apps/desktop/release --notes "$NOTES"
+
+      - name: Verify all three public 0.6.9 update feeds
+        run: |
+          for feed in latest.yml latest-mac.yml latest-linux.yml; do
+            curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors "https://github.com/${REPO}/releases/download/v${VERSION}/${feed}" | grep -q "^version: ${VERSION}$"
+          done
+          echo "Published v${VERSION} from recovery ${RECOVERY_RUN}/${RECOVERY_ATTEMPT}; website mirroring is verified separately."
+
+      - name: Preserve publisher execution and artifact provenance
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-finish-069-provenance
+          path: |
+            ${{ runner.temp }}/publisher-execution-069.json
+            ${{ runner.temp }}/recovery-plan.json
+            ${{ runner.temp }}/release-lineage/*.json
+            apps/desktop/release/release-manifest.json
+          if-no-files-found: warn
+          retention-days: 30
