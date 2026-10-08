@@ -156,8 +156,11 @@ async function waitForVerification(paths, child, timeoutMs) {
 		for (const path of paths) {
 			try {
 				const candidate = JSON.parse(await readFile(path, "utf8"));
-				if (!lastState || Date.parse(candidate.updatedAt ?? "") > Date.parse(lastState.updatedAt ?? ""))
-					lastState = candidate;
+				const stamp = (s) => {
+					const t = Date.parse(s?.updatedAt ?? "");
+					return Number.isFinite(t) ? t : -1;
+				};
+				if (!lastState || stamp(candidate) > stamp(lastState)) lastState = candidate;
 			} catch (error) {
 				if (error instanceof SyntaxError) continue;
 				if (error instanceof Error && !error.message.includes("ENOENT")) throw error;
