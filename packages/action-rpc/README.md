@@ -10,5 +10,10 @@ endpoint:
 
 - `actions.*` for regular app actions.
 - `debug.*` for development-only debug capabilities.
+- `models.resolveCredential` for optional, authenticated, process-local managed model credentials.
+
+The credential client accepts only loopback IP endpoints, refuses redirects, and times out.
+Its response must never be logged or persisted. The Desktop host owns account, provider,
+destination and permission checks; the transport only validates the request contract.
 
 `startActionRpcServer()` remains as the action-only compatibility wrapper.

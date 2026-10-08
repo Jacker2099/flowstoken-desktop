@@ -9,6 +9,7 @@ import {
 	providerIdForGroup,
 } from "./group-catalog.js";
 import { getFlowstokenSession } from "./login-window.js";
+import { rememberManagedCredential } from "./managed-credentials.js";
 import {
 	FlowstokenApiError,
 	fetchUsableGroups,
@@ -53,6 +54,7 @@ export function rememberVerifiedGroupKey(
 	if (revision !== getFlowstokenAuthRevision() || accountId !== getFlowstokenAccountId())
 		throw new FlowstokenApiError(mainT("flowstoken.errors.accountChanged"));
 	verifiedKeys.set(groupId, { revision, accountId, groupId, tokenId, key, at: Date.now() });
+	rememberManagedCredential({ revision, accountId, groupId, tokenId, key });
 }
 
 async function verifiedGroupKey(groupId: string, access: AuthenticatedCatalogAccess): Promise<VerifiedGroupKey> {

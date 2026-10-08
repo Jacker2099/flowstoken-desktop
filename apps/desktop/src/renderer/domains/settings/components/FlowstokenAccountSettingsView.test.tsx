@@ -36,6 +36,7 @@ const snapshot = (id: number): FlowstokenAccountSnapshot => ({
 const model = (): FlowstokenAccountSettingsModel => ({
 	snapshot: snapshot(8),
 	busy: false,
+	authorizing: false,
 	error: null,
 	username: "",
 	password: "",
@@ -43,6 +44,7 @@ const model = (): FlowstokenAccountSettingsModel => ({
 	setPassword: vi.fn(),
 	refresh: vi.fn(async () => {}),
 	loginBrowser: vi.fn(async () => {}),
+	cancelLogin: vi.fn(async () => {}),
 	loginPassword: vi.fn(async () => {}),
 	logout: vi.fn(async () => {}),
 	ensureKeys: vi.fn(async () => {}),
@@ -58,10 +60,12 @@ beforeEach(async () => {
 
 function deferred<T>() {
 	let resolve!: (value: T) => void;
-	const promise = new Promise<T>((done) => {
+	let reject!: (error: unknown) => void;
+	const promise = new Promise<T>((done, fail) => {
 		resolve = done;
+		reject = fail;
 	});
-	return { promise, resolve };
+	return { promise, resolve, reject };
 }
 
 it("shows a new group without fixed three-group copy or a long implementation token name", () => {
@@ -70,6 +74,17 @@ it("shows a new group without fixed three-group copy or a long implementation to
 	expect(screen.getByText("模型分组")).toBeTruthy();
 	expect(screen.queryByText("long-managed-token-name")).toBeNull();
 	expect(screen.queryByText("三组通道")).toBeNull();
+});
+
+it("uses system-browser authorization with a waiting state instead of app password inputs", () => {
+	const value = model();
+	value.snapshot = { ...snapshot(8), loggedIn: false, user: null, groups: [] };
+	value.authorizing = true;
+	render(<FlowstokenAccountSettingsView model={value} />);
+	expect(screen.getByRole("status").textContent).toContain("默认浏览器");
+	expect(screen.getByRole("button", { name: "取消本次授权" })).toBeTruthy();
+	expect(screen.queryByRole("textbox")).toBeNull();
+	expect(screen.queryByLabelText("密码")).toBeNull();
 });
 
 it("distinguishes a configured key from revoked account access", () => {
@@ -179,7 +194,7 @@ it("a same-account permission event wins over an older pending refresh", async (
 	expect(result.current.error).toBe("Access revoked");
 });
 
-it("a same-account event also invalidates an older automatic ensure result", async () => {
+it("a same-account event also invalidates an older manual ensure result", async () => {
 	let listener!: (value: FlowstokenAccountSnapshot) => void;
 	const old = deferred<{ ok: boolean; snapshot: FlowstokenAccountSnapshot }>();
 	const unwired = snapshot(7);
@@ -199,6 +214,10 @@ it("a same-account event also invalidates an older automatic ensure result", asy
 		},
 	});
 	const { result } = renderHook(() => useFlowstokenAccountSettingsModel());
+	await waitFor(() => expect(result.current.snapshot?.user?.id).toBe(7));
+	expect(ensureKeys).not.toHaveBeenCalled();
+	let pending!: Promise<void>;
+	act(() => { pending = result.current.ensureKeys(); });
 	await waitFor(() => expect(ensureKeys).toHaveBeenCalledTimes(1));
 	const revoked = snapshot(7);
 	revoked.groups[0].enabled = false;
@@ -208,6 +227,7 @@ it("a same-account event also invalidates an older automatic ensure result", asy
 	await act(async () => {
 		old.resolve({ ok: true, snapshot: snapshot(7) });
 		await old.promise;
+		await pending;
 	});
 	expect(result.current.snapshot?.groups[0].enabled).toBe(false);
 });
@@ -243,6 +263,28 @@ it("reports a force catalog failure after ensure's own authoritative broadcast",
 	expect(getCatalogSnapshot).toHaveBeenCalledWith({ force: true });
 	expect(result.current.error).toBe("Catalog is offline");
 	expect(result.current.busy).toBe(false);
+});
+
+it.each(["ensureKeys", "loginBrowser"] as const)("a late %s IPC rejection cannot replace a newer same-account event", async (action) => {
+	let listener!: (value: FlowstokenAccountSnapshot) => void;
+	const old = deferred<{ ok: boolean; snapshot: FlowstokenAccountSnapshot }>();
+	Object.defineProperty(window, "vetta", { configurable: true, value: { flowstoken: {
+		refresh: async () => snapshot(7),
+		ensureKeys: () => old.promise,
+		loginWithBrowser: () => old.promise,
+		onAccountChanged: (callback: typeof listener) => { listener = callback; return () => {}; },
+	} } });
+	const { result } = renderHook(() => useFlowstokenAccountSettingsModel());
+	await waitFor(() => expect(result.current.snapshot?.user?.id).toBe(7));
+	let pending!: Promise<void>;
+	act(() => { pending = result.current[action](); });
+	const next = snapshot(7);
+	next.groups[0].enabled = false;
+	next.lastError = "New authoritative account state";
+	act(() => { listener(next); });
+	await act(async () => { old.reject(new Error("Obsolete action failure")); await pending; });
+	expect(result.current.snapshot?.groups[0].enabled).toBe(false);
+	expect(result.current.error).toBe("New authoritative account state");
 });
 
 it("an old logout reply cannot clear the new account's password input", async () => {

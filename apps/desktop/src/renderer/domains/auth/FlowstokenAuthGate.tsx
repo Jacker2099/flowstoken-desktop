@@ -19,58 +19,68 @@ export function FlowstokenAuthGate({ children }: FlowstokenAuthGateProps): JSX.E
 	const [error, setError] = useState<string | null>(null);
 	const [statusText, setStatusText] = useState<string | null>(null);
 	const handleBrowserLoginRef = useRef<() => Promise<void>>(async () => {});
+	const snapshotVersion = useRef(0);
+	const mounted = useRef(false);
+	const initialAutoLoginEligible = useRef(false);
 
 	const checkStatus = useCallback(async () => {
+		const version = snapshotVersion.current;
 		try {
 			const current = await window.vetta?.flowstoken?.getSnapshot();
+			if (!mounted.current || version !== snapshotVersion.current) return;
 			if (current) {
+				initialAutoLoginEligible.current = !current.loggedIn;
+				if (current.loggedIn) autoLoginAttempted = true;
 				setSnapshot(current);
 			}
 		} catch (err) {
+			if (!mounted.current || version !== snapshotVersion.current) return;
 			console.error("[FlowstokenAuthGate] checkStatus error:", err);
+			setError(err instanceof Error ? err.message : String(err));
 		} finally {
-			setLoading(false);
+			if (mounted.current && version === snapshotVersion.current) setLoading(false);
 		}
 	}, []);
 
 	useEffect(() => {
+		mounted.current = true;
 		void checkStatus();
 
 		const cleanup = window.vetta?.flowstoken?.onAccountChanged?.((nextSnapshot) => {
+			snapshotVersion.current += 1;
+			initialAutoLoginEligible.current = false;
+			if (nextSnapshot.loggedIn) autoLoginAttempted = true;
 			setSnapshot(nextSnapshot);
+			setError(nextSnapshot.lastError ?? null);
+			setStatusText(null);
+			setBusy(false);
 			setLoading(false);
 		});
 
 		return () => {
+			mounted.current = false;
+			snapshotVersion.current += 1;
 			if (typeof cleanup === "function") cleanup();
 		};
 	}, [checkStatus]);
 
 	const handleBrowserLogin = async () => {
+		const version = snapshotVersion.current;
+		autoLoginAttempted = true;
+		initialAutoLoginEligible.current = false;
 		setBusy(true);
 		setError(null);
 		setStatusText(t("flowstokenAuth.statusOpening"));
 		try {
 			const res = await window.vetta.flowstoken.loginWithBrowser();
+			if (!mounted.current || version !== snapshotVersion.current) return;
 			if (res.ok && res.snapshot?.loggedIn) {
-				let currentSnap = res.snapshot;
-				// 如果有任何分组尚未接入，自动进行二次保障同步，无需人工点击
-				if (currentSnap.groups?.some((g) => g.enabled && !g.wired)) {
-					setStatusText(t("flowstokenAuth.statusSyncing"));
-					try {
-						const ensureRes = await window.vetta.flowstoken.ensureKeys();
-						if (ensureRes.snapshot) {
-							currentSnap = ensureRes.snapshot;
-						}
-					} catch (e) {
-						console.warn("[FlowstokenAuthGate] Secondary key ensure failed:", e);
-					}
-				}
+				const currentSnap = res.snapshot;
 				setStatusText(t("flowstokenAuth.statusDone"));
 				showToast({
-					variant: "success",
+					variant: currentSnap.lastError ? "info" : "success",
 					title: t("flowstokenAuth.successTitle"),
-					message: t("flowstokenAuth.successMessage"),
+					message: currentSnap.lastError ?? t("flowstokenAuth.successMessage"),
 					durationMs: 5000,
 				});
 				setSnapshot(currentSnap);
@@ -80,20 +90,21 @@ export function FlowstokenAuthGate({ children }: FlowstokenAuthGateProps): JSX.E
 				setStatusText(null);
 			}
 		} catch (err) {
+			if (!mounted.current || version !== snapshotVersion.current) return;
 			setError(err instanceof Error ? err.message : String(err));
 			setStatusText(null);
 		} finally {
-			setBusy(false);
+			if (mounted.current) setBusy(false);
 		}
 	};
 	handleBrowserLoginRef.current = handleBrowserLogin;
 
-	// 拿到快照且未登录时自动拉起一次官方登录窗口；无论成败都不再自动重试。
+	// Only the initial confirmed signed-out state may auto-open; account events include deliberate logout.
 	useEffect(() => {
-		if (loading || snapshot?.loggedIn || autoLoginAttempted) return;
+		if (loading || !initialAutoLoginEligible.current || !snapshot || snapshot.loggedIn || autoLoginAttempted) return;
 		autoLoginAttempted = true;
 		void handleBrowserLoginRef.current();
-	}, [loading, snapshot?.loggedIn]);
+	}, [loading, snapshot]);
 
 	if (loading) {
 		return (
@@ -154,6 +165,13 @@ export function FlowstokenAuthGate({ children }: FlowstokenAuthGateProps): JSX.E
 					>
 						{busy ? t("flowstokenAuth.loggingIn") : t("flowstokenAuth.loginButton")}
 					</Button>
+					{busy ? (
+						<Button variant="ghost" className="w-full" onClick={() => void window.vetta.flowstoken.cancelLogin().catch((err: unknown) => {
+							if (mounted.current) setError(err instanceof Error ? err.message : String(err));
+						})}>
+							{t("flowstokenAuth.cancelAuthorization")}
+						</Button>
+					) : null}
 					<p className="text-[11px] text-muted-foreground text-center leading-relaxed">
 						{t("flowstokenAuth.footerHint")}
 					</p>

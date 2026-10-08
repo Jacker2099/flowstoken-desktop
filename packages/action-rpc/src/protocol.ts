@@ -33,7 +33,8 @@ export function parseLocalRpcRequest(value: unknown): LocalRpcRequest {
 		method !== "actions.run" &&
 		method !== "debug.search" &&
 		method !== "debug.describe" &&
-		method !== "debug.run"
+		method !== "debug.run" &&
+		method !== "models.resolveCredential"
 	) {
 		throw new ActionRpcError("INVALID_REQUEST", "Unsupported request method", {
 			method: typeof method === "string" ? method : "unknown",
@@ -41,6 +42,44 @@ export function parseLocalRpcRequest(value: unknown): LocalRpcRequest {
 	}
 
 	const params = record.params === undefined ? undefined : asRecord(record.params);
+	if (method === "models.resolveCredential") {
+		const accountId = params?.accountId;
+		const tokenId = params?.tokenId;
+		if (
+			typeof accountId !== "number" ||
+			!Number.isSafeInteger(accountId) ||
+			accountId <= 0 ||
+			typeof tokenId !== "number" ||
+			!Number.isSafeInteger(tokenId) ||
+			tokenId <= 0
+		) {
+			throw new ActionRpcError("INVALID_REQUEST", "A valid account and token binding is required");
+		}
+		let headers: Record<string, string> | undefined;
+		if (params?.headers !== undefined) {
+			const raw = asRecord(params.headers);
+			if (Object.values(raw).some((value) => typeof value !== "string")) {
+				throw new ActionRpcError("INVALID_REQUEST", "Invalid model headers");
+			}
+			headers = raw as Record<string, string>;
+		}
+		return {
+			id,
+			method,
+			params: {
+				providerId: requireStringParam(params, "providerId"),
+				groupId: requireStringParam(params, "groupId"),
+				baseUrl: requireStringParam(params, "baseUrl"),
+				accountId,
+				tokenId,
+				headers,
+				...(params?.modelId === undefined ? {} : { modelId: requireStringParam(params, "modelId") }),
+				...(params?.modelSourceId === undefined
+					? {}
+					: { modelSourceId: requireStringParam(params, "modelSourceId") }),
+			},
+		};
+	}
 	if (method === "actions.search") {
 		return {
 			id,

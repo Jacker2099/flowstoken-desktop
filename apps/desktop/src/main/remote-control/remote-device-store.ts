@@ -40,6 +40,8 @@ export const EMPTY_REMOTE_CONTROL_CONFIG: RemoteControlConfig = { cloudEnabled: 
  * removed together with the device so a revoked phone leaves nothing behind.
  */
 export class RemoteDeviceStore {
+	private lastVaultAvailability: boolean | null = null;
+
 	constructor(private readonly options: RemoteDeviceStoreOptions) {}
 
 	async read(): Promise<RemoteControlConfig> {
@@ -98,8 +100,20 @@ export class RemoteDeviceStore {
 		this.options.vault.remove(ref(mobileSecretName(id)));
 	}
 
+	/** The last explicit probe, not permission to access credentials. Reading status never opens the keychain. */
+	cachedVaultAvailability(): boolean | null {
+		return this.lastVaultAvailability;
+	}
+
+	/** Only pairing or another explicit credential operation may perform this probe. */
 	vaultAvailable(): boolean {
-		return this.options.vault.isAvailable();
+		try {
+			this.lastVaultAvailability = this.options.vault.isAvailable();
+			return this.lastVaultAvailability;
+		} catch (error) {
+			this.lastVaultAvailability = false;
+			throw error;
+		}
 	}
 
 	/** The desktop's long-term X25519 identity; created on first use and kept in the vault. */

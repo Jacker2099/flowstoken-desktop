@@ -202,7 +202,10 @@ export function createSystemApi(
 		},
 		models: {
 			get: () => ipc.invoke("vetta:models:get"),
-			set: (config) => ipc.invoke("vetta:models:set", config),
+			set: (config, options) =>
+				options === undefined
+					? ipc.invoke("vetta:models:set", config)
+					: ipc.invoke("vetta:models:set", config, options),
 			copyApiKey: (providerId) => ipc.invoke("vetta:models:copy-api-key", providerId),
 			fetchRemote: () => ipc.invoke("vetta:models:fetch-remote"),
 			listPresets: () => ipc.invoke("vetta:models:list-presets"),

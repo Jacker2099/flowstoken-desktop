@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createStore, Provider } from "jotai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -9,6 +9,7 @@ vi.mock("@shared/i18n", () => ({
 
 const { useTheme, useThemeActions } = await import("./useTheme.js");
 const { ThemeController } = await import("../theme/ThemeController.js");
+const { themeModeAtom } = await import("../store/ui-atoms.js");
 
 function installThemeApi(setNativeTheme: ReturnType<typeof vi.fn>): void {
 	const subscribe = vi.fn(() => vi.fn());
@@ -68,9 +69,12 @@ describe("useTheme", () => {
 					: Promise.resolve(),
 		);
 		installThemeApi(setNativeTheme);
+		localStorage.setItem("vetta-theme", "dark");
+		const store = createStore();
+		store.set(themeModeAtom, "dark");
 
 		render(
-			<Provider store={createStore()}>
+			<Provider store={store}>
 				<ThemeController />
 				<ModeHarness />
 			</Provider>,
@@ -83,6 +87,28 @@ describe("useTheme", () => {
 		expect(document.documentElement.getAttribute("data-mode")).toBe("light");
 		expect(setNativeTheme).toHaveBeenCalledWith("light");
 		expect(finishNativeSync).toBeTypeOf("function");
+	});
+
+	it("新安装默认选择浅色并同步原生窗口，不写入一个伪造的显式偏好", async () => {
+		const native = vi.fn(async () => {});
+		installThemeApi(native);
+		render(<Provider store={createStore()}><ThemeController /><ModeHarness /></Provider>);
+		expect(screen.getByRole("button", { name: "light" })).toBeTruthy();
+		await waitFor(() => expect(native).toHaveBeenCalledWith("light"));
+		expect(localStorage.getItem("vetta-theme")).toBeNull();
+	});
+
+	it("保留明确跟随系统的选择并使用原生系统颜色", async () => {
+		const native = vi.fn(async () => {});
+		installThemeApi(native);
+		localStorage.setItem("vetta-theme", "auto");
+		const store = createStore();
+		store.set(themeModeAtom, "auto");
+		render(<Provider store={store}><ThemeController /><ModeHarness /></Provider>);
+		await waitFor(() => expect(document.documentElement.dataset.mode).toBe("dark"));
+		expect(native).toHaveBeenCalledWith("system");
+		expect(screen.getByRole("button", { name: "auto" })).toBeTruthy();
+		expect(localStorage.getItem("vetta-theme")).toBe("auto");
 	});
 
 	it("只使用主题写操作的组件不会订阅主题状态", () => {

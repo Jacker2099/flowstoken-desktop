@@ -110,14 +110,16 @@ it("runs the updater spec through the account UI while raw Host API access remai
 			const snapshot = await hostApi.flowstoken.refresh();
 			const model: FlowstokenAccountSettingsModel = {
 				snapshot,
-				busy: false,
+					busy: false,
+					authorizing: false,
 				error: null,
 				username: "",
 				password: "",
 				setUsername: () => {},
 				setPassword: () => {},
 				refresh: noop,
-				loginBrowser: noop,
+					loginBrowser: noop,
+					cancelLogin: noop,
 				loginPassword: noop,
 				logout: noop,
 				ensureKeys: noop,

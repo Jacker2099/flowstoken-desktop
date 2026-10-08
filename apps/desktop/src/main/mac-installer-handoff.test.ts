@@ -1,6 +1,36 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
-import { handOffToInstaller, waitForInstallerHandoff } from "./mac-installer-handoff";
+import {
+	handOffToInstaller,
+	MACOS_SHIPIT_JOB_LABEL,
+	resolveMacInstallerJobLabel,
+	waitForInstallerHandoff,
+} from "./mac-installer-handoff";
+
+it("hands off to the job registered for the packaged FlowsToken bundle identity", async () => {
+	const buildSource = readFileSync(join(import.meta.dirname, "../../scripts/desktop-build-environment.mjs"), "utf8");
+	const appId = /\bVETTA_APP_ID:\s*"([A-Za-z0-9.-]+)"/.exec(buildSource)?.[1];
+	if (!appId) throw new Error("The packaging default must declare a concrete bundle identifier");
+	const expectedLabel = `${appId}.ShipIt`;
+	const start = vi.fn(() => true);
+	await expect(
+		handOffToInstaller({
+			label: MACOS_SHIPIT_JOB_LABEL,
+			probe: (label) => label === expectedLabel,
+			start,
+			timeoutMs: 0,
+		}),
+	).resolves.toBe("started");
+	expect(start).toHaveBeenCalledWith(expectedLabel);
+});
+
+it("derives custom installer labels from an explicit valid bundle identity", () => {
+	expect(resolveMacInstallerJobLabel(" com.example.desktop ")).toBe("com.example.desktop.ShipIt");
+	for (const invalid of ["", "desktop", "com.example/desktop", "com.example;other"])
+		expect(() => resolveMacInstallerJobLabel(invalid)).toThrow("Invalid installer bundle identifier");
+});
 
 describe("waitForInstallerHandoff", () => {
 	it("returns as soon as the installer job shows up", async () => {

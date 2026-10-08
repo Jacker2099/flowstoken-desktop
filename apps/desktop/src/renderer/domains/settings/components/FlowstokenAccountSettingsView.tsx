@@ -1,5 +1,4 @@
 import { Button } from "@shared/components/ui/button";
-import { Input } from "@shared/components/ui/input";
 import { catalogGroupForProvider, catalogGroupTitle } from "@shared/store/flowstoken-catalog";
 import { flowstokenCatalogAtom } from "@shared/store/model-catalog-atoms";
 import { useAtomValue } from "jotai";
@@ -61,36 +60,12 @@ export function FlowstokenAccountSettingsView({ model }: { model: FlowstokenAcco
 					</div>
 				) : (
 					<div className="space-y-3">
-						<div className="grid gap-2">
-							<Input
-								aria-label={t("flowstokenAccount.username")}
-								placeholder={t("flowstokenAccount.username")}
-								value={model.username}
-								onChange={(event) => model.setUsername(event.target.value)}
-								disabled={model.busy}
-								autoComplete="username"
-							/>
-							<Input
-								aria-label={t("flowstokenAccount.password")}
-								type="password"
-								placeholder={t("flowstokenAccount.password")}
-								value={model.password}
-								onChange={(event) => model.setPassword(event.target.value)}
-								disabled={model.busy}
-								autoComplete="current-password"
-							/>
-						</div>
+						<p role="status" className="text-[13px] text-muted-foreground">{t(model.authorizing ? "flowstokenAuth.statusOpening" : "flowstokenAuth.footerHint")}</p>
 						<div className="flex flex-wrap gap-2">
-							<Button variant="primary" disabled={model.busy} onClick={() => void model.loginBrowser()}>
+							<Button variant="primary" disabled={model.busy || model.authorizing} onClick={() => void model.loginBrowser()}>
 								{t("flowstokenAccount.browserLogin")}
 							</Button>
-							<Button
-								variant="outline"
-								disabled={model.busy || !model.username || !model.password}
-								onClick={() => void model.loginPassword()}
-							>
-								{t("flowstokenAccount.passwordLogin")}
-							</Button>
+							{model.authorizing ? <Button variant="ghost" onClick={() => void model.cancelLogin()}>{t("flowstokenAuth.cancelAuthorization")}</Button> : null}
 						</div>
 					</div>
 				)}
@@ -125,7 +100,7 @@ export function FlowstokenAccountSettingsView({ model }: { model: FlowstokenAcco
 											{label}
 										</span>
 										<span
-											className={`shrink-0 text-[11px] ${group.enabled && group.wired ? "text-emerald-400" : "text-muted-foreground"}`}
+											className={`shrink-0 text-[11px] ${group.enabled && group.wired ? "text-foreground dark:text-emerald-400" : "text-muted-foreground"}`}
 										>
 											{t(
 												!group.enabled

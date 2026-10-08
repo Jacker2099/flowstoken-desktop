@@ -915,6 +915,8 @@
 	"alreadyAdded": "已添加",
 	"addSelectedModels": "添加所选 ({{n}})",
 	"providerName": "服务商名称",
+	"providerRenameConflict": "此服务商名称已存在，请使用其他名称。",
+	"providerRenameFailed": "无法完成服务商保存，请刷新设置后重试。",
 	"apiType": "API 类型",
 	"baseUrl": "Base URL",
 	"apiKey": "API Key",

@@ -23,7 +23,16 @@ import { spawnSync } from "node:child_process";
  * ShipIt 的 launchd 作业 label。必须与 electron-builder 配置里的 `appId` 一致
  * （见 scripts/prepare-pack.js 与 scripts/verify-mac-update.mjs）。
  */
-export const MACOS_SHIPIT_JOB_LABEL = "com.vetta.desktop.ShipIt";
+export function resolveMacInstallerJobLabel(appId: string): string {
+	const bundleId = appId.trim();
+	if (!/^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/.test(bundleId)) throw new Error("Invalid installer bundle identifier");
+	return `${bundleId}.ShipIt`;
+}
+
+// Vite fixes this value at build time, matching the appId used by electron-builder.
+export const MACOS_SHIPIT_JOB_LABEL = resolveMacInstallerJobLabel(
+	process.env.VETTA_APP_ID?.trim() || "com.flowstoken.desktop",
+);
 
 export interface InstallerHandoffOptions {
 	/** launchd 作业 label，形如 `<bundleId>.ShipIt`。 */

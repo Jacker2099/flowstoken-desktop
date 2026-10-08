@@ -94,7 +94,8 @@ export interface RemoteAccessState {
 	readonly relayBaseUrl?: string;
 	/** The relay this build uses when none is set, for "restore default". */
 	readonly defaultRelayBaseUrl?: string;
-	readonly vaultAvailable: boolean;
+	/** null until an explicit credential operation checks the vault; never a grant of permission. */
+	readonly vaultAvailable: boolean | null;
 	readonly error?: string;
 }
 
@@ -196,6 +197,8 @@ export class DesktopRemoteAccessManager {
 		| {
 				readonly pairingId: string;
 				readonly expiresAt: number;
+				readonly mobileSecret: string;
+				readonly desktopIdentityKey: string;
 				timer: ReturnType<typeof setTimeout>;
 				readonly code?: InviteCode;
 		  }
@@ -338,7 +341,7 @@ export class DesktopRemoteAccessManager {
 			cloudEnabled: this.config.cloudEnabled,
 			relayBaseUrl: this.config.relayBaseUrl,
 			defaultRelayBaseUrl: this.options.store.defaultRelayBaseUrl(),
-			vaultAvailable: this.options.store.vaultAvailable(),
+			vaultAvailable: this.options.store.cachedVaultAvailability(),
 			error: this.lastError,
 		};
 	}
@@ -376,6 +379,7 @@ export class DesktopRemoteAccessManager {
 		const pairingId = randomToken(24);
 		const mobileSecret = randomToken(32);
 		const relaySecret = randomToken(32);
+		const desktopIdentityKey = toBase64Url(this.identity().publicKey);
 		const record: RemoteControlDeviceRecord = {
 			id: pairingId,
 			name: "",
@@ -389,7 +393,7 @@ export class DesktopRemoteAccessManager {
 		const expiresAt = this.now() + this.inviteTtlMs;
 		const timer = setTimeout(() => void this.expireInvite(pairingId), this.inviteTtlMs);
 		timer.unref?.();
-		this.invite = { pairingId, expiresAt, timer };
+		this.invite = { pairingId, expiresAt, mobileSecret, desktopIdentityKey, timer };
 		await this.reconcile();
 		void this.publishInviteCode(pairingId);
 		log.info("remote invite created", { pairingId: pairingId.slice(0, 6) });
@@ -1018,15 +1022,15 @@ export class DesktopRemoteAccessManager {
 	}
 
 	private inviteView(pairingId: string, expiresAt: number, code?: InviteCode): RemoteAccessInviteView | undefined {
-		const mobileSecret = this.options.store.mobileSecret(pairingId);
-		if (!mobileSecret) return undefined;
+		const active = this.invite;
+		if (!active || active.pairingId !== pairingId) return undefined;
 		const port = this.lanServer?.listeningPort;
 		const relayBaseUrl = this.config.cloudEnabled ? this.config.relayBaseUrl : undefined;
 		const inviteUri = buildPairingUri({
 			version: 2,
 			pairingId,
-			mobileSecret,
-			desktopIdentityKey: toBase64Url(this.identity().publicKey),
+			mobileSecret: active.mobileSecret,
+			desktopIdentityKey: active.desktopIdentityKey,
 			desktopName: this.options.deviceName,
 			lanEndpoints: port ? this.lanEndpoints(port) : [],
 			relayBaseUrl,

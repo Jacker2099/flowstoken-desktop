@@ -56,6 +56,11 @@ async function dispatch(
 	request: ReturnType<typeof parseLocalRpcRequest>,
 	signal: AbortSignal,
 ) {
+	if (request.method === "models.resolveCredential") {
+		if (!runtime.models)
+			throw new ActionRpcError("MODELS_NOT_AVAILABLE", "Managed model credentials are unavailable");
+		return { ...(await runtime.models.resolveCredential(request.params)) };
+	}
 	if (request.method === "actions.search") {
 		return await runtime.actions.search({
 			query: request.params?.query,
@@ -98,6 +103,7 @@ export async function startLocalRpcServer(
 
 	app.get("/health", (c) => c.json({ ok: true }));
 	app.post("/rpc", async (c) => {
+		c.header("Cache-Control", "no-store");
 		let id = "unknown";
 		try {
 			if (getBearerToken(c.req.header("authorization")) !== options.token) {

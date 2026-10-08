@@ -1,12 +1,19 @@
 import { createHash } from "node:crypto";
 import { net, type Session } from "electron";
 import { mainT } from "../i18n/index.js";
+import {
+	createDesktopAuthorizationSession,
+	disposeDesktopAuthorizationSession,
+	mutateFlowstokenCookies,
+	waitForFlowstokenCookieMutations,
+} from "./auth-session.js";
 import { FLOWSTOKEN_API_ORIGIN, FLOWSTOKEN_GROUPS } from "./constants.js";
 import { isValidBillingGroupId } from "./group-catalog.js";
 import type { FlowstokenUsageRow, FlowstokenUserSnapshot } from "./types.js";
 
 interface ApiEnvelope<T> {
 	success?: boolean;
+	code?: string;
 	message?: string;
 	data?: T;
 }
@@ -15,6 +22,7 @@ export class FlowstokenApiError extends Error {
 	constructor(
 		message: string,
 		readonly status?: number,
+		readonly retryAfterMs?: number,
 	) {
 		super(message);
 		this.name = "FlowstokenApiError";
@@ -32,17 +40,40 @@ export class FlowstokenApiError extends Error {
  */
 let cachedAccessToken: string | null = null;
 let cachedAccountId: number | null = null;
+let cachedUser: FlowstokenUserSnapshot | null = null;
+let cachedSessionId: string | null = null;
 let authRevision = 0;
+const authChangedListeners = new Set<() => void>();
+const requestCooldowns = new WeakMap<Session, number>();
 let refreshRequest: {
 	session: Session;
 	revision: number;
 	promise: Promise<{ accessToken: string; user: FlowstokenUserSnapshot }>;
+	controller: AbortController;
+	consumers: Set<symbol>;
 } | null = null;
+let logoutRequest: Promise<void> | null = null;
+
+export function onFlowstokenAuthChanged(listener: () => void): () => void {
+	authChangedListeners.add(listener);
+	return () => {
+		authChangedListeners.delete(listener);
+	};
+}
+
+function advanceAuthRevision(): void {
+	authRevision++;
+	for (const listener of authChangedListeners) listener();
+}
 
 export function clearCachedAccessToken(): void {
+	const pendingRefresh = refreshRequest;
 	cachedAccessToken = null;
 	cachedAccountId = null;
-	authRevision++;
+	cachedUser = null;
+	cachedSessionId = null;
+	advanceAuthRevision();
+	pendingRefresh?.controller.abort(new FlowstokenApiError(mainT("flowstoken.errors.accountChanged")));
 }
 
 export function getCachedAccessToken(): string | null {
@@ -57,11 +88,122 @@ export function getFlowstokenAccountId(): number | null {
 	return cachedAccountId;
 }
 
+export function abortPendingFlowstokenRefresh(): void {
+	refreshRequest?.controller.abort(new FlowstokenApiError(mainT("flowstoken.errors.accountChanged")));
+}
+
+/** Explicit sign-out only. Remote revocation is best effort; local sign-out always completes. */
+export function logoutFlowstokenAuthSession(session: Session): Promise<void> {
+	if (logoutRequest) return logoutRequest;
+	const accessToken = cachedAccessToken;
+	const sid = cachedSessionId;
+	clearCachedAccessToken();
+	const revision = authRevision;
+	const task = mutateFlowstokenCookies(async () => {
+		if (revision !== authRevision) return;
+		let isolated: Session | undefined;
+		try {
+			if (sid) {
+				const url = new URL("/api/user/auth/logout", FLOWSTOKEN_API_ORIGIN).toString();
+				const cookies = await session.cookies.get({ url, name: "new_api_refresh" });
+				if (revision !== authRevision) return;
+				const headers = new Headers({
+					Accept: "application/json",
+					Origin: FLOWSTOKEN_API_ORIGIN,
+					Referer: `${FLOWSTOKEN_API_ORIGIN}/`,
+					"X-Auth-Session": sid,
+				});
+				if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
+				const cookie = cookies.find(
+					(entry) =>
+						entry.name === "new_api_refresh" &&
+						entry.domain === "www.flowstoken.com" &&
+						entry.path === "/api/user/auth",
+				);
+				if (cookie) headers.set("Cookie", `new_api_refresh=${cookie.value}`);
+				// A late logout response must not clear a newer formal cookie via Set-Cookie.
+				isolated = createDesktopAuthorizationSession();
+				const controller = new AbortController();
+				let timer: ReturnType<typeof setTimeout> | undefined;
+				const timeout = new Promise<void>((resolve) => {
+					timer = setTimeout(() => {
+						controller.abort();
+						resolve();
+					}, 5_000);
+				});
+				const revocationSession = isolated;
+				const request = Promise.resolve()
+					.then(() =>
+						revocationSession.fetch(url, {
+							method: "POST",
+							headers,
+							credentials: "include",
+							redirect: "error",
+							signal: controller.signal,
+						}),
+					)
+					.then((response) => {
+						if (response.status === 429) recordRateLimit(session, response);
+						void response.body?.cancel().catch(() => {});
+					})
+					.catch(() => {});
+				try {
+					await Promise.race([request, timeout]);
+				} finally {
+					clearTimeout(timer);
+					controller.abort();
+				}
+			}
+		} catch {
+			// An unavailable network or cookie read must not prevent local sign-out.
+		} finally {
+			if (isolated) void disposeDesktopAuthorizationSession(isolated);
+			if (revision === authRevision) await session.clearStorageData({ storages: ["cookies", "localstorage"] });
+		}
+	});
+	const tracked = task.finally(() => {
+		if (logoutRequest === tracked) logoutRequest = null;
+	});
+	logoutRequest = tracked;
+	return tracked;
+}
+
+/** Display-only fallback; it never grants model entitlements or replaces their authenticated checks. */
+export function getCachedFlowstokenUser(): FlowstokenUserSnapshot | null {
+	return cachedUser ? { ...cachedUser } : null;
+}
+
+export function getFlowstokenRequestCooldownMs(session: Session): number {
+	return Math.max(0, (requestCooldowns.get(session) ?? 0) - Date.now());
+}
+
+function rateLimitError(session: Session): FlowstokenApiError {
+	const retryAfterMs = getFlowstokenRequestCooldownMs(session);
+	return new FlowstokenApiError(
+		mainT("flowstoken.errors.rateLimited", { seconds: Math.ceil(retryAfterMs / 1000) }),
+		429,
+		retryAfterMs,
+	);
+}
+
+export function assertFlowstokenRequestAllowed(session: Session): void {
+	if (getFlowstokenRequestCooldownMs(session) > 0) throw rateLimitError(session);
+}
+
+function recordRateLimit(session: Session, response: Response): void {
+	const value = response.headers.get("Retry-After")?.trim();
+	const parsed = value && /^\d+$/.test(value) ? Number(value) * 1000 : value ? Date.parse(value) - Date.now() : NaN;
+	const delay = Number.isSafeInteger(parsed) && parsed >= 0 ? Math.max(1000, parsed) : 60_000;
+	requestCooldowns.set(session, Math.max(requestCooldowns.get(session) ?? 0, Date.now() + delay));
+}
+
 export function setCachedAccessToken(token: string | null | undefined): void {
 	const trimmed = typeof token === "string" ? token.trim() : "";
 	cachedAccessToken = trimmed || null;
 	cachedAccountId = null;
-	authRevision++;
+	cachedUser = null;
+	cachedSessionId = null;
+	advanceAuthRevision();
 }
 
 function assertCurrentAuth(revision: number): void {
@@ -73,7 +215,15 @@ type RefreshPayload = {
 	accessToken?: string;
 	token?: string;
 	user?: Record<string, unknown>;
+	session?: { sid?: unknown };
 } & Record<string, unknown>;
+
+function sessionId(data: RefreshPayload | null | undefined): string | null {
+	const sid = data?.session?.sid;
+	return typeof sid === "string" && sid.length > 0 && sid.length <= 256 && !/[\u0000-\u0020\u007f]/.test(sid)
+		? sid
+		: null;
+}
 
 function pickAccessToken(data: RefreshPayload | null | undefined): string | null {
 	if (!data) return null;
@@ -96,9 +246,100 @@ function mapUser(data: Record<string, unknown>): FlowstokenUserSnapshot {
 	};
 }
 
+export interface DesktopAuthorizationBundle {
+	readonly accessToken: string;
+	readonly sessionId: string;
+	readonly user: FlowstokenUserSnapshot;
+}
+
+/** The authorization code is exchanged only over HTTPS in the app's own cookie session. */
+export async function exchangeDesktopAuthorization(
+	session: Session,
+	input: { code: string; codeVerifier: string; redirectUri: string },
+	options: { signal: AbortSignal; revision: number; rateLimitSession?: Session },
+): Promise<DesktopAuthorizationBundle> {
+	assertCurrentAuth(options.revision);
+	if (options.rateLimitSession) assertFlowstokenRequestAllowed(options.rateLimitSession);
+	const response = await sessionFetch(
+		session,
+		new URL("/api/user/auth/desktop/exchange", FLOWSTOKEN_API_ORIGIN).toString(),
+		{
+			method: "POST",
+			signal: options.signal,
+			redirect: "error",
+			headers: { Accept: "application/json", "Content-Type": "application/json", "Cache-Control": "no-store" },
+			body: JSON.stringify({
+				client_id: "flowstoken-desktop",
+				code: input.code,
+				code_verifier: input.codeVerifier,
+				redirect_uri: input.redirectUri,
+			}),
+		},
+	).catch((error: unknown) => {
+		if (options.rateLimitSession && error instanceof FlowstokenApiError && error.status === 429)
+			requestCooldowns.set(
+				options.rateLimitSession,
+				Math.max(requestCooldowns.get(options.rateLimitSession) ?? 0, Date.now() + (error.retryAfterMs ?? 60_000)),
+			);
+		throw error;
+	});
+	let value: unknown;
+	try {
+		value = await response.json();
+	} catch {
+		throw new FlowstokenApiError(mainT("flowstoken.errors.desktopAuthorizationFailed"), response.status);
+	}
+	options.signal.throwIfAborted();
+	assertCurrentAuth(options.revision);
+	if (
+		!response.ok ||
+		!value ||
+		typeof value !== "object" ||
+		!("success" in value) ||
+		value.success !== true ||
+		!("data" in value) ||
+		!value.data ||
+		typeof value.data !== "object"
+	)
+		throw new FlowstokenApiError(mainT("flowstoken.errors.desktopAuthorizationFailed"), response.status);
+	const data = value.data as RefreshPayload;
+	const accessToken = pickAccessToken(data);
+	if (!accessToken || !data.user || typeof data.user !== "object" || Array.isArray(data.user))
+		throw new FlowstokenApiError(mainT("flowstoken.errors.desktopAuthorizationFailed"), response.status);
+	const sid = sessionId(data);
+	if (!sid) throw new FlowstokenApiError(mainT("flowstoken.errors.desktopAuthorizationFailed"), response.status);
+	return { accessToken, sessionId: sid, user: mapUser(data.user) };
+}
+
+/** No asynchronous work may occur between the generation check and committing this verified bundle. */
+export function acceptDesktopAuthorization(
+	bundle: DesktopAuthorizationBundle,
+	revision: number,
+	signal: AbortSignal,
+): FlowstokenUserSnapshot {
+	signal.throwIfAborted();
+	assertCurrentAuth(revision);
+	const pendingRefresh = refreshRequest;
+	cachedAccessToken = bundle.accessToken;
+	cachedAccountId = bundle.user.id;
+	cachedUser = { ...bundle.user };
+	cachedSessionId = bundle.sessionId;
+	advanceAuthRevision();
+	pendingRefresh?.controller.abort(new FlowstokenApiError(mainT("flowstoken.errors.accountChanged")));
+	return { ...bundle.user };
+}
+
 async function sessionFetch(session: Session, url: string, init: RequestInit): Promise<Response> {
+	assertFlowstokenRequestAllowed(session);
 	const revision = authRevision;
 	const controller = new AbortController();
+	const signal = init.signal ? AbortSignal.any([controller.signal, init.signal]) : controller.signal;
+	signal.throwIfAborted();
+	let onAbort: (() => void) | undefined;
+	const canceled = new Promise<never>((_resolve, reject) => {
+		onAbort = () => reject(signal.reason);
+		signal.addEventListener("abort", onAbort, { once: true });
+	});
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	const expired = new Promise<never>((_resolve, reject) => {
 		timer = setTimeout(() => {
@@ -108,7 +349,13 @@ async function sessionFetch(session: Session, url: string, init: RequestInit): P
 		}, 15_000);
 	});
 	const request = (async () => {
+		await waitForFlowstokenCookieMutations(session);
+		assertCurrentAuth(revision);
+		signal.throwIfAborted();
 		const headers = new Headers(init.headers);
+		const path = new URL(url).pathname;
+		if (cachedSessionId && ["/api/user/auth/refresh", "/api/user/auth/logout"].includes(path))
+			headers.set("X-Auth-Session", cachedSessionId);
 		try {
 			const cookies = await session.cookies.get({ url });
 			const cookieStr = cookies.map((c) => `${c.name}=${c.value}`).join("; ");
@@ -119,7 +366,8 @@ async function sessionFetch(session: Session, url: string, init: RequestInit): P
 			// Non-blocking
 		}
 		assertCurrentAuth(revision);
-		controller.signal.throwIfAborted();
+		signal.throwIfAborted();
+		assertFlowstokenRequestAllowed(session);
 
 		if (!headers.has("Origin")) {
 			headers.set("Origin", FLOWSTOKEN_API_ORIGIN);
@@ -131,15 +379,21 @@ async function sessionFetch(session: Session, url: string, init: RequestInit): P
 		const options = {
 			...init,
 			headers,
-			signal: controller.signal,
+			signal,
 			credentials: init.credentials ?? "include",
 		};
 		const response =
 			typeof session.fetch === "function"
 				? await session.fetch(url, options)
 				: await net.fetch(url, { ...options, ...({ session } as object) } as RequestInit);
+		signal.throwIfAborted();
+		if (response.status === 429) {
+			recordRateLimit(session, response);
+			void response.body?.cancel().catch(() => {});
+			throw rateLimitError(session);
+		}
 		const body = await response.arrayBuffer();
-		controller.signal.throwIfAborted();
+		signal.throwIfAborted();
 		assertCurrentAuth(revision);
 		return new Response([204, 205, 304].includes(response.status) ? null : body, {
 			status: response.status,
@@ -148,15 +402,17 @@ async function sessionFetch(session: Session, url: string, init: RequestInit): P
 		});
 	})();
 	try {
-		return await Promise.race([request, expired]);
+		return await Promise.race([request, expired, canceled]);
 	} finally {
 		if (timer !== undefined) clearTimeout(timer);
+		if (onAbort) signal.removeEventListener("abort", onAbort);
 	}
 }
 
 async function performRefresh(
 	session: Session,
 	revision: number,
+	signal: AbortSignal,
 ): Promise<{
 	accessToken: string;
 	user: FlowstokenUserSnapshot;
@@ -164,6 +420,7 @@ async function performRefresh(
 	const url = new URL("/api/user/auth/refresh", FLOWSTOKEN_API_ORIGIN).toString();
 	const response = await sessionFetch(session, url, {
 		method: "POST",
+		signal,
 		headers: {
 			Accept: "application/json",
 			"Cache-Control": "no-store",
@@ -171,7 +428,14 @@ async function performRefresh(
 	});
 
 	const text = await response.text();
+	signal.throwIfAborted();
 	assertCurrentAuth(revision);
+	if (response.status === 401) {
+		// An already signed-out background probe must not cancel a browser authorization in progress.
+		if (cachedAccessToken !== null || cachedAccountId !== null || cachedUser !== null || cachedSessionId !== null)
+			clearCachedAccessToken();
+		throw new FlowstokenApiError(mainT("flowstoken.errors.authRequired"), 401);
+	}
 	let json: ApiEnvelope<RefreshPayload> | null = null;
 	try {
 		json = text ? (JSON.parse(text) as ApiEnvelope<RefreshPayload>) : null;
@@ -180,16 +444,14 @@ async function performRefresh(
 	}
 
 	if (!response.ok || json?.success === false) {
-		cachedAccessToken = null;
-		cachedAccountId = null;
+		if (response.status === 409 && json?.code === "AUTH_SESSION_MISMATCH")
+			throw new FlowstokenApiError(mainT("flowstoken.errors.sessionMismatch"), 409);
 		throw new FlowstokenApiError(json?.message || `刷新会话失败（HTTP ${response.status}）`, response.status);
 	}
 
 	const data = (json?.data ?? null) as RefreshPayload | null;
 	const accessToken = pickAccessToken(data);
 	if (!accessToken) {
-		cachedAccessToken = null;
-		cachedAccountId = null;
 		throw new FlowstokenApiError("刷新会话未返回 access_token", response.status);
 	}
 	let user: FlowstokenUserSnapshot;
@@ -198,23 +460,61 @@ async function performRefresh(
 	} else if (data && data.id !== undefined) {
 		user = mapUser(data);
 	} else {
-		user = await fetchSelfWithBearer(session, accessToken, revision, false);
+		user = await fetchSelfWithBearer(session, accessToken, revision, false, signal);
 	}
+	signal.throwIfAborted();
 	assertCurrentAuth(revision);
-	if (cachedAccountId !== null && cachedAccountId !== user.id) authRevision++;
+	const sameAccount = cachedAccountId === user.id;
+	if (cachedAccountId !== null && !sameAccount) advanceAuthRevision();
 	cachedAccessToken = accessToken;
 	cachedAccountId = user.id;
+	cachedUser = user;
+	cachedSessionId = sessionId(data) ?? (sameAccount ? cachedSessionId : null);
 	return { accessToken, user };
 }
 
-export function refreshAuth(session: Session): Promise<{ accessToken: string; user: FlowstokenUserSnapshot }> {
-	if (refreshRequest?.session === session && refreshRequest.revision === authRevision) return refreshRequest.promise;
-	const revision = authRevision;
-	const promise = performRefresh(session, revision).finally(() => {
-		if (refreshRequest?.promise === promise) refreshRequest = null;
+export function refreshAuth(
+	session: Session,
+	options: { signal?: AbortSignal } = {},
+): Promise<{ accessToken: string; user: FlowstokenUserSnapshot }> {
+	if (options.signal?.aborted) return Promise.reject(options.signal.reason);
+	if (
+		refreshRequest?.session !== session ||
+		refreshRequest.revision !== authRevision ||
+		refreshRequest.controller.signal.aborted
+	) {
+		const revision = authRevision;
+		const controller = new AbortController();
+		const promise = performRefresh(session, revision, controller.signal).finally(() => {
+			if (refreshRequest?.promise === promise) refreshRequest = null;
+		});
+		refreshRequest = { session, revision, promise, controller, consumers: new Set() };
+	}
+	const request = refreshRequest;
+	const consumer = Symbol();
+	request.consumers.add(consumer);
+	return new Promise((resolve, reject) => {
+		const finish = () => {
+			request.consumers.delete(consumer);
+			options.signal?.removeEventListener("abort", onAbort);
+		};
+		const onAbort = () => {
+			finish();
+			if (request.consumers.size === 0) request.controller.abort(options.signal?.reason);
+			reject(options.signal?.reason);
+		};
+		options.signal?.addEventListener("abort", onAbort, { once: true });
+		request.promise.then(
+			(value) => {
+				finish();
+				resolve(value);
+			},
+			(error: unknown) => {
+				finish();
+				reject(error);
+			},
+		);
 	});
-	refreshRequest = { session, revision, promise };
-	return promise;
 }
 
 async function ensureAccessToken(session: Session): Promise<string> {
@@ -282,11 +582,13 @@ async function fetchSelfWithBearer(
 	accessToken: string,
 	revision = authRevision,
 	commitIdentity = true,
+	signal?: AbortSignal,
 ): Promise<FlowstokenUserSnapshot> {
 	assertCurrentAuth(revision);
 	const url = new URL("/api/user/self", FLOWSTOKEN_API_ORIGIN).toString();
 	const response = await sessionFetch(session, url, {
 		method: "GET",
+		signal,
 		headers: {
 			Accept: "application/json",
 			Authorization: `Bearer ${accessToken}`,
@@ -305,8 +607,12 @@ async function fetchSelfWithBearer(
 	}
 	const user = mapUser((json?.data ?? json) as Record<string, unknown>);
 	if (commitIdentity) {
-		if (cachedAccountId !== null && cachedAccountId !== user.id) authRevision++;
+		if (cachedAccountId !== null && cachedAccountId !== user.id) {
+			cachedSessionId = null;
+			advanceAuthRevision();
+		}
 		cachedAccountId = user.id;
+		cachedUser = user;
 	}
 	return user;
 }
@@ -316,14 +622,19 @@ export async function fetchSelf(session: Session): Promise<FlowstokenUserSnapsho
 	try {
 		return (await refreshAuth(session)).user;
 	} catch (refreshError) {
+		if (refreshError instanceof FlowstokenApiError && [401, 409].includes(refreshError.status ?? 0))
+			throw refreshError;
 		assertCurrentAuth(revision);
+		if (refreshError instanceof FlowstokenApiError && refreshError.status === 429) throw refreshError;
 		if (cachedAccessToken) {
 			try {
 				return await fetchSelfWithBearer(session, cachedAccessToken, revision);
-			} catch {
+			} catch (error) {
 				assertCurrentAuth(revision);
-				cachedAccessToken = null;
-				cachedAccountId = null;
+				if (error instanceof FlowstokenApiError && error.status === 401) {
+					clearCachedAccessToken();
+					throw error;
+				}
 			}
 		}
 		throw refreshError;
@@ -375,6 +686,8 @@ export async function loginWithPassword(
 	if (userRaw) {
 		const user = mapUser(userRaw);
 		cachedAccountId = user.id;
+		cachedUser = user;
+		cachedSessionId = sessionId(json.data);
 		return user;
 	}
 	return fetchSelf(session);

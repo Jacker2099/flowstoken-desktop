@@ -12,6 +12,7 @@ import type {
 	McpServerConfigData,
 	McpStdioServerConfigData,
 } from "../../preload/api-types/mcp.js";
+import type { ModelsSetOptions } from "../../preload/api-types/models.js";
 import type {
 	FsEditableTextSnapshot,
 	FsEntry,
@@ -506,9 +507,20 @@ export function registerFsIpc(): () => void {
 		return models.getRendererConfig();
 	});
 
-	ipcMain.handle(CHANNELS.MODELS_SET, async (_event, config: unknown) => {
+	ipcMain.handle(CHANNELS.MODELS_SET, async (_event, config: unknown, options: unknown) => {
 		if (typeof config !== "object" || config === null) throw new Error("Invalid models config");
-		await models.replaceConfig(config as ModelsConfig);
+		if (options !== undefined) {
+			if (typeof options !== "object" || options === null || Array.isArray(options))
+				throw new Error("Invalid models options");
+			if ("renameProvider" in options && options.renameProvider !== undefined) {
+				const rename = options.renameProvider;
+				if (typeof rename !== "object" || rename === null || !("from" in rename) || !("to" in rename))
+					throw new Error("Invalid provider rename");
+				assertNonEmptyString(rename.from, "renameProvider.from");
+				assertNonEmptyString(rename.to, "renameProvider.to");
+			}
+		}
+		await models.replaceConfig(config as ModelsConfig, options as ModelsSetOptions | undefined);
 	});
 
 	ipcMain.handle(CHANNELS.MODELS_COPY_API_KEY, async (_event, providerId: unknown): Promise<boolean> => {

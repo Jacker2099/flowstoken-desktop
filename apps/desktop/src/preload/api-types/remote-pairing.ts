@@ -44,7 +44,8 @@ export interface RemotePairingState {
 	relayBaseUrl?: string;
 	/** The relay this build uses when none is set. */
 	defaultRelayBaseUrl?: string;
-	vaultAvailable: boolean;
+	/** Last explicit check; null means unchecked, not unavailable or authorized. */
+	vaultAvailable: boolean | null;
 	error?: string;
 }
 

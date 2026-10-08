@@ -20,6 +20,7 @@ vi.mock("../models/model-settings-host.js", () => ({
 	},
 }));
 vi.mock("./login-window.js", () => ({
+	getFlowstokenSessionProbeError: () => undefined,
 	clearFlowstokenSession: vi.fn(),
 	getFlowstokenSession: () => ({}),
 	loginViaBrowserWindow: vi.fn(),
@@ -27,6 +28,8 @@ vi.mock("./login-window.js", () => ({
 	probeExistingSession: vi.fn(),
 }));
 vi.mock("./newapi-client.js", () => ({
+	onFlowstokenAuthChanged: () => () => {},
+	getCachedAccessToken: () => null,
 	FlowstokenApiError: class extends Error {},
 	createToken: vi.fn(),
 	fetchSelf: vi.fn(),

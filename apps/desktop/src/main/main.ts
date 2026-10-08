@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { URL } from "node:url";
 import { getVettaHomePath, VETTA_HOME_ENV } from "@vetta/action-rpc";
-import { app, type BrowserWindow, dialog, ipcMain, nativeImage, nativeTheme, protocol, session, shell } from "electron";
+import { app, type BrowserWindow, dialog, ipcMain, nativeImage, protocol, session, shell } from "electron";
 import { APP_RUNTIME_NAME } from "../shared/app-identity.js";
 import { isCloudBuildEnabled } from "../shared/feature-flags.js";
 import { stopAllOpenMarketplaceMcpRuntimes } from "./abilities/open-marketplace/open-marketplace-mcp-runtime-host.js";
@@ -36,6 +36,9 @@ import {
 } from "./diagnostics.js";
 import { FILE_PROTOCOL_PRIVILEGE, registerFileProtocolHandler } from "./file-protocol.js";
 import { fixPath } from "./fix-path.js";
+import { drainFlowstokenCookieMutations } from "./flowstoken/auth-session.js";
+import { cancelSystemBrowserLogin } from "./flowstoken/browser-auth.js";
+import { resolveDesktopModelCredential } from "./flowstoken/credential-broker.js";
 import { initAppLanguage } from "./i18n/index.js";
 import { getImHost } from "./im-host/index.js";
 import { syncAppshotGesture } from "./ipc/appshot.js";
@@ -56,6 +59,7 @@ import { getLocalRpcServerEndpointFilePath } from "./local-rpc/endpoint-file.js"
 import { type DesktopLocalRpcServerHandle, startDesktopLocalRpcServer } from "./local-rpc/server.js";
 import { getAppLogger } from "./logger.js";
 import { MEDIA_PROTOCOL_PRIVILEGE, registerMediaProtocolHandler } from "./media-protocol.js";
+import { registerNativeThemeIpc } from "./native-theme.js";
 import { openExternalUrl } from "./open-external.js";
 import { startPetIdleGuard } from "./pet/pet-idle-guard.js";
 import { initializePetWindow } from "./pet-window.js";
@@ -429,6 +433,7 @@ if (!gotSingleLock) {
 		// 若晚于 createWindow 注册会与异步 page-load 抢跑、读到 undefined 回落错语言（首帧闪）。
 		// i18n IPC 与具体窗口无关（广播给全部窗口），故脱离 registerAllIpc 独立早注册、app 级常驻。
 		registerI18nIpc();
+		registerNativeThemeIpc();
 		const appLifecycle = registerAppLifecycleIpc();
 
 		// 必须放在 whenReady 之后：早于 ready 调用时主进程 bundle identity
@@ -519,35 +524,6 @@ if (!gotSingleLock) {
 				version: "",
 			});
 		}
-
-		// Theme IPC
-		ipcMain.handle("vetta:theme:set", (_event, mode: string) => {
-			nativeTheme.themeSource = mode as "system" | "light" | "dark";
-			const mainWindow = getMainWindow();
-			if (mainWindow) {
-				const isDark = mode === "dark" || (mode === "system" && nativeTheme.shouldUseDarkColors);
-				mainWindow.setVibrancy(isDark ? "sidebar" : "sidebar");
-			}
-		});
-
-		ipcMain.handle("vetta:theme:get-native", () => {
-			return {
-				source: nativeTheme.themeSource,
-				shouldUseDarkColors: nativeTheme.shouldUseDarkColors,
-			};
-		});
-
-		nativeTheme.on("updated", () => {
-			const mainWindow = getMainWindow();
-			if (mainWindow) {
-				if (!isMac) {
-					mainWindow.setBackgroundColor(nativeTheme.shouldUseDarkColors ? "#161616" : "#f5f5f7");
-				}
-				mainWindow.webContents.send("vetta:theme:native-changed", {
-					shouldUseDarkColors: nativeTheme.shouldUseDarkColors,
-				});
-			}
-		});
 
 		ipcMain.handle("vetta:shell:show-in-folder", async (_event, fullPath: string) => {
 			await shell.openPath(fullPath);
@@ -794,6 +770,7 @@ if (!gotSingleLock) {
 		void startDesktopLocalRpcServer(
 			{
 				actions: createActionRpcRuntime(actionSystem.runtime),
+				models: { resolveCredential: resolveDesktopModelCredential },
 				debug: app.isPackaged
 					? undefined
 					: createDebugRpcRuntime(createAppDebugRuntime({ rendererCdp, requestQuit: () => app.quit() })),
@@ -899,6 +876,8 @@ app.on("window-all-closed", () => {
 // 清理实现注册到 quit-cleanup 模块，更新安装路径会在把控制权交给 Squirrel.Mac
 // 之前先调用它——原因见该模块的注释。
 setQuitCleanup(async () => {
+	cancelSystemBrowserLogin();
+	await drainFlowstokenCookieMutations();
 	mainLog.info("quit cleanup started");
 	await shutdownDesktopRemoteAccess();
 	await stopDesktopRemoteDesktopHost();

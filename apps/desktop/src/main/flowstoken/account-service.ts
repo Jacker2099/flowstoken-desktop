@@ -1,6 +1,7 @@
 import { mainT } from "../i18n/index.js";
 import { getDesktopModelSettingsService } from "../models/model-settings-host.js";
 import type { ModelDefinition, ModelsConfig } from "../models/model-settings-service.js";
+import { cancelSystemBrowserLogin, loginViaSystemBrowser } from "./browser-auth.js";
 import { getAuthenticatedCatalogAccess, rememberVerifiedGroupKey } from "./catalog-access.js";
 import {
 	FLOWSTOKEN_CONSOLE_URL,
@@ -21,7 +22,7 @@ import {
 import {
 	clearFlowstokenSession,
 	getFlowstokenSession,
-	loginViaBrowserWindow,
+	getFlowstokenSessionProbeError,
 	loginWithPasswordAndTurnstile,
 	probeExistingSession,
 } from "./login-window.js";
@@ -31,6 +32,7 @@ import {
 	fetchSelf,
 	fetchSelfLogs,
 	findManagedToken,
+	getCachedAccessToken,
 	getFlowstokenAccountId,
 	getFlowstokenAuthRevision,
 	listTokens,
@@ -52,12 +54,28 @@ function usd(quota: number): string {
 	return `$${value.toFixed(value >= 100 ? 2 : 4)}`;
 }
 
+function signedOutSnapshot(lastError?: string): FlowstokenAccountSnapshot {
+	return {
+		loggedIn: false,
+		user: null,
+		balanceUsd: "$0.0000",
+		usedUsd: "$0.0000",
+		groups: [],
+		usage: [],
+		siteUrl: FLOWSTOKEN_SITE_URL,
+		topupUrl: FLOWSTOKEN_TOPUP_URL,
+		consoleUrl: FLOWSTOKEN_CONSOLE_URL,
+		lastError,
+		updatedAt: Date.now(),
+	};
+}
+
 async function groupStates(
 	catalog: FlowstokenCatalog,
 	accountId: number,
 	allowed: ReadonlySet<string>,
 ): Promise<FlowstokenGroupKeyState[]> {
-	const config = await getDesktopModelSettingsService().getConfig();
+	const config = await getDesktopModelSettingsService().getMetadataConfig();
 	let tokens: Awaited<ReturnType<typeof listTokens>> = [];
 	try {
 		tokens = await listTokens(getFlowstokenSession());
@@ -104,15 +122,48 @@ function broadcastSnapshot(snapshot: FlowstokenAccountSnapshot): void {
 }
 
 let autoSyncPromise: Promise<void> | null = null;
+const MAX_AUTOMATIC_KEY_ATTEMPTS = 3;
+const KEY_RETRY_BASE_DELAY_MS = 60_000;
+let keySyncFailure: { revision: number; message: string; failures: number; retryAt: number | null } | null = null;
+
+function currentKeySyncError(): string | undefined {
+	return keySyncFailure?.revision === getFlowstokenAuthRevision() ? keySyncFailure.message : undefined;
+}
+
+function automaticKeySyncAllowed(): boolean {
+	const failure = keySyncFailure;
+	if (!failure || failure.revision !== getFlowstokenAuthRevision()) return true;
+	return failure.retryAt !== null && Date.now() >= failure.retryAt;
+}
+
+function keyRetryDelay(error: unknown, failures: number): number | null {
+	if (failures >= MAX_AUTOMATIC_KEY_ATTEMPTS) return null;
+	const conservativeDelay = Math.min(5 * KEY_RETRY_BASE_DELAY_MS, KEY_RETRY_BASE_DELAY_MS * 2 ** (failures - 1));
+	if (error instanceof FlowstokenApiError) {
+		if (
+			error.status !== 429 &&
+			!(error.status !== undefined && error.status >= 500 && error.status <= 599) &&
+			!(error.status === undefined && error.retryAfterMs !== undefined)
+		)
+			return null;
+		const requestedDelay =
+			error.retryAfterMs !== undefined && Number.isFinite(error.retryAfterMs) ? Math.max(0, error.retryAfterMs) : 0;
+		return Math.max(conservativeDelay, requestedDelay);
+	}
+	return error instanceof TypeError &&
+		/fetch|network|connection|socket|ECONN|ENOTFOUND|load failed/i.test(error.message)
+		? conservativeDelay
+		: null;
+}
 
 function triggerBackgroundSyncIfUnwired(user: FlowstokenUserSnapshot | null, groups: FlowstokenGroupKeyState[]): void {
-	if (!user) return;
+	if (!user || !automaticKeySyncAllowed()) return;
 	if (!groups.some((group) => group.enabled && !group.wired && !group.requiresManualSetup)) return;
 	if (autoSyncPromise) return;
 
 	autoSyncPromise = (async () => {
 		try {
-			const res = await ensureGroupKeysAndProviders();
+			const res = await queueGroupKeys(undefined, {}, true);
 			if (res.snapshot) {
 				broadcastSnapshot(res.snapshot);
 			}
@@ -131,8 +182,8 @@ export async function getAccountSnapshot(options?: {
 	const revision = getFlowstokenAuthRevision();
 	const includeUsage = options?.includeUsage ?? true;
 	const user = await probeExistingSession();
-	assertAccountRevision(revision);
 	if (!user) {
+		if (getFlowstokenAccountId() !== null || getCachedAccessToken() !== null) assertAccountRevision(revision);
 		return {
 			loggedIn: false,
 			user: null,
@@ -147,6 +198,7 @@ export async function getAccountSnapshot(options?: {
 			updatedAt: Date.now(),
 		};
 	}
+	assertAccountRevision(revision);
 	let usage: FlowstokenAccountSnapshot["usage"] = [];
 	if (includeUsage) {
 		try {
@@ -183,7 +235,9 @@ export async function getAccountSnapshot(options?: {
 		consoleUrl: FLOWSTOKEN_CONSOLE_URL,
 		lastError:
 			options?.lastError ??
+			getFlowstokenSessionProbeError() ??
 			permissionError ??
+			currentKeySyncError() ??
 			(groups.some((group) => group.requiresManualSetup) ? mainT("flowstoken.errors.credentialStale") : undefined),
 		updatedAt: Date.now(),
 	};
@@ -237,7 +291,7 @@ async function wireAllProviders(
 	accountId: number,
 ): Promise<void> {
 	const service = getDesktopModelSettingsService();
-	await service.updateConfig(
+	await service.updateMetadataConfig(
 		(config) => {
 			const nextProviders = { ...config.providers };
 			for (const item of items) {
@@ -283,7 +337,7 @@ let modelRefreshPromise: Promise<void> | null = null;
 /** Reconcile only already wired groups; preserve credentials, defaults and per-model tuning. */
 async function syncCatalogProviders(catalog: FlowstokenCatalog): Promise<void> {
 	const service = getDesktopModelSettingsService();
-	const current = service.updateConfig((latest) => {
+	const current = service.updateMetadataConfig((latest) => {
 		const providers = { ...latest.providers };
 		const now = Date.now();
 		let changed = false;
@@ -367,7 +421,7 @@ let checkedCatalogAccess: { authRevision: number; catalogRevision: string | unde
 
 /** Hot catalog additions use the same account queue as login, without changing saved defaults. */
 async function provisionCatalogGroups(catalog: FlowstokenCatalog, options: { force?: boolean }): Promise<void> {
-	if (catalog.schema !== 2 || getFlowstokenAccountId() === null) return;
+	if (catalog.schema !== 2 || getFlowstokenAccountId() === null || !automaticKeySyncAllowed()) return;
 	const authRevision = getFlowstokenAuthRevision();
 	if (catalogProvision?.authRevision === authRevision && catalogProvision.catalogRevision === catalog.revision)
 		return catalogProvision.promise;
@@ -380,7 +434,7 @@ async function provisionCatalogGroups(catalog: FlowstokenCatalog, options: { for
 		const access = await getAuthenticatedCatalogAccess({ force });
 		assertAccountRevision(authRevision);
 		checkedCatalogAccess = { authRevision, catalogRevision: catalog.revision };
-		const config = await getDesktopModelSettingsService().getConfig();
+		const config = await getDesktopModelSettingsService().getMetadataConfig();
 		const pending = catalog.groups
 			.filter((group) => {
 				const provider = config.providers[group.providerId];
@@ -394,7 +448,7 @@ async function provisionCatalogGroups(catalog: FlowstokenCatalog, options: { for
 			})
 			.map((group) => group.id);
 		if (pending.length === 0) return;
-		const result = await ensureGroupKeysAndProviders(pending, { assignDefault: false });
+		const result = await queueGroupKeys(pending, { assignDefault: false }, true);
 		if (result.snapshot) broadcastSnapshot(result.snapshot);
 	})();
 	catalogProvision = { authRevision, catalogRevision: catalog.revision, promise };
@@ -408,7 +462,7 @@ async function provisionCatalogGroups(catalog: FlowstokenCatalog, options: { for
 function triggerBackgroundModelRefreshIfStale(groups: FlowstokenGroupKeyState[]): void {
 	if (modelRefreshPromise || !groups.some((group) => group.enabled && group.wired)) return;
 	void (async () => {
-		const config = await getDesktopModelSettingsService().getConfig();
+		const config = await getDesktopModelSettingsService().getMetadataConfig();
 		const stale = groups
 			.filter((group) => group.enabled && group.wired)
 			.some((group) => {
@@ -420,6 +474,7 @@ function triggerBackgroundModelRefreshIfStale(groups: FlowstokenGroupKeyState[])
 }
 
 let keyEnsureQueue: Promise<void> = Promise.resolve();
+const keyEnsureRequests = new Map<string, Promise<FlowstokenEnsureKeysResult>>();
 
 function assertAccountRevision(revision: number): void {
 	if (revision !== getFlowstokenAuthRevision())
@@ -430,8 +485,35 @@ export function ensureGroupKeysAndProviders(
 	groupIds?: string[],
 	options: { assignDefault?: boolean; allowManualOverride?: boolean } = {},
 ): Promise<FlowstokenEnsureKeysResult> {
+	return queueGroupKeys(groupIds, options, false);
+}
+
+function queueGroupKeys(
+	groupIds: string[] | undefined,
+	options: { assignDefault?: boolean; allowManualOverride?: boolean },
+	automatic: boolean,
+): Promise<FlowstokenEnsureKeysResult> {
 	const revision = getFlowstokenAuthRevision();
-	const task = keyEnsureQueue.then(() => ensureGroupKeys(groupIds, revision, options));
+	const requestKey = JSON.stringify([
+		revision,
+		groupIds ? [...new Set(groupIds)].sort() : null,
+		options.assignDefault !== false,
+		options.allowManualOverride === true,
+	]);
+	const pending = keyEnsureRequests.get(requestKey);
+	if (pending) return pending;
+	const task = keyEnsureQueue
+		.then(() => {
+			// Account and catalog refreshes may race while an earlier attempt is still queued.
+			// Recheck at execution time so one failed attempt establishes the next cooldown.
+			if (automatic && (revision !== getFlowstokenAuthRevision() || !automaticKeySyncAllowed()))
+				return { ok: false, created: [], reused: [], error: currentKeySyncError() };
+			return ensureGroupKeys(groupIds, revision, options, automatic);
+		})
+		.finally(() => {
+			if (keyEnsureRequests.get(requestKey) === task) keyEnsureRequests.delete(requestKey);
+		});
+	keyEnsureRequests.set(requestKey, task);
 	keyEnsureQueue = task.then(
 		() => {},
 		() => {},
@@ -443,9 +525,11 @@ async function ensureGroupKeys(
 	groupIds: string[] | undefined,
 	revision: number,
 	options: { assignDefault?: boolean; allowManualOverride?: boolean },
+	automatic: boolean,
 ): Promise<FlowstokenEnsureKeysResult> {
 	const created: string[] = [];
 	const reused: string[] = [];
+	let remoteFailureCanRetry = true;
 	try {
 		assertAccountRevision(revision);
 		const user = await fetchSelf(getFlowstokenSession());
@@ -461,7 +545,9 @@ async function ensureGroupKeys(
 			)
 		)
 			throw new FlowstokenApiError(mainT("flowstoken.errors.groupUnavailable"));
-		const config = await getDesktopModelSettingsService().getConfig();
+		remoteFailureCanRetry = false;
+		const config = await getDesktopModelSettingsService().getMetadataConfig();
+		remoteFailureCanRetry = true;
 		const targets = catalog.groups.filter(
 			(group) =>
 				access.groups.has(group.id) &&
@@ -525,12 +611,20 @@ async function ensureGroupKeys(
 					: preferred
 						? `${preferred.providerId}/${preferred.defaultModel}`
 						: first;
+			remoteFailureCanRetry = false;
 			await wireAllProviders(wireBatch, defaultModelKey, revision, user.id);
 		}
 
+		assertAccountRevision(revision);
+		keySyncFailure = null;
 		return { ok: true, created, reused, snapshot: await getAccountSnapshot() };
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
+		if (revision === getFlowstokenAuthRevision()) {
+			const failures = automatic && keySyncFailure?.revision === revision ? keySyncFailure.failures + 1 : 1;
+			const delay = remoteFailureCanRetry ? keyRetryDelay(error, failures) : null;
+			keySyncFailure = { revision, message, failures, retryAt: delay === null ? null : Date.now() + delay };
+		}
 		return {
 			ok: false,
 			created,
@@ -542,26 +636,19 @@ async function ensureGroupKeys(
 }
 
 async function afterLogin(): Promise<FlowstokenAccountSnapshot> {
-	let lastSnapshot: FlowstokenAccountSnapshot | null = null;
-	// Retry up to 3 times with exponential backoff to ensure keys and providers are completely wired
-	for (let attempt = 1; attempt <= 3; attempt++) {
-		const ensured = await ensureGroupKeysAndProviders();
-		lastSnapshot = ensured.snapshot ?? null;
-		if (ensured.ok && lastSnapshot?.groups.filter((group) => group.enabled).every((group) => group.wired)) {
-			break;
-		}
-		await new Promise((resolve) => setTimeout(resolve, 600 * attempt));
-	}
-	return lastSnapshot ?? (await getAccountSnapshot());
+	// Authentication has succeeded. Later ordinary refreshes can retry transient provisioning failures.
+	const ensured = await ensureGroupKeysAndProviders();
+	return ensured.snapshot ?? (await getAccountSnapshot());
 }
 
 export async function loginWithBrowser(): Promise<FlowstokenLoginResult> {
 	try {
-		await loginViaBrowserWindow();
+		await loginViaSystemBrowser();
 		return { ok: true, snapshot: await afterLogin() };
 	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-		return { ok: false, error: message, snapshot: await getAccountSnapshot({ lastError: message }) };
+		const message =
+			error instanceof FlowstokenApiError ? error.message : mainT("flowstoken.errors.desktopAuthorizationFailed");
+		return { ok: false, error: message };
 	}
 }
 
@@ -576,8 +663,9 @@ export async function loginWithCredentials(username: string, password: string): 
 }
 
 export async function logoutAccount(): Promise<FlowstokenAccountSnapshot> {
+	cancelSystemBrowserLogin();
 	await clearFlowstokenSession();
-	return getAccountSnapshot({ includeUsage: false });
+	return signedOutSnapshot();
 }
 
 export async function refreshAccount(): Promise<FlowstokenAccountSnapshot> {

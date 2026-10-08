@@ -9,6 +9,7 @@ import {
 	isSupportedLanguage,
 	type LanguagePreference,
 } from "@/shared/i18n/config";
+import { getStoredThemeMode, resolveThemeMode, type ThemeMode } from "../theme/apply";
 import { type CursorStyle, getStoredCursorStyle } from "../theme/cursor";
 import { getStoredNewSessionTextureId, type NewSessionTextureId } from "../theme/new-session-texture";
 import { getStoredOrnamentId, type OrnamentId } from "../theme/ornament";
@@ -72,9 +73,10 @@ export type SettingsTab =
 
 // ─── Theme ───
 
-export type ThemeMode = "light" | "dark" | "auto";
-export const themeModeAtom = atom<ThemeMode>((localStorage.getItem("vetta-theme") as ThemeMode) || "dark");
-export const resolvedThemeAtom = atom<"light" | "dark">("dark");
+export type { ThemeMode };
+const initialThemeMode = getStoredThemeMode();
+export const themeModeAtom = atom<ThemeMode>(initialThemeMode);
+export const resolvedThemeAtom = atom<"light" | "dark">(resolveThemeMode(initialThemeMode));
 export const themeNameAtom = atom<string>(
 	resolveThemeId(localStorage.getItem("vetta-color-theme") || DEFAULT_THEME_ID),
 );

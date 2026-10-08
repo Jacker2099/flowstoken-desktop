@@ -1,4 +1,4 @@
-import type { ModelsConfigData } from "@preload/api.js";
+import type { ModelsConfigData, ModelsSetOptions } from "@preload/api.js";
 import { localModelsConfigAtom, modelCatalog } from "@shared/store/model-catalog";
 import { showToast } from "@shared/store/toast-atoms";
 import { useAtomValue } from "jotai";
@@ -58,7 +58,7 @@ export interface ModelsSettingsModel {
 	fetchedModels: FetchedModelsState | null;
 	setProviderForm: React.Dispatch<React.SetStateAction<ProviderFormState>>;
 	setModelForm: React.Dispatch<React.SetStateAction<ModelFormState>>;
-	saveConfig: (newConfig: ModelsConfigData) => Promise<void>;
+	saveConfig: (newConfig: ModelsConfigData, options?: ModelsSetOptions) => Promise<void>;
 	onStartAddProvider: () => void;
 	onCancelAddProvider: () => void;
 	onAddProvider: () => Promise<void>;
@@ -163,10 +163,11 @@ export function useModelsSettingsModel(): ModelsSettingsModel {
 		void modelCatalog.revalidate({ sources: ["local"] });
 	}, []);
 
-	const saveConfig = useCallback(async (newConfig: ModelsConfigData) => {
+	const saveConfig = useCallback(async (newConfig: ModelsConfigData, options?: ModelsSetOptions) => {
 		setSaving(true);
 		try {
-			await window.vetta.models.set(newConfig);
+			if (options === undefined) await window.vetta.models.set(newConfig);
+			else await window.vetta.models.set(newConfig, options);
 			// 刚写过盘，必须绕开 TTL 重新读回主进程规范化后的结果。
 			await modelCatalog.revalidate({ force: true, sources: ["local"] });
 		} finally {
@@ -223,7 +224,24 @@ export function useModelsSettingsModel(): ModelsSettingsModel {
 				...providerData,
 			};
 
-			await saveConfig({ ...config, providers: newProviders });
+			const defaultModel = config.defaultModel?.startsWith(`${oldName}/`)
+				? `${nextName}${config.defaultModel.slice(oldName.length)}`
+				: config.defaultModel;
+			try {
+				await saveConfig(
+					{ ...config, defaultModel, providers: newProviders },
+					oldName === nextName ? undefined : { renameProvider: { from: oldName, to: nextName } },
+				);
+			} catch (error) {
+				const reason = error instanceof Error ? error.message : "";
+				showToast({
+					variant: "error",
+					message: t(
+						reason.includes("MODEL_PROVIDER_RENAME_CONFLICT") ? "providerRenameConflict" : "providerRenameFailed",
+					),
+				});
+				return;
+			}
 			setEditingProvider(null);
 			setProviderForm({ ...emptyProvider });
 			if (oldName !== nextName) {
@@ -231,7 +249,7 @@ export function useModelsSettingsModel(): ModelsSettingsModel {
 			}
 			recordSettingsUsage({ tab: "models", action: "updated", target: "provider", value: providerForm.api });
 		},
-		[config, providerForm.api, providerForm.name, providerFormToData, saveConfig],
+		[config, providerForm.api, providerForm.name, providerFormToData, saveConfig, t],
 	);
 
 	const handleDeleteProvider = useCallback(

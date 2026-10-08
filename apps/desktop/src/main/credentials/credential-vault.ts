@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { atomicWriteJSON } from "@vetta/toolkit/atomic-write";
+import { atomicWriteFile, atomicWriteJSON } from "@vetta/toolkit/atomic-write";
 
 export interface CredentialRef {
 	namespace: string;
@@ -84,6 +84,24 @@ export class CredentialVault {
 
 	remove(ref: CredentialRef): void {
 		rmSync(this.recordPath(ref), { force: true });
+	}
+
+	/** Keep the encrypted bytes in memory so a failed transaction can roll back even after the keychain locks. */
+	createRestorePoint(ref: CredentialRef): () => void {
+		const normalizedRef = normalizeCredentialRef(ref);
+		const path = this.recordPath(normalizedRef);
+		const previous = existsSync(path) ? readFileSync(path, "utf8") : undefined;
+		if (previous !== undefined && !sameCredentialRef(parseCredentialRecord(previous).ref, normalizedRef))
+			throw new Error("Credential record identity mismatch");
+		return () => {
+			if (previous === undefined) {
+				rmSync(path, { force: true });
+				return;
+			}
+			this.ensureDirectory();
+			atomicWriteFile(path, previous);
+			setStrictFilePermissions(path);
+		};
 	}
 
 	/** 只枚举引用，不解密——列出键名时不应要求解密后端可用。 */

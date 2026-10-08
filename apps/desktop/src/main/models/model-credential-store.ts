@@ -11,12 +11,26 @@ export interface ModelCredentialStore {
 	isAvailable(): boolean;
 	has(credentialRef: string): boolean;
 	get(credentialRef: string): string | undefined;
+	/** Already authorized in this process; never reads the vault or probes secure storage. */
+	peek?(credentialRef: string): string | undefined;
 	set(credentialRef: string, value: string): void;
 	remove(credentialRef: string): void;
+	/** Persistent stores can restore ciphertext without re-entering secure storage during rollback. */
+	createRestorePoint?(credentialRef: string): () => void;
+}
+
+export class ModelCredentialUnavailableError extends Error {
+	readonly code = "MODEL_CREDENTIAL_UNAVAILABLE";
+
+	constructor() {
+		super("Secure model credential storage is temporarily unavailable");
+		this.name = "ModelCredentialUnavailableError";
+	}
 }
 
 export class DesktopModelCredentialStore implements ModelCredentialStore {
 	private syncedProviderIds = new Set<string>();
+	private readonly resolvedCredentials = new Map<string, string>();
 
 	constructor(private readonly vault: CredentialVault) {}
 
@@ -30,25 +44,61 @@ export class DesktopModelCredentialStore implements ModelCredentialStore {
 
 	get(credentialRef: string): string | undefined {
 		try {
-			return this.vault.get(modelApiKeyRef(credentialRef));
+			const value = this.vault.get(modelApiKeyRef(credentialRef));
+			if (value === undefined) this.resolvedCredentials.delete(credentialRef);
+			else this.resolvedCredentials.set(credentialRef, value);
+			return value;
 		} catch (error) {
-			modelCredentialLog.warn("模型凭据无法解密，将按未配置处理", {
+			this.resolvedCredentials.delete(credentialRef);
+			modelCredentialLog.warn("模型凭据暂不可访问，保留原凭据", {
 				credentialRef,
-				error: error instanceof Error ? error.message : String(error),
+				errorType: error instanceof Error ? error.name : "unknown",
 			});
 			return undefined;
 		}
 	}
 
+	peek(credentialRef: string): string | undefined {
+		return this.resolvedCredentials.get(credentialRef);
+	}
+
 	set(credentialRef: string, value: string): void {
-		this.vault.put(modelApiKeyRef(credentialRef), value, {
-			kind: "api-key",
-			consumer: "model-provider",
-		});
+		this.assertExistingCredentialReadable(credentialRef);
+		try {
+			this.vault.put(modelApiKeyRef(credentialRef), value, {
+				kind: "api-key",
+				consumer: "model-provider",
+			});
+			this.resolvedCredentials.set(credentialRef, value);
+		} catch {
+			this.resolvedCredentials.delete(credentialRef);
+			throw new ModelCredentialUnavailableError();
+		}
 	}
 
 	remove(credentialRef: string): void {
-		this.vault.remove(modelApiKeyRef(credentialRef));
+		this.assertExistingCredentialReadable(credentialRef);
+		try {
+			this.vault.remove(modelApiKeyRef(credentialRef));
+		} finally {
+			this.resolvedCredentials.delete(credentialRef);
+		}
+	}
+
+	createRestorePoint(credentialRef: string): () => void {
+		this.assertExistingCredentialReadable(credentialRef);
+		const restore = this.vault.createRestorePoint(modelApiKeyRef(credentialRef));
+		return () => {
+			try {
+				restore();
+			} finally {
+				this.resolvedCredentials.delete(credentialRef);
+			}
+		};
+	}
+
+	private assertExistingCredentialReadable(credentialRef: string): void {
+		if (this.has(credentialRef) && this.get(credentialRef) === undefined) throw new ModelCredentialUnavailableError();
 	}
 
 	syncToAuthStorage(authStorage: CodingAgentAuthRuntime, providers: Record<string, { credentialRef?: string }>): void {

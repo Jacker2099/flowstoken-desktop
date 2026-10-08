@@ -22,8 +22,10 @@ export class PluginSecretsStore {
 	constructor(private readonly credentialVault: CredentialVault) {}
 
 	get(pluginId: string, key: string): string | undefined {
+		const ref = credentialRef(pluginId, assertKey(key));
+		if (!this.credentialVault.has(ref)) return undefined;
 		if (!this.credentialVault.isAvailable()) return undefined;
-		return this.credentialVault.get(credentialRef(pluginId, assertKey(key)));
+		return this.credentialVault.get(ref);
 	}
 
 	has(pluginId: string, key: string): boolean {

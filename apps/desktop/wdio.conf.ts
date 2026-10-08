@@ -1,8 +1,8 @@
 import { createRequire } from "node:module";
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import type { Server } from "node:http";
 import { startUpdateFeedFixture } from "./e2e/update-feed-fixture.mjs";
 import {
@@ -16,10 +16,46 @@ import {
 } from "./scripts/packaged-e2e-binary.mjs";
 
 const packageRoot = path.dirname(fileURLToPath(import.meta.url));
-const mainEntry = path.join(packageRoot, "dist", "main", "index.js");
-const userDataDir = path.join(packageRoot, ".wdio-electron-user-data");
+let mainEntry = path.join(packageRoot, "dist", "main", "index.js");
+let userDataDir = path.join(packageRoot, ".wdio-electron-user-data");
 const configDirName = ".vetta-e2e";
 const require = createRequire(import.meta.url);
+const loginRecovery = process.env.VETTA_E2E_LOGIN_RECOVERY === "1";
+if (loginRecovery) {
+	const fixture = require("./e2e/login-recovery-fixture.cjs") as {
+		prepareLoginRecoveryProfile(): { home: string };
+	};
+	const profile = fixture.prepareLoginRecoveryProfile();
+	process.env.VETTA_HOME = profile.home;
+	process.env.VETTA_E2E_LOGIN_HOME = profile.home;
+	process.env.VETTA_E2E = "1";
+	process.env.PI_OFFLINE = "1";
+	process.env.PI_SKIP_VERSION_CHECK = "1";
+	process.env.VETTA_E2E_UPDATE_FEED = "0";
+	userDataDir = path.join(profile.home, "chromium");
+	const preload = path.join(packageRoot, "e2e", "login-recovery-fixture.cjs");
+	if (!existsSync(mainEntry)) throw new Error("Build the current main bundle before login recovery E2E");
+	// Electron waits for an ESM entry's top-level await before app.ready. A CJS
+	// entry with an unawaited import races the application's protocol setup.
+	const bootstrap = path.join(packageRoot, "dist", "main", "login-recovery-bootstrap.mjs");
+	writeFileSync(bootstrap, `import { createRequire } from "node:module";
+import { writeFileSync } from "node:fs";
+const require = createRequire(import.meta.url);
+try {
+  require(${JSON.stringify(preload)}).installLoginRecoveryElectronBoundary();
+  await import(${JSON.stringify(pathToFileURL(mainEntry).href)});
+} catch (error) {
+  writeFileSync(${JSON.stringify(path.join(profile.home, "bootstrap-error.json"))}, JSON.stringify({ name: error.name, message: error.message, stack: error.stack }, null, 2), { mode: 0o600 });
+  console.error(error);
+  require("electron").app.exit(1);
+}
+`, { mode: 0o600 });
+	mainEntry = bootstrap;
+	if (process.env.VETTA_E2E_LOGIN_PRELOAD_CONFIGURED !== "1") {
+		process.env.NODE_OPTIONS = `${process.env.NODE_OPTIONS ?? ""} --require ${JSON.stringify(preload)}`.trim();
+		process.env.VETTA_E2E_LOGIN_PRELOAD_CONFIGURED = "1";
+	}
+}
 const packageVersion = (JSON.parse(readFileSync(path.join(packageRoot, "package.json"), "utf8")) as {
 	version: string;
 }).version;
@@ -53,7 +89,12 @@ function resolveElectronServiceOptions(): {
 	appBinaryPath: string;
 	appArgs: string[];
 } {
-	const isolationArgs = [`--user-data-dir=${userDataDir}`];
+	const isolationArgs = [
+		`--user-data-dir=${userDataDir}`,
+		...(loginRecovery
+			? ["--remote-debugging-address=127.0.0.1", "--disable-background-networking", "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE localhost, EXCLUDE 127.0.0.1"]
+			: []),
+	];
 
 	if (usePackaged) {
 		if (process.platform === "linux") {
@@ -105,12 +146,15 @@ export const config = {
 	// Optional escape hatch for repairing or isolating WebDriver downloads
 	// without mutating the machine-wide temporary cache.
 	cacheDir: process.env.WEBDRIVER_CACHE_DIR,
-	specs: ["./e2e/**/*.e2e.ts"],
-	exclude: [],
+	specs: loginRecovery ? ["./e2e/login-recovery.e2e.ts"] : ["./e2e/**/*.e2e.ts"],
+	exclude: loginRecovery ? [] : ["./e2e/login-recovery.e2e.ts"],
 	maxInstances: 1,
 	capabilities: [
 		{
 			browserName: "electron",
+			// ChromeDriver adds this macOS switch even when it is absent in
+			// appArgs. Native login acceptance must not rely on a fake Keychain.
+			...(loginRecovery ? { "goog:chromeOptions": { excludeSwitches: ["use-mock-keychain"] } } : {}),
 			"wdio:electronServiceOptions": electronServiceOptions,
 		},
 	],
@@ -152,5 +196,6 @@ export const config = {
 		updateFeedServer = undefined;
 		if (stagedAppImageRoot) rmSync(stagedAppImageRoot, { recursive: true, force: true });
 		stagedAppImageRoot = undefined;
+		if (loginRecovery) console.log(`[login-recovery] retained isolated evidence: ${process.env.VETTA_E2E_LOGIN_HOME}`);
 	},
 };

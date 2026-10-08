@@ -5,6 +5,7 @@ import type { DesktopThemeSnapshot } from "../../../preload/api-types/theme";
 import { cursorStyleAtom, resolvedThemeAtom, type ThemeMode, themeModeAtom, themeNameAtom } from "../store/atoms";
 import {
 	applyTheme,
+	getStoredThemeMode,
 	MODE_STORAGE_KEY,
 	type ResolvedMode,
 	resolveThemeMode,
@@ -22,12 +23,11 @@ const COLOR_THEME_LABEL_KEYS = {
 } as const;
 
 function getThemeSnapshot(): DesktopThemeSnapshot {
-	const storedMode = localStorage.getItem(MODE_STORAGE_KEY);
 	const storedThemeId = localStorage.getItem(THEME_STORAGE_KEY);
 	const root = document.documentElement;
 	const resolvedMode = root.getAttribute("data-mode");
 	return {
-		mode: storedMode === "light" || storedMode === "dark" || storedMode === "auto" ? storedMode : "dark",
+		mode: getStoredThemeMode(),
 		themeId: resolveThemeId(storedThemeId && storedThemeId.length > 0 ? storedThemeId : DEFAULT_THEME_ID),
 		resolved: resolvedMode === "light" || resolvedMode === "dark" ? resolvedMode : null,
 		appliedThemeId: root.getAttribute("data-theme"),
@@ -77,9 +77,7 @@ export function useThemeActions(): ThemeActions {
 			const nextName = resolveThemeId(name);
 			const appliedMode = document.documentElement.getAttribute("data-mode");
 			const resolved =
-				appliedMode === "light" || appliedMode === "dark"
-					? appliedMode
-					: resolveThemeMode((localStorage.getItem(MODE_STORAGE_KEY) as ThemeMode | null) ?? "dark");
+				appliedMode === "light" || appliedMode === "dark" ? appliedMode : resolveThemeMode(getStoredThemeMode());
 			localStorage.setItem(THEME_STORAGE_KEY, nextName);
 			withThemeTransition(() => {
 				setThemeNameAtom(nextName);
@@ -128,7 +126,7 @@ export function useThemeController(): void {
 			} catch {
 				resolved = resolveThemeMode("auto");
 			}
-			if (cancelled || localStorage.getItem(MODE_STORAGE_KEY) !== "auto") return;
+			if (cancelled || getStoredThemeMode() !== "auto") return;
 			const currentTheme = resolveThemeId(localStorage.getItem(THEME_STORAGE_KEY) ?? DEFAULT_THEME_ID);
 			setResolved(resolved);
 			applyTheme(resolved, currentTheme);
@@ -142,7 +140,7 @@ export function useThemeController(): void {
 	// 监听原生主题变化（auto 模式下才响应）。
 	useEffect(() => {
 		const unsubscribe = window.vetta.theme.onNativeChanged((info) => {
-			const current = (localStorage.getItem(MODE_STORAGE_KEY) as ThemeMode | null) ?? "dark";
+			const current = getStoredThemeMode();
 			if (current !== "auto") return;
 			const r: ResolvedMode = info.shouldUseDarkColors ? "dark" : "light";
 			const currentTheme = resolveThemeId(localStorage.getItem(THEME_STORAGE_KEY) ?? DEFAULT_THEME_ID);

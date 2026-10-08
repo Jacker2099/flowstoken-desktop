@@ -1,4 +1,4 @@
-export { createActionRpcClient, createDebugRpcClient } from "./client.js";
+export { createActionRpcClient, createDebugRpcClient, resolveModelCredential } from "./client.js";
 export {
 	ACTION_RPC_ENDPOINT_FILE_ENV,
 	DEFAULT_CONFIG_DIR_NAME,
@@ -34,4 +34,6 @@ export type {
 	LocalRpcMethod,
 	LocalRpcRequest,
 	LocalRpcRuntime,
+	ModelCredentialRequest,
+	ModelCredentialResponse,
 } from "./types.js";

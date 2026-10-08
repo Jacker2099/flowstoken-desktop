@@ -19,6 +19,8 @@ import type { DesktopRemoteRelayLinkOptions } from "./desktop-remote-relay-link.
 import { RemoteDeviceStore } from "./remote-device-store.js";
 import type { RemoteRelayProbeResult } from "./remote-relay-probe.js";
 
+vi.mock("../logger.js", () => ({ getAppLogger: () => ({ info: vi.fn(), warn: vi.fn() }) }));
+
 function key(ref: CredentialRef): string {
 	return `${ref.namespace}/${ref.ownerId}/${ref.name}`;
 }
