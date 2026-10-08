@@ -149,18 +149,22 @@ async function launch(binary, environment, logPath) {
 	return child;
 }
 
-async function waitForVerification(path, child, timeoutMs) {
+async function waitForVerification(paths, child, timeoutMs) {
 	const deadline = Date.now() + timeoutMs;
 	let lastState;
 	while (Date.now() < deadline) {
-		try {
-			lastState = JSON.parse(await readFile(path, "utf8"));
-			if (lastState.phase === "verified") return lastState;
-			if (lastState.phase === "failed") throw new Error(lastState.error || "upgrade probe failed");
-		} catch (error) {
-			if (error instanceof SyntaxError) lastState = undefined;
-			else if (error instanceof Error && !error.message.includes("ENOENT")) throw error;
+		for (const path of paths) {
+			try {
+				const candidate = JSON.parse(await readFile(path, "utf8"));
+				if (!lastState || Date.parse(candidate.updatedAt ?? "") > Date.parse(lastState.updatedAt ?? ""))
+					lastState = candidate;
+			} catch (error) {
+				if (error instanceof SyntaxError) continue;
+				if (error instanceof Error && !error.message.includes("ENOENT")) throw error;
+			}
 		}
+		if (lastState?.phase === "verified") return lastState;
+		if (lastState?.phase === "failed") throw new Error(lastState.error || "upgrade probe failed");
 		await new Promise((resolve) => setTimeout(resolve, 1000));
 	}
 	if (!child.killed) child.kill();
@@ -211,7 +215,13 @@ async function main() {
 		VETTA_SPEECH_INPUT_ENABLED: "false",
 	};
 	const child = await launch(binary, environment, logPath);
-	const result = await waitForVerification(state, child, (platform === "linux" ? 10 : 15) * 60 * 1000);
+	// ShipIt/NSIS relaunch the app without our env, so the updated process can only
+	// report through the ~/.vetta fallback marker; poll both copies.
+	const result = await waitForVerification(
+		[state, join(homedir(), ".vetta", "desktop-upgrade-e2e.json")],
+		child,
+		(platform === "linux" ? 10 : 15) * 60 * 1000,
+	);
 	console.log(`[desktop-upgrade-e2e] verified ${result.currentVersion}; log=${logPath}`);
 	await rm(join(homedir(), ".vetta", "desktop-upgrade-e2e.json"), { force: true });
 	await rm(root, { recursive: true, force: true });

@@ -54,6 +54,10 @@ jobs:
       - name: Install dependencies
         uses: ./.github/actions/install-bun-dependencies
 
+      - name: Install FUSE for AppImage launch
+        if: matrix.platform == 'linux'
+        run: sudo apt-get update -q && (sudo apt-get install -y --no-install-recommends libfuse2t64 || sudo apt-get install -y --no-install-recommends libfuse2)
+
       - name: Run real install, update, quit, restart and version check
         working-directory: apps/desktop
         env:
@@ -96,9 +100,9 @@ jobs:
             echo ""
             echo "| Key | Value |"
             echo "| --- | --- |"
-            echo "| platform | `${{ matrix.platform }}` |"
-            echo "| baseline | `${{ inputs.baseline_version }}` |"
-            echo "| candidate | `${{ inputs.candidate_version }}` |"
+            echo "| platform | \`${{ matrix.platform }}\` |"
+            echo "| baseline | \`${{ inputs.baseline_version }}\` |"
+            echo "| candidate | \`${{ inputs.candidate_version }}\` |"
             echo "| feed | `${SUMMARY_FEED}` |"
             if [[ -n "${SUMMARY_NOTES}" ]]; then echo "| notes | ${SUMMARY_NOTES} |"; fi
           } >> "${GITHUB_STEP_SUMMARY}"
