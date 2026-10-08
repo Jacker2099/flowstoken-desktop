@@ -106,10 +106,69 @@ test("published releases and unavailable GitHub APIs fail closed", async () => {
 		}),
 		/503/,
 	);
-	assert.equal(await assertDraft(repo, "v0.6.3", async () => null), null);
+	assert.equal(await assertDraft(repo, "v0.6.3", async (path) => (path.includes("/tags/") ? null : [])), null);
 });
 
-test("the normal retry cleans stale draft assets, uploads the exact set, verifies server digests and only then publishes", async () => {
+test("drafts hidden from the tag endpoint are found by exact tag in the complete authenticated release list", async () => {
+	const draft = { id: 42, draft: true, tag_name: "v0.6.3" };
+	const older = Array.from({ length: 100 }, (_, index) => ({
+		id: index + 100,
+		draft: false,
+		tag_name: `v0.5.${index}`,
+	}));
+	const calls = [];
+	assert.deepEqual(
+		await assertDraft(repo, draft.tag_name, async (path) => {
+			calls.push(path);
+			if (path.endsWith("/tags/v0.6.3")) return null;
+			if (path.endsWith("?per_page=100&page=1")) return older;
+			if (path.endsWith("?per_page=100&page=2")) return [draft];
+			throw new Error(`Unexpected GitHub endpoint: ${path}`);
+		}),
+		draft,
+	);
+	assert.equal(calls.length, 3);
+	assert.deepEqual(await assertDraft(repo, draft.tag_name, async () => draft), draft);
+	await assert.rejects(
+		assertDraft(repo, draft.tag_name, async () => ({ ...draft, tag_name: "v0.6.2" })),
+		/Refusing/,
+	);
+});
+
+test("draft list fallback rejects published releases, duplicate tags, malformed pages and incomplete bounded scans", async () => {
+	const draft = { id: 42, draft: true, tag_name: "v0.6.3" };
+	const unrelated = Array.from({ length: 99 }, (_, index) => ({
+		id: index + 100,
+		draft: false,
+		tag_name: `v0.5.${index}`,
+	}));
+	for (const [pages, error] of [
+		[[[{ ...draft, draft: false }]], /Refusing/],
+		[[[draft, { ...draft, id: 43 }]], /Ambiguous/],
+		[[[draft, ...unrelated], [draft]], /Ambiguous/],
+		[[null], /release list/],
+		[[[null]], /release list/],
+		[[[{ ...draft, id: undefined }]], /release list/],
+		[[Array(101).fill(draft)], /release list/],
+		[Array.from({ length: 10 }, () => [{ ...draft, tag_name: "unrelated" }, ...unrelated]), /limit/],
+	]) {
+		let page = 0;
+		await assert.rejects(
+			assertDraft(repo, draft.tag_name, async (path) => (path.includes("/tags/") ? null : pages[page++])),
+			error,
+		);
+		assert.ok(page <= 10);
+	}
+	await assert.rejects(
+		assertDraft(repo, draft.tag_name, async (path) => {
+			if (path.includes("/tags/")) return null;
+			throw new Error("GitHub list 503");
+		}),
+		/503/,
+	);
+});
+
+test("a retry finds the hidden draft, cleans stale assets, verifies uploaded digests and only then publishes", async () => {
 	const directory = await fixture();
 	try {
 		await verifyReleaseArtifacts(directory, identity);
@@ -135,7 +194,12 @@ test("the normal retry cleans stale draft assets, uploads the exact set, verifie
 			...identity,
 			directory,
 			notes: "/tmp/notes",
-			api: async (path) => (path.includes("/assets?") ? assets : draft),
+			api: async (path) => {
+				if (path.includes("/assets?")) return assets;
+				if (path.includes("/tags/")) return null;
+				assert.equal(path, `repos/${repo}/releases?per_page=100&page=1`);
+				return [draft];
+			},
 			run,
 			checkTag: () => {},
 		});

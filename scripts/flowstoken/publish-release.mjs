@@ -22,9 +22,40 @@ export async function githubJson(path, { allowMissing = false } = {}) {
 }
 
 export async function assertDraft(repo, tag, api = githubJson) {
-	const release = await api(`repos/${repo}/releases/tags/${tag}`, { allowMissing: true });
+	let release = await api(`repos/${repo}/releases/tags/${tag}`, { allowMissing: true });
+	if (!release) {
+		// GitHub's tag endpoint can hide an authenticated draft. Scan the authenticated
+		// list completely before accepting one match, so duplicate drafts cannot be chosen arbitrarily.
+		const pageSize = 100;
+		const maxPages = 10;
+		for (let page = 1; page <= maxPages; page++) {
+			const releases = await api(`repos/${repo}/releases?per_page=${pageSize}&page=${page}`);
+			if (
+				!Array.isArray(releases) ||
+				releases.length > pageSize ||
+				releases.some(
+					(item) =>
+						!item ||
+						!Number.isSafeInteger(item.id) ||
+						item.id < 1 ||
+						typeof item.tag_name !== "string" ||
+						typeof item.draft !== "boolean",
+				)
+			)
+				throw new Error("Invalid GitHub release list");
+			for (const candidate of releases) {
+				if (candidate.tag_name !== tag) continue;
+				if (release) throw new Error(`Ambiguous releases for ${tag}`);
+				release = candidate;
+			}
+			if (releases.length < pageSize) break;
+			if (page === maxPages) throw new Error("GitHub release list exceeded the safe pagination limit");
+		}
+	}
 	if (release && (release.draft !== true || release.tag_name !== tag))
 		throw new Error(`Refusing published or mismatched release ${tag}`);
+	if (release && (!Number.isSafeInteger(release.id) || release.id < 1))
+		throw new Error(`Invalid draft release identity for ${tag}`);
 	return release;
 }
 
