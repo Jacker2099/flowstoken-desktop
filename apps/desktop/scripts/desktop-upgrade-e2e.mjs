@@ -138,8 +138,12 @@ function statePath(home) {
 	return join(home, "desktop-upgrade-e2e.json");
 }
 
-function launch(binary, environment, logPath) {
+async function launch(binary, environment, logPath) {
 	const log = createWriteStream(logPath, { flags: "a" });
+	await new Promise((resolve, reject) => {
+		log.once("open", resolve);
+		log.once("error", reject);
+	});
 	const child = spawn(binary, [], { env: environment, stdio: ["ignore", log, log], detached: false });
 	child.once("error", (error) => log.write(`${error.stack ?? error}\n`));
 	return child;
@@ -206,15 +210,9 @@ async function main() {
 		VETTA_CONFIG_DIR: ".vetta-upgrade-e2e",
 		VETTA_SPEECH_INPUT_ENABLED: "false",
 	};
-	if (platform === "linux") {
-		const child = launch(binary, environment, logPath);
-		const result = await waitForVerification(state, child, 10 * 60 * 1000);
-		console.log(`[desktop-upgrade-e2e] verified ${result.currentVersion}; log=${logPath}`);
-	} else {
-		const child = launch(binary, environment, logPath);
-		const result = await waitForVerification(state, child, 15 * 60 * 1000);
-		console.log(`[desktop-upgrade-e2e] verified ${result.currentVersion}; log=${logPath}`);
-	}
+	const child = await launch(binary, environment, logPath);
+	const result = await waitForVerification(state, child, (platform === "linux" ? 10 : 15) * 60 * 1000);
+	console.log(`[desktop-upgrade-e2e] verified ${result.currentVersion}; log=${logPath}`);
 	await rm(join(homedir(), ".vetta", "desktop-upgrade-e2e.json"), { force: true });
 	await rm(root, { recursive: true, force: true });
 }
