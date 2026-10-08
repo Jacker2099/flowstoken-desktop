@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+	chmodSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	realpathSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -18,9 +26,26 @@ import {
 
 const root = resolve(import.meta.dirname, "../../..");
 const require = createRequire(join(process.env.VETTA_RELEASE_SOURCE_ROOT ?? root, "apps/desktop/package.json"));
-const { parse } = require("yaml");
-const verify = parse(readFileSync(join(root, ".github/workflows/desktop-release.yml"), "utf8")).jobs.verify;
+function verificationJob() {
+	const { parse } = require("yaml");
+	return parse(readFileSync(join(root, ".github/workflows/desktop-release.yml"), "utf8")).jobs.verify;
+}
 const hash = (body) => createHash("sha256").update(body).digest("hex");
+const fixtureWdio = `#!/usr/bin/env node
+import { readFileSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+if (process.argv[2] !== 'run' || process.argv[3] !== './wdio.conf.ts') process.exit(96);
+if (readFileSync('wdio.conf.ts','utf8') !== '// CONTROLLER CONFIG\\n') process.exit(97);
+if (readFileSync('e2e/updater.e2e.ts','utf8') !== '// CONTROLLER SPEC\\n') process.exit(98);
+if (process.env.HARNESS_DEPENDENCY_PROBE === '1') {
+  const { probe } = await import(pathToFileURL(resolve('e2e/dependency-probe.mjs')).href);
+  if (probe !== 'original scoped + original unscoped') process.exit(99);
+}
+const pkg=JSON.parse(readFileSync('package.json','utf8'));
+writeFileSync(process.env.HARNESS_AUDIT,JSON.stringify({cwd:process.cwd(),version:pkg.version,artifactRoot:process.env.VETTA_E2E_PACKAGED_ROOT,packaged:process.env.VETTA_E2E_PACKAGED,updateFeed:process.env.VETTA_E2E_UPDATE_FEED}));
+process.exit(23);
+`;
 function put(rootDir, file, body) {
 	mkdirSync(dirname(join(rootDir, file)), { recursive: true });
 	writeFileSync(join(rootDir, file), body);
@@ -46,7 +71,60 @@ function commit(rootDir) {
 	return git(rootDir, "rev-parse", "HEAD").trim();
 }
 
-async function makeFixture(platform = "linux") {
+function installIsolatedFixture(source, temporary, pkg) {
+	const packages = join(temporary, "local-packages");
+	for (const [name, directory, body] of [
+		["@wdio/cli", "cli", "export const identity = 'original scoped';\n"],
+		["harness-dependency", "dependency", "export const identity = 'original unscoped';\n"],
+	]) {
+		const packageRoot = join(packages, directory);
+		put(packageRoot, "index.js", body);
+		put(
+			packageRoot,
+			"package.json",
+			JSON.stringify({
+				name,
+				version: "9.30.0",
+				type: "module",
+				exports: "./index.js",
+				...(name === "@wdio/cli" ? { bin: { wdio: "./bin/wdio.js" } } : {}),
+			}),
+		);
+		if (name === "@wdio/cli") {
+			put(packageRoot, "bin/wdio.js", fixtureWdio);
+			chmodSync(join(packageRoot, "bin/wdio.js"), 0o755);
+		}
+		execFileSync("bun", ["pm", "pack", "--ignore-scripts", "--filename", join(packages, `${directory}.tgz`)], {
+			cwd: packageRoot,
+			stdio: "pipe",
+		});
+	}
+	put(source, "package.json", JSON.stringify({ name: "harness-fixture", private: true, workspaces: ["apps/desktop"] }));
+	put(
+		source,
+		"apps/desktop/package.json",
+		JSON.stringify({
+			...pkg,
+			name: "harness-desktop-fixture",
+			devDependencies: {
+				"@wdio/cli": "file:../../../local-packages/cli.tgz",
+				"harness-dependency": "file:../../../local-packages/dependency.tgz",
+			},
+		}),
+	);
+	rmSync(join(source, "bun.lock"));
+	execFileSync(
+		"bun",
+		["install", "--linker", "isolated", "--ignore-scripts", "--cache-dir", join(temporary, "bun-cache")],
+		{
+			cwd: source,
+			stdio: "pipe",
+			env: { ...process.env, BUN_CONFIG_NO_CLEAR_TERMINAL: "1" },
+		},
+	);
+}
+
+async function makeFixture(platform = "linux", { isolated = false } = {}) {
 	const temporary = mkdtempSync(join(tmpdir(), "flowstoken-verification-harness-"));
 	const source = join(temporary, "source");
 	const controller = join(temporary, "controller");
@@ -61,11 +139,18 @@ async function makeFixture(platform = "linux") {
 	put(source, "apps/desktop/wdio.conf.ts", "// OLD SOURCE CONFIG\n");
 	put(source, "apps/desktop/e2e/updater.e2e.ts", "// OLD SOURCE SPEC\n");
 	put(source, ".gitignore", "node_modules/\napps/desktop/release/\n");
+	if (isolated) installIsolatedFixture(source, temporary, pkg);
 	const sourceSha = commit(source);
 	put(controller, "apps/desktop/package.json", JSON.stringify({ ...pkg, version: "9.9.9" }));
 	put(controller, "apps/desktop/wdio.conf.ts", "// CONTROLLER CONFIG\n");
 	put(controller, "apps/desktop/e2e/updater.e2e.ts", "// CONTROLLER SPEC\n");
 	put(controller, "apps/desktop/e2e/updater-auth-fixture.ts", "// CONTROLLER AUTH FIXTURE\n");
+	if (isolated)
+		put(
+			controller,
+			"apps/desktop/e2e/dependency-probe.mjs",
+			"import { identity as scoped } from '@wdio/cli';\nimport { identity as unscoped } from 'harness-dependency';\nexport const probe = scoped + ' + ' + unscoped;\n",
+		);
 	for (const name of ["electron-e2e-service-options.mjs", "packaged-e2e-binary.mjs"])
 		put(controller, `apps/desktop/scripts/${name}`, "export {};\n");
 	for (const folder of ["scripts/flowstoken", "scripts/release", "branding/flowstoken", ".github/workflows"])
@@ -125,24 +210,18 @@ async function makeFixture(platform = "linux") {
 		false,
 		plan,
 	);
-	const modules = join(source, "apps/desktop/node_modules");
-	put(modules, "@wdio/cli/package.json", JSON.stringify({ name: "@wdio/cli", version: "9.30.0" }));
-	put(modules, ".bin/package.json", '{"type":"module"}\n');
-	put(
-		modules,
-		".bin/wdio",
-		`#!/usr/bin/env node
-import { readFileSync, writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-if (process.argv[2] !== 'run' || process.argv[3] !== './wdio.conf.ts') process.exit(96);
-if (readFileSync('wdio.conf.ts','utf8') !== '// CONTROLLER CONFIG\\n') process.exit(97);
-if (readFileSync('e2e/updater.e2e.ts','utf8') !== '// CONTROLLER SPEC\\n') process.exit(98);
-const pkg=JSON.parse(readFileSync('package.json','utf8'));
-writeFileSync(process.env.HARNESS_AUDIT,JSON.stringify({cwd:process.cwd(),version:pkg.version,artifactRoot:process.env.VETTA_E2E_PACKAGED_ROOT,packaged:process.env.VETTA_E2E_PACKAGED,updateFeed:process.env.VETTA_E2E_UPDATE_FEED}));
-process.exit(23);
-`,
-	);
-	chmodSync(join(modules, ".bin/wdio"), 0o755);
+	if (!isolated) {
+		const modules = join(source, "apps/desktop/node_modules");
+		put(
+			modules,
+			"@wdio/cli/package.json",
+			JSON.stringify({ name: "@wdio/cli", version: "9.30.0", bin: { wdio: "./bin/wdio.js" } }),
+		);
+		put(modules, "@wdio/cli/bin/wdio.js", fixtureWdio);
+		put(modules, ".bin/package.json", '{"type":"module"}\n');
+		put(modules, ".bin/wdio", fixtureWdio);
+		chmodSync(join(modules, ".bin/wdio"), 0o755);
+	}
 	const options = {
 		controllerRoot: snapshot,
 		sourceRoot: source,
@@ -171,8 +250,8 @@ test("verification uses controller tools but the original source version and loc
 		assert.equal(readFileSync(join(result.harnessRoot, "wdio.conf.ts"), "utf8"), "// CONTROLLER CONFIG\n");
 		assert.equal(readFileSync(join(result.harnessRoot, "e2e/updater.e2e.ts"), "utf8"), "// CONTROLLER SPEC\n");
 		assert.equal(
-			realpathSync(join(result.harnessRoot, "node_modules")),
-			realpathSync(join(fixture.source, "apps/desktop/node_modules")),
+			realpathSync(join(result.harnessRoot, "node_modules/@wdio/cli/bin/wdio.js")),
+			realpathSync(join(fixture.source, "apps/desktop/node_modules/@wdio/cli/bin/wdio.js")),
 		);
 		assert.equal(result.packagedRoot, realpathSync(join(fixture.source, "apps/desktop")));
 		assert.equal(result.manifest.sourceSha, fixture.plan.source.sha);
@@ -209,6 +288,7 @@ test("a changed controller, changed tooling, changed original package or in-sour
 });
 
 test("the real copied package script runs controller specs and propagates failed WDIO on all three OS branches", async () => {
+	const verify = verificationJob();
 	const step = verify.steps.find((entry) => entry.name === "Run packaged app and updater E2E");
 	assert.match(step["working-directory"], /VETTA_E2E_HARNESS_ROOT/);
 	for (const platform of ["windows", "macos-arm64", "linux"]) {
@@ -256,7 +336,53 @@ test("the real copied package script runs controller specs and propagates failed
 	}
 });
 
+test("Bun isolated dependencies launch the original strict WDIO script from the relocated verification harness", async () => {
+	const fixture = await makeFixture(process.platform === "win32" ? "windows" : "linux", { isolated: true });
+	try {
+		assert.match(
+			realpathSync(join(fixture.source, "apps/desktop/node_modules/@wdio/cli")),
+			/node_modules[/\\]\.bun[/\\]/,
+		);
+		const sourcePackage = readFileSync(join(fixture.source, "apps/desktop/package.json"));
+		const sourceLock = readFileSync(join(fixture.source, "bun.lock"));
+		const originalApplication = readFileSync(join(fixture.release, "fixture.zip"));
+		const result = await prepareVerificationHarness({ ...fixture.options, hostPlatform: "win32" });
+		const audit = join(fixture.temporary, "isolated-entry.json");
+		const child = spawnSync("bun", ["run", "test:e2e"], {
+			cwd: result.harnessRoot,
+			encoding: "utf8",
+			env: {
+				...process.env,
+				VETTA_E2E_PACKAGED_ROOT: result.packagedRoot,
+				VETTA_E2E_PACKAGED: "1",
+				VETTA_E2E_UPDATE_FEED: "1",
+				HARNESS_DEPENDENCY_PROBE: "1",
+				HARNESS_AUDIT: audit,
+			},
+		});
+		assert.equal(child.status, 23, `Strict WDIO fixture did not propagate its failure: ${child.stderr}`);
+		assert.deepEqual(JSON.parse(readFileSync(audit, "utf8")), {
+			cwd: result.harnessRoot,
+			version: "0.6.3",
+			artifactRoot: result.packagedRoot,
+			packaged: "1",
+			updateFeed: "1",
+		});
+		assert.equal(
+			realpathSync(join(result.harnessRoot, "node_modules/@wdio/cli/bin/wdio.js")),
+			realpathSync(join(fixture.source, "apps/desktop/node_modules/@wdio/cli/bin/wdio.js")),
+		);
+		assert.deepEqual(readFileSync(join(fixture.source, "apps/desktop/package.json")), sourcePackage);
+		assert.deepEqual(readFileSync(join(fixture.source, "bun.lock")), sourceLock);
+		assert.deepEqual(readFileSync(join(fixture.release, "fixture.zip")), originalApplication);
+		assert.equal(git(fixture.source, "status", "--porcelain"), "");
+	} finally {
+		rmSync(fixture.temporary, { recursive: true, force: true });
+	}
+});
+
 test("restoring a recovery checkpoint checks the original package version without rewriting source metadata", () => {
+	const verify = verificationJob();
 	const temporary = mkdtempSync(join(tmpdir(), "verification-source-restore-"));
 	try {
 		const workspace = join(temporary, "source");
@@ -294,6 +420,7 @@ test("restoring a recovery checkpoint checks the original package version withou
 });
 
 test("tooling preparation and its independent diagnostic manifest do not replace the strict verification result", () => {
+	const verify = verificationJob();
 	const steps = verify.steps;
 	const prepare = steps.findIndex((step) => step.id === "verification-harness");
 	const e2e = steps.findIndex((step) => step.name === "Run packaged app and updater E2E");

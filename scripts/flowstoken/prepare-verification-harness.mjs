@@ -6,6 +6,7 @@ import {
 	lstatSync,
 	mkdirSync,
 	readFileSync,
+	readdirSync,
 	realpathSync,
 	statSync,
 	symlinkSync,
@@ -34,6 +35,29 @@ function allowedTooling(path) {
 	return VERIFICATION_HARNESS_INPUTS.some(
 		(input) => path === input || (input === "apps/desktop/e2e" && path.startsWith(`${input}/`)),
 	);
+}
+
+function linkWindowsDependencies(modules, destination, sourceRoot) {
+	function linkEntry(source, target) {
+		const original = realpathSync(source);
+		if (!contained(sourceRoot, original))
+			throw new Error("Verification dependencies must remain inside the original source checkout");
+		const info = statSync(original);
+		if (info.isDirectory()) symlinkSync(original, target, "junction");
+		else if (info.isFile()) copyFileSync(original, target);
+		else throw new Error("Verification dependency is not a regular file or directory");
+	}
+	// Bun's Windows launchers resolve package links from the harness path. An outer
+	// node_modules junction relocates isolated-linker relative targets, so resolve each package first.
+	mkdirSync(destination);
+	for (const name of readdirSync(modules)) {
+		const source = join(modules, name);
+		const target = join(destination, name);
+		if (name.startsWith("@") && statSync(source).isDirectory()) {
+			mkdirSync(target);
+			for (const packageName of readdirSync(source)) linkEntry(join(source, packageName), join(target, packageName));
+		} else linkEntry(source, target);
+	}
 }
 
 export async function prepareVerificationHarness({
@@ -113,8 +137,15 @@ export async function prepareVerificationHarness({
 	if (!statSync(modules).isDirectory() || !contained(sourceRoot, realpathSync(cliPackagePath)))
 		throw new Error("WDIO dependencies must come from the original source checkout");
 	const cliPackage = JSON.parse(readFileSync(cliPackagePath, "utf8"));
-	if (cliPackage.name !== "@wdio/cli" || typeof cliPackage.version !== "string")
+	if (
+		cliPackage.name !== "@wdio/cli" ||
+		typeof cliPackage.version !== "string" ||
+		typeof cliPackage.bin?.wdio !== "string"
+	)
 		throw new Error("Original source WDIO dependency is invalid");
+	const cliEntry = realpathSync(resolve(dirname(cliPackagePath), cliPackage.bin.wdio));
+	if (!statSync(cliEntry).isFile() || !contained(sourceRoot, cliEntry))
+		throw new Error("WDIO executable must come from the original source checkout");
 	mkdirSync(destination);
 	for (const file of verifiedFiles) {
 		const target = join(destination, file.target);
@@ -122,7 +153,11 @@ export async function prepareVerificationHarness({
 		copyFileSync(join(controllerRoot, file.path), target);
 	}
 	writeFileSync(join(destination, "package.json"), packageBytes);
-	symlinkSync(realpathSync(modules), join(destination, "node_modules"), hostPlatform === "win32" ? "junction" : "dir");
+	const harnessModules = join(destination, "node_modules");
+	if (hostPlatform === "win32") linkWindowsDependencies(modules, harnessModules, sourceRoot);
+	else symlinkSync(realpathSync(modules), harnessModules, "dir");
+	if (realpathSync(resolve(harnessModules, "@wdio/cli", cliPackage.bin.wdio)) !== cliEntry)
+		throw new Error("Verification harness cannot resolve the original WDIO executable");
 	const manifest = {
 		schema: 1,
 		phase: "prepared",

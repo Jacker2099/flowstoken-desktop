@@ -1,0 +1,47 @@
+name: flowstoken recovery harness
+
+on:
+  push:
+    branches:
+      - "codex/recovery-windows-harness-*"
+    paths:
+      - "scripts/flowstoken/prepare-verification-harness.mjs"
+      - "branding/flowstoken/tests/verification-harness.test.mjs"
+      - ".github/workflows/flowstoken-recovery-harness.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-isolated-dependencies:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - name: Reproduce the original Windows WDIO entry failure
+        shell: bash
+        run: |
+          set -euo pipefail
+          HELPER=scripts/flowstoken/prepare-verification-harness.mjs
+          cp "$HELPER" "$RUNNER_TEMP/repaired-harness.mjs"
+          trap 'cp "$RUNNER_TEMP/repaired-harness.mjs" "$HELPER"' EXIT
+          git show d545740f443a0c985ea54b67d476c0d0c54c5645:"$HELPER" > "$HELPER"
+          set +e
+          node --test --test-name-pattern="Bun isolated" branding/flowstoken/tests/verification-harness.test.mjs > "$RUNNER_TEMP/baseline-harness.log" 2>&1
+          RESULT=$?
+          set -e
+          cat "$RUNNER_TEMP/baseline-harness.log"
+          test "$RESULT" -ne 0
+          grep -q 'MODULE_NOT_FOUND' "$RUNNER_TEMP/baseline-harness.log"
+          grep -q 'Cannot find module.*node_modules.*@wdio.*cli.*wdio.js' "$RUNNER_TEMP/baseline-harness.log"
+      - name: Verify real Bun isolated dependency links and strict E2E entry
+        run: node --test --test-name-pattern="Bun isolated" branding/flowstoken/tests/verification-harness.test.mjs
