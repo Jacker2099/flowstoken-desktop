@@ -86,7 +86,9 @@ jobs:
           retention-days: 14
           path: |
             ${{ runner.temp }}/vetta-upgrade-e2e-*/desktop.log
-            ${{ runner.temp }}/vetta-upgrade-e2e-*/desktop-upgrade-e2e.json
+            ${{ runner.temp }}/vetta-upgrade-e2e-*/home/desktop-upgrade-e2e.json
+            ${{ runner.temp }}/vetta-upgrade-e2e-*/inno-install.log
+            ${{ runner.temp }}/vetta-upgrade-e2e-*/inno-progress.txt
 
       - name: Write test-channel upgrade summary
         if: always()
@@ -103,6 +105,6 @@ jobs:
             echo "| platform | \`${{ matrix.platform }}\` |"
             echo "| baseline | \`${{ inputs.baseline_version }}\` |"
             echo "| candidate | \`${{ inputs.candidate_version }}\` |"
-            echo "| feed | `${SUMMARY_FEED}` |"
+            echo "| feed | \`${SUMMARY_FEED}\` |"
             if [[ -n "${SUMMARY_NOTES}" ]]; then echo "| notes | ${SUMMARY_NOTES} |"; fi
           } >> "${GITHUB_STEP_SUMMARY}"

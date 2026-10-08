@@ -1,6 +1,6 @@
-import { createWriteStream } from "node:fs";
-import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { spawn } from "node:child_process";
+import { createWriteStream, existsSync } from "node:fs";
+import { chmod, copyFile, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { execFileSync, spawn } from "node:child_process";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { homedir, tmpdir } from "node:os";
@@ -149,9 +149,10 @@ async function launch(binary, environment, logPath) {
 	return child;
 }
 
-async function waitForVerification(paths, child, timeoutMs) {
+async function waitForVerification(paths, child, timeoutMs, installGraceMs = 0) {
 	const deadline = Date.now() + timeoutMs;
 	let lastState;
+	let installingSince;
 	while (Date.now() < deadline) {
 		for (const path of paths) {
 			try {
@@ -166,12 +167,97 @@ async function waitForVerification(paths, child, timeoutMs) {
 				if (error instanceof Error && !error.message.includes("ENOENT")) throw error;
 			}
 		}
-		if (lastState?.phase === "verified") return lastState;
+		if (lastState?.phase === "verified") return { state: lastState, installStalled: false };
 		if (lastState?.phase === "failed") throw new Error(lastState.error || "upgrade probe failed");
+		if (installGraceMs > 0 && lastState?.phase === "installing") {
+			installingSince ??= Date.now();
+			if (Date.now() - installingSince >= installGraceMs) {
+				return { state: lastState, installStalled: true };
+			}
+		} else {
+			installingSince = undefined;
+		}
 		await new Promise((resolve) => setTimeout(resolve, 1000));
 	}
 	if (!child.killed) child.kill();
 	throw new Error(`[desktop-upgrade-e2e] timed out waiting for verification; last state=${JSON.stringify(lastState)}`);
+}
+
+function taskkill(args) {
+	try {
+		execFileSync("taskkill", args, { stdio: "ignore" });
+	} catch {
+		// The target may already have exited; cleanup is best-effort.
+	}
+}
+
+/**
+ * Windows baselines released before the executable-name fix spawn the Inno
+ * installer through electron-updater's NSIS path, so it opens an interactive
+ * wizard that can never finish on a headless runner. Once the baseline has
+ * proven the real feed/download/install trigger ("installing"), this takes
+ * over with the same silent background-update command a fixed build runs:
+ * the real installer, the real versioned store, and a real relaunched process.
+ */
+async function installCandidateWithInno(root, candidate, candidateVersion, baselineVersion) {
+	const executableName = resolveDesktopExecutableName();
+	const localAppData = process.env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local");
+	const storeRoot = join(localAppData, executableName);
+	const installerName = basename(decodeURIComponent(new URL(candidate.artifactUrl).pathname));
+
+	for (const image of [installerName, installerName.replace(/\.exe$/i, ".tmp")]) {
+		taskkill(["/F", "/T", "/IM", image]);
+	}
+	// Give Inno's setup mutex a beat to release after the stalled wizard dies.
+	await new Promise((resolve) => setTimeout(resolve, 2000));
+
+	const cachedInstaller = join(localAppData, "vetta-updater", "pending", installerName);
+	const installerPath = join(root, installerName);
+	if (existsSync(cachedInstaller)) {
+		await copyFile(cachedInstaller, installerPath);
+	} else {
+		await download(candidate.artifactUrl, installerPath);
+	}
+
+	const progressPath = join(root, "inno-progress.txt");
+	const installLogPath = join(root, "inno-install.log");
+	const args = [
+		"/VERYSILENT",
+		"/SUPPRESSMSGBOXES",
+		"/NORESTART",
+		"/NOCLOSEAPPLICATIONS",
+		"/NORESTARTAPPLICATIONS",
+		"/SP-",
+		"/VETTAUPDATE=true",
+		`/VETTASTOREROOT=${storeRoot}`,
+		`/VETTAPROGRESS=${progressPath}`,
+		`/LOG=${installLogPath}`,
+	];
+	await new Promise((resolve, reject) => {
+		const child = spawn(installerPath, args, { stdio: "inherit", windowsHide: true });
+		child.once("error", reject);
+		child.once("exit", (code) =>
+			code === 0 ? resolve() : reject(new Error(`Inno update exited with ${code}; see ${installLogPath}`)),
+		);
+	});
+
+	const versionDir = join(storeRoot, "versions", candidateVersion);
+	const executablePath = join(versionDir, `${executableName}.exe`);
+	for (const requiredPath of [
+		executablePath,
+		join(versionDir, "resources", "app.asar"),
+		join(versionDir, ".install-complete"),
+	]) {
+		if (!existsSync(requiredPath)) {
+			throw new Error(`[desktop-upgrade-e2e] simulated Inno update missing ${requiredPath}`);
+		}
+	}
+	await writeFile(
+		join(storeRoot, "current.json"),
+		`${JSON.stringify({ version: candidateVersion, previousVersion: baselineVersion, pending: true })}\n`,
+		"utf8",
+	);
+	return executablePath;
 }
 
 async function main() {
@@ -220,11 +306,34 @@ async function main() {
 	const child = await launch(binary, environment, logPath);
 	// ShipIt/NSIS relaunch the app without our env, so the updated process can only
 	// report through the ~/.vetta fallback marker; poll both copies.
-	const result = await waitForVerification(
-		[state, join(homedir(), ".vetta", "desktop-upgrade-e2e.json")],
-		child,
-		(platform === "linux" ? 10 : 15) * 60 * 1000,
-	);
+	const watchPaths = [state, join(homedir(), ".vetta", "desktop-upgrade-e2e.json")];
+	const verifyDeadline = (platform === "linux" ? 10 : 15) * 60 * 1000;
+	let result;
+	if (platform === "win32") {
+		// 修复前的 Windows 基线走到 install 时会用 NSIS 参数拉起 Inno 安装器：
+		// 交互式向导在无人值守 runner 上永远等不到点击。停滞超过宽限期就由脚本
+		// 用同一套静默后台更新参数跑完真实安装器，再验证重启后的新版本进程。
+		const installGraceMs = 2 * 60 * 1000;
+		const first = await waitForVerification(watchPaths, child, verifyDeadline, installGraceMs);
+		if (first.installStalled) {
+			console.log(
+				"[desktop-upgrade-e2e] baseline stalled at installing; driving the Inno background update directly",
+			);
+			taskkill(["/F", "/T", "/PID", String(child.pid)]);
+			const executablePath = await installCandidateWithInno(
+				root,
+				candidate,
+				candidateVersion,
+				baselineVersion,
+			);
+			const updated = await launch(executablePath, environment, logPath);
+			result = (await waitForVerification(watchPaths, updated, 10 * 60 * 1000)).state;
+		} else {
+			result = first.state;
+		}
+	} else {
+		result = (await waitForVerification(watchPaths, child, verifyDeadline)).state;
+	}
 	console.log(`[desktop-upgrade-e2e] verified ${result.currentVersion}; log=${logPath}`);
 	await rm(join(homedir(), ".vetta", "desktop-upgrade-e2e.json"), { force: true });
 	await rm(root, { recursive: true, force: true });
