@@ -35,8 +35,8 @@ vi.mock("./group-catalog.js", async (importOriginal) => {
 });
 vi.mock("../models/model-settings-host.js", () => ({
 	getDesktopModelSettingsService: () => ({
-		getConfig: async () => structuredClone(mocks.config),
-		updateConfig: async (
+		getMetadataConfig: async () => structuredClone(mocks.config),
+		updateMetadataConfig: async (
 			update: (current: typeof mocks.config) => typeof mocks.config | undefined,
 			beforeCommit?: () => void,
 		) => {
@@ -56,6 +56,7 @@ vi.mock("../models/model-settings-host.js", () => ({
 vi.mock("./login-window.js", () => ({
 	clearFlowstokenSession: vi.fn(),
 	getFlowstokenSession: () => ({}),
+	getFlowstokenSessionProbeError: () => undefined,
 	loginViaBrowserWindow: vi.fn(),
 	loginWithPasswordAndTurnstile: vi.fn(),
 	probeExistingSession: async () => ({
@@ -68,6 +69,8 @@ vi.mock("./login-window.js", () => ({
 	}),
 }));
 vi.mock("./newapi-client.js", () => ({
+	onFlowstokenAuthChanged: () => () => {},
+	getCachedAccessToken: () => null,
 	FlowstokenApiError: class extends Error {},
 	createToken: vi.fn(),
 	fetchSelf: mocks.fetchSelf,

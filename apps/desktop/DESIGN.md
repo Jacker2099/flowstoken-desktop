@@ -218,9 +218,11 @@ solar 常用对照：菜单 `menu-dots`、关闭 `close-circle`、删除 `trash-
 
 `::selection` 已用 `color-mix(var(--primary) 15%)`。不要为组件单独覆盖。
 
-### 7.5 暗色为默认
+### 7.5 浅色为默认，保留用户明确选择
 
-`:root` 即暗色。亮色靠 `[data-theme="light"]`。**只有装饰性效果**（如外发光、网格纹理）才需要 `dark:` / `light:` 变体；token 颜色会自适应，**不要**为每个 token 类再写一份 `dark:`。
+新安装及未设置明暗偏好的客户端默认浅色。`data-mode` 表示明暗，`data-theme` 表示配色方案；`[data-mode="light"]` 使用浅色 token，`[data-mode="dark"]` 使用深色 token，尚无 `data-mode` 的首帧也回落浅色。保留已有明确的 `light`、`dark`、`auto`（跟随系统）偏好，不覆盖来源无法区分的旧 `dark` 记录。
+
+HTML 和 React 挂载前恢复偏好；主窗口先保持隐藏，页面与原生主题同步后再显示，避免先黑后白。**只有装饰性效果**（如外发光、网格纹理）才需要 `dark:` / `light:` 变体；token 颜色会自适应，**不要**为每个 token 类再写一份 `dark:`。
 
 ---
 

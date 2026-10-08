@@ -11,12 +11,14 @@ import {
 	refreshAccount,
 	setSnapshotBroadcastListener,
 } from "./account-service.js";
+import { cancelSystemBrowserLogin } from "./browser-auth.js";
 import { isValidBillingGroupId } from "./group-catalog.js";
 import type { FlowstokenAccountSnapshot } from "./types.js";
 
 const CHANNELS = {
 	GET_SNAPSHOT: "flowstoken:account:get-snapshot",
 	LOGIN_BROWSER: "flowstoken:account:login-browser",
+	CANCEL_LOGIN: "flowstoken:account:cancel-login",
 	LOGIN_PASSWORD: "flowstoken:account:login-password",
 	LOGOUT: "flowstoken:account:logout",
 	ENSURE_KEYS: "flowstoken:account:ensure-keys",
@@ -53,6 +55,7 @@ export function registerFlowstokenAccountIpc(): () => void {
 		if (result.snapshot) broadcastAccountSnapshot(result.snapshot);
 		return result;
 	});
+	ipcMain.handle(CHANNELS.CANCEL_LOGIN, () => cancelSystemBrowserLogin());
 	ipcMain.handle(CHANNELS.LOGIN_PASSWORD, async (_event, username: unknown, password: unknown) => {
 		if (typeof username !== "string" || typeof password !== "string") {
 			return { ok: false, error: "用户名或密码无效" };
@@ -86,6 +89,7 @@ export function registerFlowstokenAccountIpc(): () => void {
 		await shell.openExternal(url);
 	});
 	return () => {
+		cancelSystemBrowserLogin();
 		for (const channel of Object.values(CHANNELS)) ipcMain.removeHandler(channel);
 	};
 }

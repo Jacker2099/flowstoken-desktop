@@ -3,7 +3,27 @@ export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue
 
 export type ActionRpcMethod = "actions.search" | "actions.describe" | "actions.run";
 export type DebugRpcMethod = "debug.search" | "debug.describe" | "debug.run";
-export type LocalRpcMethod = ActionRpcMethod | DebugRpcMethod;
+export type LocalRpcMethod = ActionRpcMethod | DebugRpcMethod | "models.resolveCredential";
+
+/** Process-local credential request, bound to an existing managed provider and account. */
+export interface ModelCredentialRequest {
+	providerId: string;
+	modelId?: string;
+	modelSourceId?: string;
+	accountId: number;
+	groupId: string;
+	tokenId: number;
+	baseUrl: string;
+	headers?: Record<string, string>;
+}
+
+export interface ModelCredentialResponse {
+	apiKey: string;
+	accountId: number;
+	authRevision: number;
+	groupId: string;
+	tokenId: number;
+}
 
 export type ActionRpcRequest =
 	| {
@@ -55,7 +75,14 @@ export type DebugRpcRequest =
 			};
 	  };
 
-export type LocalRpcRequest = ActionRpcRequest | DebugRpcRequest;
+export type LocalRpcRequest =
+	| ActionRpcRequest
+	| DebugRpcRequest
+	| {
+			id: string;
+			method: "models.resolveCredential";
+			params: ModelCredentialRequest;
+	  };
 
 export interface ActionRpcErrorBody {
 	code: string;
@@ -101,4 +128,7 @@ export interface DebugRpcRuntime {
 export interface LocalRpcRuntime {
 	actions: ActionRpcRuntime;
 	debug?: DebugRpcRuntime;
+	models?: {
+		resolveCredential: (request: ModelCredentialRequest) => Promise<ModelCredentialResponse>;
+	};
 }

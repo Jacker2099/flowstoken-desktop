@@ -5,7 +5,7 @@ import { atomicWriteJSON } from "@vetta/toolkit/atomic-write";
 import { BrowserWindow, net } from "electron";
 import { getAppLogger } from "../../logger.js";
 import { getDesktopModelSettingsService } from "../model-settings-host.js";
-import type { ModelDefinition, ModelsConfig } from "../model-settings-service.js";
+import { MASKED_MODEL_API_KEY, type ModelDefinition, type ModelsConfig } from "../model-settings-service.js";
 import { getPresetProvider, PRESET_PROVIDERS, type PresetProviderDef } from "./catalog.js";
 import { type PresetError, toPresetError } from "./errors.js";
 import { fetchPresetModels, type PresetModelsResult } from "./fetch.js";
@@ -207,12 +207,14 @@ export async function refreshPresetModels(providerId: string, apiKey?: string): 
 	if (!def) return { models: [], error: { code: "unknown-provider", params: { provider: providerId } } };
 
 	let key = apiKey?.trim();
-	if (!key) {
-		const config = await getDesktopModelSettingsService().getConfig();
-		key = config.providers[providerId]?.apiKey?.trim();
+	if (!key || key === MASKED_MODEL_API_KEY) {
+		key = (await getDesktopModelSettingsService().getProviderApiKey(providerId))?.trim();
 	}
-	if (!key) return { models: [], error: { code: "missing-key" } };
+	if (!key || key === MASKED_MODEL_API_KEY) return { models: [], error: { code: "missing-key" } };
+	return refreshPresetModelsWithKey(def, key);
+}
 
+async function refreshPresetModelsWithKey(def: PresetProviderDef, key: string): Promise<PresetModelsResult> {
 	const controller = new AbortController();
 	const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 	let result: PresetModelsResult;
@@ -230,12 +232,11 @@ export async function refreshPresetModels(providerId: string, apiKey?: string): 
 	return { ...result, models };
 }
 
-/** models.json 里由预设采纳而来、且填了 key 的条目。 */
+/** Metadata identifies adopted presets without reading or unlocking their credentials. */
 function adoptedPresetIds(config: ModelsConfig): string[] {
 	return Object.entries(config.providers)
 		.filter(([id, provider]) => {
 			if (provider.source !== "template") return false;
-			if (!provider.apiKey?.trim()) return false;
 			return Boolean(getPresetProvider(provider.templateId ?? id));
 		})
 		.map(([id]) => id);
@@ -249,35 +250,41 @@ export async function syncAdoptedPresets(): Promise<void> {
 	// 先热一遍公共目录:即便一家都没启用,设置页也要能免 key 列出各家模型。
 	await ensureCatalog();
 	const service = getDesktopModelSettingsService();
-	const config = await service.getConfig();
+	const config = await service.getMetadataConfig();
 	const ids = adoptedPresetIds(config);
 	if (ids.length === 0) return;
 
 	const results = await Promise.all(
 		ids.map(async (id) => {
 			const templateId = config.providers[id]?.templateId ?? id;
-			const result = await refreshPresetModels(templateId, config.providers[id]?.apiKey);
+			const def = getPresetProvider(templateId);
+			const key = (await service.getCachedProviderApiKey(id))?.trim();
+			// Startup/background work must not unlock a personal keychain or send the renderer's mask.
+			if (!def || !key || key === MASKED_MODEL_API_KEY) return { id, result: undefined };
+			const result = await refreshPresetModelsWithKey(def, key);
 			return { id, result };
 		}),
 	);
 
-	// 重新读一次:同步期间渲染层可能改过配置,不能拿旧快照整体覆盖。
-	const latest = await service.getConfig();
-	let changed = false;
-	const syncedAt = new Date().toISOString();
-	for (const { id, result } of results) {
-		const provider = latest.providers[id];
-		if (!provider || provider.source !== "template") continue;
-		if (result.error || result.models.length === 0) {
-			presetLog.warn(
-				`同步预设服务商 ${id} 模型失败：${result.error?.code ?? "empty"} ${result.error?.detail ?? ""}`,
-			);
-			continue;
+	// Re-read and commit on the configuration queue; preserve edits made while remote models were loading.
+	await service.updateMetadataConfig((latest) => {
+		let changed = false;
+		const syncedAt = new Date().toISOString();
+		for (const { id, result } of results) {
+			if (!result) continue;
+			const provider = latest.providers[id];
+			if (!provider || JSON.stringify(provider) !== JSON.stringify(config.providers[id])) continue;
+			if (result.error || result.models.length === 0) {
+				presetLog.warn(
+					`同步预设服务商 ${id} 模型失败：${result.error?.code ?? "empty"} ${result.error?.detail ?? ""}`,
+				);
+				continue;
+			}
+			latest.providers[id] = { ...provider, models: result.models, modelsSyncedAt: syncedAt };
+			changed = true;
 		}
-		latest.providers[id] = { ...provider, models: result.models, modelsSyncedAt: syncedAt };
-		changed = true;
-	}
-	if (changed) await service.replaceConfig(latest);
+		return changed ? latest : undefined;
+	});
 }
 
 /** 启动时同步一次,之后每 12 小时一次。返回清理函数。 */

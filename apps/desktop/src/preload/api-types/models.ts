@@ -94,9 +94,14 @@ export interface PresetModelsResult {
 	error?: PresetError;
 }
 
+export interface ModelsSetOptions {
+	/** Rename a custom provider atomically; only provider-editor fields from the target entry are applied. */
+	renameProvider?: { from: string; to: string };
+}
+
 export interface DesktopModelsApi {
 	get(): Promise<ModelsConfigData>;
-	set(config: ModelsConfigData): Promise<void>;
+	set(config: ModelsConfigData, options?: ModelsSetOptions): Promise<void>;
 	/** 主进程直接写入剪贴板；密钥明文不会作为 IPC 结果返回 renderer。 */
 	copyApiKey(providerId: string): Promise<boolean>;
 	fetchRemote(): Promise<RemoteProvidersResult>;

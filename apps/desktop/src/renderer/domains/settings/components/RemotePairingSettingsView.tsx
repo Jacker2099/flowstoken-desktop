@@ -193,7 +193,7 @@ function PairingPanel({ model }: { model: RemotePairingSettingsModel }): JSX.Ele
 
 	return (
 		<div>
-			{!pairing.vaultAvailable ? (
+			{pairing.vaultAvailable === false ? (
 				<p className="mb-3 text-[12px] text-destructive">{labels.pairing.vaultUnavailable}</p>
 			) : null}
 

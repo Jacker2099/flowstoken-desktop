@@ -32,7 +32,7 @@
 @custom-variant data-open (&:is([data-state="open"]));
 @custom-variant data-closed (&:is([data-state="closed"]));
 
-/* ─── Dark mode (default) ─── */
+/* ─── Dark mode and shared token fallbacks ─── */
 :root,
 [data-mode="dark"] {
 	color-scheme: dark;
@@ -124,7 +124,8 @@
 }
 
 
-/* ─── Light mode ─── */
+/* ─── Light mode (default until a saved preference has been applied) ─── */
+:root:not([data-mode]),
 [data-mode="light"] {
 	color-scheme: light;
 

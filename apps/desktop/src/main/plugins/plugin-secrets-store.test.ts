@@ -1,7 +1,7 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CredentialVault } from "../credentials/credential-vault.js";
 import { PluginSecretsStore } from "./plugin-secrets-store.js";
 
@@ -26,6 +26,47 @@ afterEach(() => {
 });
 
 describe("PluginSecretsStore", () => {
+	it("reads missing plugin secrets and metadata without probing native encryption", () => {
+		const forbidden = vi.fn(() => {
+			throw new Error("Unexpected native encryption access");
+		});
+		const isolated = new PluginSecretsStore(
+			new CredentialVault(root, {
+				backend: "denied-fixture",
+				isAvailable: forbidden,
+				encrypt: forbidden,
+				decrypt: forbidden,
+			}),
+		);
+		expect(isolated.get("content-creation", "providerKey")).toBeUndefined();
+		expect(isolated.has("content-creation", "providerKey")).toBe(false);
+		expect(isolated.keys("content-creation")).toEqual([]);
+		expect(() => isolated.get("content-creation", " bad-key")).toThrow("Invalid plugin secret key");
+		expect(forbidden).not.toHaveBeenCalled();
+		expect(readdirSync(root)).toEqual([]);
+	});
+
+	it("keeps the secure-storage gate and original ciphertext for an existing unavailable secret", () => {
+		store.set("content-creation", "providerKey", "synthetic-existing-secret");
+		const snapshot = () => readdirSync(root).map((name) => readFileSync(join(root, name), "utf8"));
+		const before = snapshot();
+		const available = vi.fn(() => false);
+		const decrypt = vi.fn(() => {
+			throw new Error("Must not decrypt an unavailable secret");
+		});
+		const encrypt = vi.fn(() => {
+			throw new Error("Must not overwrite an unavailable secret");
+		});
+		const isolated = new PluginSecretsStore(
+			new CredentialVault(root, { backend: "denied-fixture", isAvailable: available, encrypt, decrypt }),
+		);
+		expect(isolated.get("content-creation", "providerKey")).toBeUndefined();
+		expect(available).toHaveBeenCalledTimes(1);
+		expect(decrypt).not.toHaveBeenCalled();
+		expect(encrypt).not.toHaveBeenCalled();
+		expect(snapshot()).toEqual(before);
+	});
+
 	it("round-trips a secret and lists only key names", () => {
 		store.set("demo", "apiKey", "sk-live-1");
 

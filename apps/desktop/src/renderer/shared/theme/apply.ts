@@ -1,8 +1,9 @@
 import type { ThemeColorOverrides } from "@vetta-org/theme-sdk/appearance";
+import { DEFAULT_THEME_MODE, normalizeThemeMode, type ThemeMode } from "../../../shared/theme-mode";
 import { DEFAULT_THEME_ID, getTheme, resolveThemeId } from "./themes";
 import { TOKEN_CSS_VAR, type TokenSet } from "./tokens";
 
-export type ThemeMode = "light" | "dark" | "auto";
+export type { ThemeMode };
 export type ResolvedMode = "light" | "dark";
 
 export const MODE_STORAGE_KEY = "vetta-theme";
@@ -31,6 +32,7 @@ export function applyTheme(mode: ResolvedMode, themeId: string): void {
 	};
 	const root = document.documentElement;
 	root.setAttribute("data-mode", mode);
+	root.style.colorScheme = mode;
 	root.setAttribute("data-theme", theme.id);
 	writeTokens(tokens);
 }
@@ -42,8 +44,16 @@ export function resolveThemeMode(mode: ThemeMode): ResolvedMode {
 	return mode;
 }
 
+export function getStoredThemeMode(): ThemeMode {
+	try {
+		return normalizeThemeMode(localStorage.getItem(MODE_STORAGE_KEY));
+	} catch {
+		return DEFAULT_THEME_MODE;
+	}
+}
+
 export function applyStoredTheme(): void {
-	const mode = (localStorage.getItem(MODE_STORAGE_KEY) as ThemeMode | null) ?? "dark";
+	const mode = getStoredThemeMode();
 	const rawThemeId = localStorage.getItem(THEME_STORAGE_KEY) ?? DEFAULT_THEME_ID;
 	const themeId = resolveThemeId(rawThemeId);
 	if (themeId !== rawThemeId) {
@@ -56,6 +66,17 @@ export function applyStoredTheme(): void {
 // mode = "auto" 时优先用 window.matchMedia 推测（同步、不依赖 IPC）。
 export function applyInitialTheme(): void {
 	applyStoredTheme();
+}
+
+/** The main window stays hidden until its first page frame and native surface use the same mode. */
+export async function syncInitialNativeTheme(): Promise<void> {
+	const mode = getStoredThemeMode();
+	try {
+		await window.vetta.theme.set(mode === "auto" ? "system" : mode);
+		if (mode === "auto") applyStoredTheme();
+	} catch {
+		// A failed native appearance update must not prevent the renderer from becoming visible.
+	}
 }
 
 const TRANSITION_CLASS = "theme-transitioning";

@@ -914,6 +914,8 @@
 	"alreadyAdded": "Added",
 	"addSelectedModels": "Add selected ({{n}})",
 	"providerName": "Provider name",
+	"providerRenameConflict": "A provider with this name already exists. Choose another name.",
+	"providerRenameFailed": "Could not finish saving the provider. Refresh the settings and try again.",
 	"apiType": "API type",
 	"baseUrl": "Base URL",
 	"apiKey": "API Key",

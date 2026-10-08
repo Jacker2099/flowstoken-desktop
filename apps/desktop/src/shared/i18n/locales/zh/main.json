@@ -1,6 +1,14 @@
 {
 	"flowstoken": {
+		"desktopAuthorizationComplete": "授权完成，客户端已登录。您可以关闭此页面。",
 		"errors": {
+			"sessionMismatch": "客户端会话与浏览器授权不一致，请退出后重新授权。",
+			"desktopAuthorizationFailed": "无法完成浏览器授权，请重试。",
+			"desktopCallbackInvalid": "此授权回调无效，请回到客户端重新登录。",
+			"rateLimited": "请求过于频繁，请等待 {{seconds}} 秒后重试。",
+			"loginTimedOut": "登录验证超时，请重试。",
+			"loginCancelled": "登录已取消。",
+			"requestUnavailable": "暂时无法验证会话，请稍后重试。",
 			"catalogChanged": "模型目录正在更新，请重试。",
 			"requestTimeout": "账户请求超时，请重试。",
 			"tokenInventoryUnavailable": "暂时无法确认账户密钥列表，请刷新账户后重试。",

@@ -1,6 +1,6 @@
 import { getOrCreateSharedModelRuntime, syncSharedModelRuntimeCredentials } from "../agent-runtime/host-services.js";
 import { agentTeamExternalConditionChanges } from "../agent-teams/team-external-condition-channel.js";
-import { getAppLogger } from "../logger.js";
+import { resolveManagedApiKey } from "../flowstoken/managed-credentials.js";
 import { invalidateProxyProviderRouting } from "../proxy/proxy-host.js";
 import { getDesktopModelCredentialStore } from "./model-credential-store.js";
 import {
@@ -11,7 +11,6 @@ import {
 } from "./model-settings-service.js";
 
 let desktopModelSettingsService: ModelSettingsService | undefined;
-const modelSettingsLog = getAppLogger("model-settings");
 const modelSettingsChangedListeners = new Set<(providerIds: readonly string[]) => void>();
 
 export function onDesktopModelSettingsChanged(listener: (providerIds: readonly string[]) => void): () => void {
@@ -26,6 +25,7 @@ export function getDesktopModelSettingsService(): ModelSettingsService {
 			readConfig: readModelsConfig,
 			writeConfig: writeModelsConfig,
 			credentials,
+			resolveManagedApiKey,
 			refreshRegistry: async () => {
 				syncSharedModelRuntimeCredentials(credentials, readModelsConfigSync().providers);
 				getOrCreateSharedModelRuntime().refresh();
@@ -40,9 +40,6 @@ export function getDesktopModelSettingsService(): ModelSettingsService {
 				invalidateProxyProviderRouting();
 				for (const listener of modelSettingsChangedListeners) listener(providerIds);
 			},
-		});
-		void desktopModelSettingsService.getConfig().catch((error) => {
-			modelSettingsLog.warn("迁移模型凭据失败:", error);
 		});
 	}
 	return desktopModelSettingsService;

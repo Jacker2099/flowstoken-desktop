@@ -12,7 +12,7 @@ const EMPTY_STATE: RemotePairingState = {
 	approvals: [],
 	lanEndpoints: [],
 	cloudEnabled: true,
-	vaultAvailable: true,
+	vaultAvailable: null,
 };
 
 type RemotePairingFailure = "action" | "create" | "load" | "qr";
@@ -96,7 +96,7 @@ export interface RemotePairingSettingsModel {
 		readonly qrDataUrl?: string;
 		/** Diameter of the badge over the QR code's centre, as a share of its width. */
 		readonly qrBadge?: number;
-		readonly vaultAvailable: boolean;
+		readonly vaultAvailable: boolean | null;
 		/** The invite as a connection code and password, when the relay can hold it. */
 		readonly code?: {
 			readonly code: string;
@@ -168,7 +168,7 @@ export function useRemotePairingSettingsModel(): RemotePairingSettingsModel {
 				const current = await window.vetta.remotePairing.getState();
 				if (cancelled) return;
 				setState(current);
-				if (current.invite || !current.vaultAvailable) return;
+				if (current.invite || current.vaultAvailable !== true) return;
 				const next = await window.vetta.remotePairing.createInvite();
 				if (!cancelled) apply(next);
 			} catch {
@@ -227,9 +227,9 @@ export function useRemotePairingSettingsModel(): RemotePairingSettingsModel {
 		[apply],
 	);
 
-	// While the page is open there is always a code to scan: one that expired, was used by a
-	// phone or was refreshed is replaced at once. A failure stops it until the person retries.
-	const needsInvite = !initializing && !busy && !failure && !state.invite && state.vaultAvailable;
+	// After pairing has explicitly checked the vault, an expired, used or refreshed code is
+	// replaced while this page is open. Unknown availability and failures wait for a user action.
+	const needsInvite = !initializing && !busy && !failure && !state.invite && state.vaultAvailable === true;
 	useEffect(() => {
 		if (needsInvite) void run(() => window.vetta.remotePairing.createInvite(), "create");
 	}, [needsInvite, run]);
@@ -356,7 +356,7 @@ export function useRemotePairingSettingsModel(): RemotePairingSettingsModel {
 		error: failureMessage,
 		labels,
 		pairing: {
-			canCreate: !initializing && !busy && !state.invite && state.vaultAvailable,
+			canCreate: !initializing && !busy && !state.invite,
 			endpoints: state.lanEndpoints,
 			hasInvite: Boolean(state.invite),
 			preparing: initializing || Boolean((busy && !state.invite) || (state.invite && !qr && failure !== "qr")),

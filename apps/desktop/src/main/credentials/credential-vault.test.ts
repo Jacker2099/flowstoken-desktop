@@ -1,7 +1,7 @@
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { type CredentialCryptography, CredentialVault } from "./credential-vault.js";
 
 const temporaryDirectories: string[] = [];
@@ -44,6 +44,33 @@ describe("CredentialVault", () => {
 		expect(() => vault.put({ namespace: "models", ownerId: "openai", name: "api-key" }, "secret")).toThrow(
 			"Secure credential storage is unavailable",
 		);
+	});
+
+	it("restores original encrypted bytes and removes a new record without using cryptography", () => {
+		const directory = createTemporaryDirectory();
+		const cryptography = new TestCryptography();
+		const vault = new CredentialVault(directory, cryptography);
+		const original = { namespace: "models", ownerId: "existing", name: "api-key" };
+		const fresh = { namespace: "models", ownerId: "new", name: "api-key" };
+		vault.put(original, "fixture-original");
+		const originalPath = join(directory, requireSingleRecord(directory));
+		const originalBytes = readFileSync(originalPath);
+		const restoreOriginal = vault.createRestorePoint(original);
+		const restoreFresh = vault.createRestorePoint(fresh);
+		vault.put(original, "fixture-replaced");
+		vault.put(fresh, "fixture-new");
+		const available = vi.spyOn(cryptography, "isAvailable").mockReturnValue(false);
+		const decrypt = vi.spyOn(cryptography, "decrypt");
+		const encrypt = vi.spyOn(cryptography, "encrypt");
+
+		restoreOriginal();
+		restoreFresh();
+
+		expect(readFileSync(originalPath)).toEqual(originalBytes);
+		expect(vault.has(fresh)).toBe(false);
+		expect(available).not.toHaveBeenCalled();
+		expect(decrypt).not.toHaveBeenCalled();
+		expect(encrypt).not.toHaveBeenCalled();
 	});
 });
 

@@ -12,7 +12,9 @@ import type {
 	ModelProviderDetail,
 	ModelProviderUpsertData,
 } from "@vetta-org/capability-sdk";
-import type { ModelCredentialStore } from "./model-credential-store.js";
+import type { ModelsSetOptions } from "../../preload/api-types/models.js";
+import { isManagedFlowstokenProviderId } from "../../shared/flowstoken-catalog-policy.js";
+import { type ModelCredentialStore, ModelCredentialUnavailableError } from "./model-credential-store.js";
 
 export interface ModelsConfig {
 	defaultModel?: string;
@@ -65,6 +67,8 @@ export interface ModelSettingsServiceOptions {
 	readonly refreshRegistry: () => Promise<void>;
 	readonly writeConfig: (config: ModelsConfig) => Promise<void>;
 	readonly credentials: ModelCredentialStore;
+	/** Authenticated session authority; managed keys never fall back to the persistent vault when installed. */
+	readonly resolveManagedApiKey?: (provider: ProviderConfig) => string | undefined;
 	/** Post-commit signal; observers must not receive credential values. */
 	readonly onProviderAccessChanged?: (providerIds: readonly string[]) => void;
 	/** Post-commit signal for model catalog consumers. */
@@ -268,14 +272,19 @@ export class ModelSettingsService {
 	}
 
 	async getRendererConfig(): Promise<ModelsConfig> {
+		return this.getMetadataConfig();
+	}
+
+	/** Read model metadata without decrypting or migrating unrelated persistent credentials. */
+	async getMetadataConfig(): Promise<ModelsConfig> {
 		return this.readRendererSnapshot((config) => config);
 	}
 
 	/** Read and synchronously project a secret-free snapshot on the existing configuration queue. */
 	async readRendererSnapshot<Result>(read: (config: ModelsConfig) => Result): Promise<Result> {
 		return this.runMutation(async () => {
-			await this.ensureLegacyCredentialsMigrated();
-			const result = read(rendererConfig(await this.options.readConfig()));
+			const persisted = await this.options.readConfig();
+			const result = read(this.projectMetadata(persisted));
 			if (result !== null && typeof result === "object" && "then" in result && typeof result.then === "function") {
 				throw new TypeError("A renderer snapshot projection must be synchronous");
 			}
@@ -285,14 +294,81 @@ export class ModelSettingsService {
 
 	/** Main-process only. IPC callers must not return this value to the renderer. */
 	async getProviderApiKey(providerId: string): Promise<string | undefined> {
-		return (await this.getConfig()).providers[providerId]?.apiKey;
+		await this.mutationQueue;
+		const provider = (await this.options.readConfig()).providers[providerId];
+		if (!provider) return undefined;
+		if (this.usesManagedSessionCredentials(provider)) return this.options.resolveManagedApiKey?.(provider);
+		if (provider.apiKey !== undefined) return provider.apiKey;
+		return provider.credentialRef ? this.options.credentials.get(provider.credentialRef) : undefined;
 	}
 
-	async replaceConfig(config: ModelsConfig): Promise<void> {
+	/** Background metadata work may reuse an already authorized key, but must never unlock the vault. */
+	async getCachedProviderApiKey(providerId: string): Promise<string | undefined> {
+		await this.mutationQueue;
+		const provider = (await this.options.readConfig()).providers[providerId];
+		if (!provider) return undefined;
+		if (this.usesManagedSessionCredentials(provider)) return this.options.resolveManagedApiKey?.(provider);
+		return provider.credentialRef ? this.options.credentials.peek?.(provider.credentialRef) : provider.apiKey;
+	}
+
+	async replaceConfig(config: ModelsConfig, options?: ModelsSetOptions): Promise<void> {
 		await this.runMutation(async () => {
+			if (options?.renameProvider) {
+				await this.renameProvider(config, options.renameProvider);
+				return;
+			}
 			await this.ensureLegacyCredentialsMigrated();
 			await this.persist(config, await this.options.readConfig(), "renderer");
 		});
+	}
+
+	private async renameProvider(
+		config: ModelsConfig,
+		rename: NonNullable<ModelsSetOptions["renameProvider"]>,
+	): Promise<void> {
+		const { from, to } = rename;
+		if (
+			!from ||
+			!to ||
+			from === to ||
+			to !== to.trim() ||
+			/[\\/\u0000-\u001f\u007f]/.test(to) ||
+			["__proto__", "constructor", "prototype"].includes(to)
+		)
+			throw new Error("MODEL_PROVIDER_RENAME_INVALID");
+		const current = await this.options.readConfig();
+		const previous = current.providers[from];
+		const requested = config.providers[to];
+		if (
+			!Object.hasOwn(current.providers, from) ||
+			!Object.hasOwn(config.providers, to) ||
+			!previous ||
+			!requested ||
+			previous.source === "template" ||
+			previous.managedGroup ||
+			Boolean(isManagedFlowstokenProviderId(from)) ||
+			Boolean(isManagedFlowstokenProviderId(to))
+		)
+			throw new Error("MODEL_PROVIDER_RENAME_UNAVAILABLE");
+		if (Object.hasOwn(current.providers, to)) throw new Error("MODEL_PROVIDER_RENAME_CONFLICT");
+
+		// Resolve masks against the explicit source identity, never infer it from key or header values.
+		// Rebase only provider-editor fields so catalog updates and other providers are not overwritten.
+		const edited = { ...previous };
+		for (const field of ["baseUrl", "apiKey", "api", "headers", "authHeader"] as const) {
+			if (!Object.hasOwn(requested, field)) continue;
+			Object.assign(edited, { [field]: requested[field] });
+		}
+		const baseline = { ...current, providers: { ...current.providers, [to]: previous } };
+		delete baseline.providers[from];
+		const next = {
+			...baseline,
+			defaultModel: current.defaultModel?.startsWith(`${from}/`)
+				? `${to}${current.defaultModel.slice(from.length)}`
+				: current.defaultModel,
+			providers: { ...baseline.providers, [to]: edited },
+		};
+		await this.persist(next, baseline, "renderer", undefined, true, current);
 	}
 
 	/** Main-process updates read and commit under the same queue; the guard runs before credential writes. */
@@ -309,8 +385,21 @@ export class ModelSettingsService {
 		});
 	}
 
+	/** Display/catalog updates round-trip opaque keys without migrating unrelated legacy plaintext. */
+	async updateMetadataConfig(
+		update: (current: ModelsConfig) => ModelsConfig | undefined,
+		beforeCommit?: () => void,
+	): Promise<void> {
+		await this.runMutation(async () => {
+			const current = await this.options.readConfig();
+			beforeCommit?.();
+			const next = update(this.projectMetadata(current));
+			if (next) await this.persist(next, current, "renderer", beforeCommit, true);
+		});
+	}
+
 	async list(): Promise<ModelListResult> {
-		const config = await this.getConfig();
+		const config = await this.getMetadataConfig();
 		return {
 			defaultModel: config.defaultModel ?? null,
 			providers: Object.entries(config.providers).map(([id, provider]) => ({
@@ -332,7 +421,7 @@ export class ModelSettingsService {
 	}
 
 	async getSanitizedConfig(): Promise<ModelConfigSnapshot> {
-		const config = await this.getConfig();
+		const config = await this.getMetadataConfig();
 		const providers: Record<string, ModelProviderConfigSnapshot> = {};
 		for (const [id, provider] of Object.entries(config.providers)) providers[id] = redactProvider(provider);
 		return {
@@ -342,24 +431,22 @@ export class ModelSettingsService {
 	}
 
 	async getSanitizedProvider(providerId: string): Promise<ModelProviderDetail> {
-		const config = await this.getConfig();
+		const config = await this.getMetadataConfig();
 		const provider = config.providers[providerId];
 		if (!provider) throw new Error(`Provider not found: ${providerId}`);
 		return { provider: providerId, ...redactProvider(provider) };
 	}
 
 	async validateModelKey(modelKey: string, operation = "set-default"): Promise<void> {
-		assertModelKeyExists(await this.getConfig(), modelKey, operation);
+		assertModelKeyExists(await this.getMetadataConfig(), modelKey, operation);
 	}
 
 	async setDefault(modelKey: string): Promise<ModelDefaultResult> {
-		return this.runMutation(async () => {
-			await this.ensureLegacyCredentialsMigrated();
-			const config = await this.options.readConfig();
+		await this.updateMetadataConfig((config) => {
 			assertModelKeyExists(config, modelKey, "set-default");
-			await this.persist({ ...config, defaultModel: modelKey }, config, "resolved");
-			return { defaultModel: modelKey };
+			return { ...config, defaultModel: modelKey };
 		});
+		return { defaultModel: modelKey };
 	}
 
 	async upsertProvider(providerId: string, data: ModelProviderUpsertData): Promise<ModelProviderConfigSnapshot> {
@@ -438,10 +525,8 @@ export class ModelSettingsService {
 	 * 插件才能做增量对账——让删除必须有正向证据，而不是靠时序运气。
 	 */
 	async listOwnedProviders(owner: string): Promise<Record<string, ModelProviderConfigSnapshot>> {
-		await this.mutationQueue;
-		await this.ensureLegacyCredentialsMigrated();
 		const prefix = `${owner}.`;
-		const config = await this.options.readConfig();
+		const config = await this.getMetadataConfig();
 		return Object.fromEntries(
 			Object.entries(config.providers)
 				.filter(([providerId]) => providerId.startsWith(prefix))
@@ -454,6 +539,8 @@ export class ModelSettingsService {
 		current: ModelsConfig,
 		mode: PersistInputMode,
 		beforeCommit?: () => void,
+		metadataOnly = false,
+		rollbackConfigOnFailure?: ModelsConfig,
 	): Promise<ModelsConfig> {
 		const persisted = cloneModelsConfig(config);
 		const writes = new Map<string, string>();
@@ -464,20 +551,29 @@ export class ModelSettingsService {
 			const currentProvider = current.providers[providerId];
 			if (mode === "renderer") restoreMaskedHeaders(provider, currentProvider);
 			const value = provider.apiKey;
-			const currentRef = provider.credentialRef ?? currentProvider?.credentialRef;
+			let currentRef = provider.credentialRef ?? currentProvider?.credentialRef;
+			const currentUsesSession = this.usesManagedSessionCredentials(currentProvider);
 			if (!beforeCommit) {
 				delete provider.managedGroup;
 				provider.managedGroupOverride = currentProvider?.managedGroupOverride;
 				const binding = currentProvider?.managedGroup;
 				if (binding) {
-					const currentKey = currentProvider.credentialRef
-						? this.options.credentials.get(currentProvider.credentialRef)
-						: currentProvider.apiKey;
+					const unchangedMaskedCredential =
+						value === MASKED_MODEL_API_KEY && currentRef === currentProvider.credentialRef;
+					const currentKey = currentUsesSession
+						? this.options.resolveManagedApiKey?.(currentProvider)
+						: unchangedMaskedCredential
+							? MASKED_MODEL_API_KEY
+							: currentProvider.credentialRef
+								? this.options.credentials.get(currentProvider.credentialRef)
+								: currentProvider.apiKey;
 					const nextKey =
 						value === MASKED_MODEL_API_KEY
-							? currentRef
-								? this.options.credentials.get(currentRef)
-								: currentKey
+							? currentUsesSession || unchangedMaskedCredential
+								? currentKey
+								: currentRef
+									? this.options.credentials.get(currentRef)
+									: currentKey
 							: value === undefined && mode === "resolved"
 								? currentKey
 								: value;
@@ -490,6 +586,45 @@ export class ModelSettingsService {
 					else provider.managedGroupOverride = true;
 				}
 			} else if (provider.managedGroup) delete provider.managedGroupOverride;
+
+			if (this.usesManagedSessionCredentials(provider)) {
+				delete provider.apiKey;
+				if (currentProvider?.credentialRef) {
+					provider.credentialRef = currentProvider.credentialRef;
+					this.registerCredentialRef(nextRefs, provider.credentialRef, providerId);
+				} else delete provider.credentialRef;
+				if (value !== undefined && value !== MASKED_MODEL_API_KEY) credentialWriteProviders.add(providerId);
+				continue;
+			}
+			// An explicit personal override gets a new persistent key. Never overwrite the
+			// old managed ciphertext, which may belong to an inaccessible keychain.
+			if (currentUsesSession) {
+				currentRef = undefined;
+				delete provider.credentialRef;
+				if (value === MASKED_MODEL_API_KEY) {
+					delete provider.apiKey;
+					continue;
+				}
+			}
+
+			if (
+				metadataOnly &&
+				!currentUsesSession &&
+				currentProvider &&
+				currentRef === currentProvider.credentialRef &&
+				(value === MASKED_MODEL_API_KEY ||
+					(value !== undefined && value === currentProvider.apiKey && normalizeExternalApiKeySource(value)))
+			) {
+				// Metadata consumers receive an opaque projection, not permission to
+				// normalize a legacy custom credential (including interrupted migration state).
+				if (currentProvider.apiKey === undefined) delete provider.apiKey;
+				else provider.apiKey = currentProvider.apiKey;
+				if (currentRef) {
+					provider.credentialRef = currentRef;
+					this.registerCredentialRef(nextRefs, currentRef, providerId);
+				} else delete provider.credentialRef;
+				continue;
+			}
 
 			if (mode === "renderer" && value === MASKED_MODEL_API_KEY) {
 				if (currentRef) {
@@ -536,14 +671,15 @@ export class ModelSettingsService {
 
 		const currentRefs = new Set(
 			Object.values(current.providers)
+				.filter((provider) => !this.usesManagedSessionCredentials(provider))
 				.map((provider) => provider.credentialRef)
 				.filter((value): value is string => Boolean(value)),
 		);
 		const removals = [...currentRefs].filter((credentialRef) => !nextRefs.has(credentialRef));
 		const affectedRefs = new Set([...writes.keys(), ...removals]);
-		const snapshots = new Map<string, string | undefined>();
+		const snapshots = new Map<string, () => void>();
 		for (const credentialRef of affectedRefs) {
-			snapshots.set(credentialRef, this.options.credentials.get(credentialRef));
+			snapshots.set(credentialRef, this.createCredentialRestorePoint(credentialRef));
 		}
 
 		beforeCommit?.();
@@ -565,9 +701,9 @@ export class ModelSettingsService {
 			} catch {
 				canceled = true;
 			}
-			if (!configWritten || canceled) this.restoreCredentials(snapshots);
-			if (configWritten && canceled) {
-				await this.options.writeConfig(current);
+			if (!configWritten || canceled || rollbackConfigOnFailure) this.restoreCredentials(snapshots);
+			if (configWritten && (canceled || rollbackConfigOnFailure)) {
+				await this.options.writeConfig(rollbackConfigOnFailure ?? current);
 				if (registryRefreshStarted) await this.options.refreshRegistry();
 			}
 			throw error;
@@ -582,9 +718,26 @@ export class ModelSettingsService {
 		return persisted;
 	}
 
+	private projectMetadata(config: ModelsConfig): ModelsConfig {
+		const projected = rendererConfig(config);
+		for (const [providerId, provider] of Object.entries(config.providers)) {
+			if (!this.usesManagedSessionCredentials(provider)) continue;
+			if (this.options.resolveManagedApiKey?.(provider) !== undefined)
+				projected.providers[providerId].apiKey = MASKED_MODEL_API_KEY;
+			else delete projected.providers[providerId].apiKey;
+		}
+		return projected;
+	}
+
 	private resolveCredentials(config: ModelsConfig): ModelsConfig {
 		const resolved = cloneModelsConfig(config);
 		for (const provider of Object.values(resolved.providers)) {
+			if (this.usesManagedSessionCredentials(provider)) {
+				delete provider.apiKey;
+				const apiKey = this.options.resolveManagedApiKey?.(provider);
+				if (apiKey !== undefined) provider.apiKey = apiKey;
+				continue;
+			}
 			if (!provider.credentialRef) continue;
 			const apiKey = this.options.credentials.get(provider.credentialRef);
 			if (apiKey !== undefined) provider.apiKey = apiKey;
@@ -593,28 +746,47 @@ export class ModelSettingsService {
 	}
 
 	private resolveProvider(provider: ProviderConfig): ProviderConfig {
+		if (this.usesManagedSessionCredentials(provider)) {
+			const { apiKey: _persistedApiKey, ...persisted } = provider;
+			const apiKey = this.options.resolveManagedApiKey?.(provider);
+			return { ...persisted, ...(apiKey === undefined ? {} : { apiKey }) };
+		}
 		if (!provider.credentialRef) return { ...provider };
 		const apiKey = this.options.credentials.get(provider.credentialRef);
 		return { ...provider, ...(apiKey === undefined ? {} : { apiKey }) };
 	}
 
 	private ensureLegacyCredentialsMigrated(): Promise<void> {
-		if (!this.options.credentials.isAvailable()) return Promise.resolve();
-		this.legacyMigration ??= this.migrateLegacyCredentials().catch((error) => {
-			this.legacyMigration = undefined;
-			throw error;
-		});
+		if (this.legacyMigration) return this.legacyMigration;
+		const migration = this.migrateLegacyCredentials()
+			.then((completed) => {
+				if (!completed && this.legacyMigration === migration) this.legacyMigration = undefined;
+			})
+			.catch((error) => {
+				if (this.legacyMigration === migration) this.legacyMigration = undefined;
+				throw error;
+			});
+		this.legacyMigration = migration;
 		return this.legacyMigration;
 	}
 
-	private async migrateLegacyCredentials(): Promise<void> {
+	private async migrateLegacyCredentials(): Promise<boolean> {
 		const config = await this.options.readConfig();
+		const requiresEncryption = Object.values(config.providers).some(
+			(provider) =>
+				!this.usesManagedSessionCredentials(provider) &&
+				typeof provider.apiKey === "string" &&
+				provider.apiKey.length > 0 &&
+				!normalizeExternalApiKeySource(provider.apiKey),
+		);
+		if (requiresEncryption && !this.options.credentials.isAvailable()) return false;
 		const migrated = cloneModelsConfig(config);
-		const snapshots = new Map<string, string | undefined>();
+		const snapshots = new Map<string, () => void>();
 		let changed = false;
 		const changedProviderIds: string[] = [];
 		try {
 			for (const [providerId, provider] of Object.entries(migrated.providers)) {
+				if (this.usesManagedSessionCredentials(provider)) continue;
 				if (!provider.apiKey) continue;
 				const externalSource = normalizeExternalApiKeySource(provider.apiKey);
 				if (externalSource) {
@@ -624,14 +796,14 @@ export class ModelSettingsService {
 					continue;
 				}
 				const credentialRef = provider.credentialRef ?? randomUUID();
-				snapshots.set(credentialRef, this.options.credentials.get(credentialRef));
+				snapshots.set(credentialRef, this.createCredentialRestorePoint(credentialRef));
 				this.options.credentials.set(credentialRef, provider.apiKey);
 				provider.credentialRef = credentialRef;
 				delete provider.apiKey;
 				changed = true;
 				changedProviderIds.push(providerId);
 			}
-			if (!changed) return;
+			if (!changed) return true;
 			await this.options.writeConfig(migrated);
 		} catch (error) {
 			this.restoreCredentials(snapshots);
@@ -639,6 +811,15 @@ export class ModelSettingsService {
 		}
 		await this.options.refreshRegistry();
 		this.notifyProviderAccessChanged(changedProviderIds);
+		return true;
+	}
+
+	private usesManagedSessionCredentials(provider: ProviderConfig | undefined): boolean {
+		return Boolean(
+			this.options.resolveManagedApiKey &&
+				provider?.managedGroup?.source === "flowstoken" &&
+				!provider.managedGroupOverride,
+		);
 	}
 
 	private notifyProviderAccessChanged(providerIds: readonly string[]): void {
@@ -657,11 +838,22 @@ export class ModelSettingsService {
 		refs.set(credentialRef, providerId);
 	}
 
-	private restoreCredentials(snapshots: ReadonlyMap<string, string | undefined>): void {
-		for (const [credentialRef, value] of snapshots) {
+	private createCredentialRestorePoint(credentialRef: string): () => void {
+		const credentials = this.options.credentials;
+		if (credentials.createRestorePoint) return credentials.createRestorePoint(credentialRef);
+		const existed = credentials.has(credentialRef);
+		const previous = credentials.get(credentialRef);
+		if (existed && previous === undefined) throw new ModelCredentialUnavailableError();
+		return () => {
+			if (previous === undefined) credentials.remove(credentialRef);
+			else credentials.set(credentialRef, previous);
+		};
+	}
+
+	private restoreCredentials(snapshots: ReadonlyMap<string, () => void>): void {
+		for (const restore of snapshots.values()) {
 			try {
-				if (value === undefined) this.options.credentials.remove(credentialRef);
-				else this.options.credentials.set(credentialRef, value);
+				restore();
 			} catch {
 				// Preserve the original persistence error. A later migration can reconcile orphaned encrypted records.
 			}

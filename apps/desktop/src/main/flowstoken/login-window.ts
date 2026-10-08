@@ -1,110 +1,51 @@
-import { BrowserWindow, session as electronSession } from "electron";
-import { FLOWSTOKEN_SESSION_PARTITION, FLOWSTOKEN_SITE_URL } from "./constants.js";
+import { BrowserWindow } from "electron";
+import { mainT } from "../i18n/index.js";
+import { getFlowstokenSession } from "./auth-session.js";
+import { FLOWSTOKEN_SITE_URL } from "./constants.js";
 import {
-	clearCachedAccessToken,
+	assertFlowstokenRequestAllowed,
 	FlowstokenApiError,
 	fetchSelf,
+	getCachedFlowstokenUser,
+	getFlowstokenAuthRevision,
+	getFlowstokenRequestCooldownMs,
 	loginWithPassword,
+	logoutFlowstokenAuthSession,
 	refreshAuth,
-	setCachedAccessToken,
 } from "./newapi-client.js";
 import type { FlowstokenUserSnapshot } from "./types.js";
 
-export function getFlowstokenSession() {
-	return electronSession.fromPartition(FLOWSTOKEN_SESSION_PARTITION);
-}
+export { getFlowstokenSession } from "./auth-session.js";
+
+const pendingLoginCancels = new Set<() => void>();
 
 export async function clearFlowstokenSession(): Promise<void> {
-	clearCachedAccessToken();
-	await getFlowstokenSession().clearStorageData({ storages: ["cookies", "localstorage"] });
+	for (const cancel of pendingLoginCancels) cancel();
+	await logoutFlowstokenAuthSession(getFlowstokenSession());
+}
+
+let sessionProbeError: string | undefined;
+
+export function getFlowstokenSessionProbeError(): string | undefined {
+	return sessionProbeError;
 }
 
 export async function probeExistingSession(): Promise<FlowstokenUserSnapshot | null> {
+	const revision = getFlowstokenAuthRevision();
 	try {
-		return await fetchSelf(getFlowstokenSession());
-	} catch {
-		return null;
-	}
-}
-
-type InPageRefreshResult = {
-	ok?: boolean;
-	accessToken?: string | null;
-	user?: Record<string, unknown> | null;
-};
-
-function mapUserFromUnknown(data: Record<string, unknown>): FlowstokenUserSnapshot {
-	return {
-		id: Number(data.id),
-		username: String(data.username ?? ""),
-		displayName: String(data.display_name || data.username || ""),
-		email: data.email ? String(data.email) : undefined,
-		group: data.group ? String(data.group) : undefined,
-		quota: Number(data.quota ?? 0),
-		usedQuota: Number(data.used_quota ?? 0),
-		requestCount: Number(data.request_count ?? 0),
-	};
-}
-
-/** Prefer in-page refresh so Path-scoped SameSite=Strict cookies attach like the SPA. */
-async function probeLoginInPage(win: BrowserWindow): Promise<FlowstokenUserSnapshot | null> {
-	if (win.isDestroyed() || win.webContents.isDestroyed()) return null;
-	try {
-		const result = (await win.webContents.executeJavaScript(
-			`(async () => {
-				try {
-					const res = await fetch('/api/user/auth/refresh', {
-						method: 'POST',
-						credentials: 'include',
-						cache: 'no-store',
-						headers: { 'Accept': 'application/json', 'Cache-Control': 'no-store' },
-					});
-					const body = await res.json().catch(() => null);
-					if (res.ok && body && body.success !== false && body.data) {
-						const data = body.data;
-						const accessToken = data.access_token || data.accessToken || data.token || null;
-						const user = data.user && typeof data.user === 'object' ? data.user : data;
-						if (accessToken) return { ok: true, accessToken, user };
-					}
-				} catch {}
-				try {
-					const resSelf = await fetch('/api/user/self', {
-						method: 'GET',
-						credentials: 'include',
-						headers: { 'Accept': 'application/json' },
-					});
-					if (resSelf.ok) {
-						const body = await resSelf.json().catch(() => null);
-						if (body && body.success !== false && body.data) {
-							return { ok: true, user: body.data };
-						}
-					}
-				} catch {}
-				try {
-					const raw = window.localStorage.getItem('user');
-					if (raw) {
-						const localUser = JSON.parse(raw);
-						if (localUser && (localUser.id || localUser.username)) {
-							const accessToken = localUser.token || localUser.access_token || null;
-							return { ok: true, accessToken, user: localUser };
-						}
-					}
-				} catch {}
-				return { ok: false };
-			})()`,
-			true,
-		)) as InPageRefreshResult | null;
-
-		if (!result?.ok) return null;
-		if (result.accessToken) {
-			setCachedAccessToken(result.accessToken);
+		const user = await fetchSelf(getFlowstokenSession());
+		sessionProbeError = undefined;
+		return user;
+	} catch (error) {
+		if (error instanceof FlowstokenApiError && error.status === 401) {
+			sessionProbeError = undefined;
+			return null;
 		}
-		if (result.user && result.user.id !== undefined) {
-			return mapUserFromUnknown(result.user);
-		}
-		return await fetchSelf(getFlowstokenSession());
-	} catch {
-		return null;
+		if (revision !== getFlowstokenAuthRevision()) throw error;
+		sessionProbeError = error instanceof Error ? error.message : mainT("flowstoken.errors.requestUnavailable");
+		const user = getCachedFlowstokenUser();
+		if (user) return user;
+		throw error;
 	}
 }
 
@@ -131,7 +72,25 @@ function looksLikeLoggedInUrl(url: string): boolean {
 	}
 }
 
+let browserLogin: Promise<FlowstokenUserSnapshot> | null = null;
+const LOGIN_TIMEOUT_MS = 5 * 60_000;
+const LOGIN_PROBE_INTERVAL_MS = 3_000;
+
 export function loginViaBrowserWindow(): Promise<FlowstokenUserSnapshot> {
+	if (browserLogin) return browserLogin;
+	try {
+		assertFlowstokenRequestAllowed(getFlowstokenSession());
+	} catch (error) {
+		return Promise.reject(error);
+	}
+	const promise = openLoginWindow().finally(() => {
+		if (browserLogin === promise) browserLogin = null;
+	});
+	browserLogin = promise;
+	return promise;
+}
+
+function openLoginWindow(): Promise<FlowstokenUserSnapshot> {
 	return new Promise((resolve, reject) => {
 		const ses = getFlowstokenSession();
 		const win = new BrowserWindow({
@@ -141,57 +100,95 @@ export function loginViaBrowserWindow(): Promise<FlowstokenUserSnapshot> {
 			autoHideMenuBar: true,
 			webPreferences: { session: ses, nodeIntegration: false, contextIsolation: true },
 		});
+		const controller = new AbortController();
+		const deadline = Date.now() + LOGIN_TIMEOUT_MS;
 		let settled = false;
 		let probeInFlight = false;
+		let failures = 0;
+		let notBefore = 0;
+		let poll: ReturnType<typeof setTimeout> | undefined;
 
-		const finish = (fn: () => void) => {
+		const finish = (result: { user: FlowstokenUserSnapshot } | { error: Error }) => {
 			if (settled) return;
 			settled = true;
-			clearInterval(timer);
-			win.webContents.removeListener("did-navigate", onNavigate);
-			win.webContents.removeListener("did-navigate-in-page", onNavigate);
-			win.webContents.removeListener("did-finish-load", onNavigate);
+			pendingLoginCancels.delete(cancel);
+			if (poll !== undefined) clearTimeout(poll);
+			clearTimeout(timeout);
+			if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
+				win.webContents.removeListener("did-navigate", onNavigate);
+				win.webContents.removeListener("did-navigate-in-page", onNavigate);
+				win.webContents.removeListener("did-finish-load", onNavigate);
+			}
+			if ("error" in result) {
+				controller.abort(result.error);
+				reject(result.error);
+			} else {
+				resolve(result.user);
+			}
 			void ses.cookies.flushStore().catch(() => {});
-			fn();
 			if (!win.isDestroyed()) win.close();
+		};
+		const cancel = () => finish({ error: new FlowstokenApiError(mainT("flowstoken.errors.loginCancelled")) });
+
+		const schedule = (delay: number) => {
+			if (settled) return;
+			if (poll !== undefined) clearTimeout(poll);
+			poll = setTimeout(() => {
+				void tryProbe();
+			}, delay);
 		};
 
 		const tryProbe = async () => {
 			if (settled || probeInFlight || win.isDestroyed()) return;
+			const wait = Math.max(notBefore - Date.now(), getFlowstokenRequestCooldownMs(ses));
+			if (wait > 0) {
+				schedule(wait);
+				return;
+			}
+			// The login page owns interactive sign-in. Only verify after it navigates to an authenticated route.
+			// All refreshes use the same session client, so in-page polling cannot bypass its cooldown or coalescing.
+			if (!looksLikeLoggedInUrl(win.webContents.getURL())) {
+				schedule(LOGIN_PROBE_INTERVAL_MS);
+				return;
+			}
 			probeInFlight = true;
 			try {
-				const fromPage = await probeLoginInPage(win);
-				if (fromPage) {
-					finish(() => resolve(fromPage));
+				const { user } = await refreshAuth(ses, { signal: controller.signal });
+				finish({ user });
+			} catch (error) {
+				if (settled) return;
+				failures++;
+				const retryAfterMs = error instanceof FlowstokenApiError ? (error.retryAfterMs ?? 0) : 0;
+				if (retryAfterMs >= deadline - Date.now()) {
+					finish({
+						error: error instanceof Error ? error : new Error(mainT("flowstoken.errors.requestUnavailable")),
+					});
 					return;
 				}
-				const { user } = await refreshAuth(ses);
-				finish(() => resolve(user));
-			} catch {
-				// Still logged out — keep polling.
+				notBefore =
+					Date.now() +
+					Math.max(retryAfterMs, Math.min(30_000, LOGIN_PROBE_INTERVAL_MS * 2 ** Math.min(failures - 1, 4)));
 			} finally {
 				probeInFlight = false;
+				if (!settled) schedule(Math.max(LOGIN_PROBE_INTERVAL_MS, notBefore - Date.now()));
 			}
 		};
 
 		const onNavigate = () => {
-			if (settled || win.isDestroyed()) return;
-			if (looksLikeLoggedInUrl(win.webContents.getURL())) void tryProbe();
+			if (!settled && !win.isDestroyed() && looksLikeLoggedInUrl(win.webContents.getURL())) void tryProbe();
 		};
-
-		const timer = setInterval(() => {
-			void tryProbe();
-		}, 800);
-
+		const timeout = setTimeout(() => {
+			finish({ error: new FlowstokenApiError(mainT("flowstoken.errors.loginTimedOut")) });
+		}, LOGIN_TIMEOUT_MS);
 		win.webContents.on("did-navigate", onNavigate);
 		win.webContents.on("did-navigate-in-page", onNavigate);
 		win.webContents.on("did-finish-load", onNavigate);
-
-		win.on("closed", () => {
-			finish(() => reject(new FlowstokenApiError("登录窗口已关闭")));
+		win.on("closed", () => finish({ error: new FlowstokenApiError(mainT("flowstoken.errors.loginCancelled")) }));
+		pendingLoginCancels.add(cancel);
+		schedule(LOGIN_PROBE_INTERVAL_MS);
+		void win.loadURL(`${FLOWSTOKEN_SITE_URL}/login`).catch(() => {
+			finish({ error: new FlowstokenApiError(mainT("flowstoken.errors.requestUnavailable")) });
 		});
-
-		void win.loadURL(`${FLOWSTOKEN_SITE_URL}/login`);
 	});
 }
 
@@ -199,6 +196,7 @@ export async function loginWithPasswordAndTurnstile(
 	username: string,
 	password: string,
 ): Promise<FlowstokenUserSnapshot> {
+	assertFlowstokenRequestAllowed(getFlowstokenSession());
 	const turnstile = await obtainTurnstileToken();
 	return loginWithPassword(getFlowstokenSession(), username, password, turnstile);
 }
@@ -218,17 +216,27 @@ function obtainTurnstileToken(): Promise<string> {
 		const done = (err?: Error, token?: string) => {
 			if (settled) return;
 			settled = true;
+			pendingLoginCancels.delete(cancel);
 			clearInterval(poll);
+			clearTimeout(timeout);
 			if (!win.isDestroyed()) win.close();
 			if (err) reject(err);
 			else resolve(token as string);
 		};
+		const cancel = () => done(new FlowstokenApiError(mainT("flowstoken.errors.loginCancelled")));
 		const poll = setInterval(() => {
 			if (win.isDestroyed()) return;
 			const title = win.getTitle();
 			if (title.startsWith("FT_TURNSTILE:")) done(undefined, title.slice("FT_TURNSTILE:".length));
 		}, 300);
+		const timeout = setTimeout(
+			() => done(new FlowstokenApiError(mainT("flowstoken.errors.loginTimedOut"))),
+			LOGIN_TIMEOUT_MS,
+		);
 		win.on("closed", () => done(new FlowstokenApiError("未完成安全验证")));
-		void win.loadURL(`${FLOWSTOKEN_SITE_URL}/desktop-turnstile.html`);
+		pendingLoginCancels.add(cancel);
+		void win.loadURL(`${FLOWSTOKEN_SITE_URL}/desktop-turnstile.html`).catch(() => {
+			done(new FlowstokenApiError(mainT("flowstoken.errors.requestUnavailable")));
+		});
 	});
 }

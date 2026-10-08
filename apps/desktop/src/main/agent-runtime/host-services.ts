@@ -19,6 +19,11 @@ import {
 } from "@vetta/runtime-node/host";
 import { DEFAULT_SERVER_URL } from "../constants.js";
 import { assertFlowstokenModelAccess } from "../flowstoken/catalog-access.js";
+import {
+	isManagedCredentialProvider,
+	onManagedCredentialsChanged,
+	resolveManagedApiKey,
+} from "../flowstoken/managed-credentials.js";
 import { getDesktopModelCredentialStore, type ModelCredentialStore } from "../models/model-credential-store.js";
 import { type ProviderConfig, readModelsConfigSync } from "../models/model-settings-service.js";
 
@@ -26,6 +31,36 @@ let sharedModelRuntime: CodingAgentModelRuntime | undefined;
 let sharedModelAuth: CodingAgentAuthRuntime | undefined;
 let syncedCredentialProviderIds = new Set<string>();
 let managedGroupBindings: Readonly<Record<string, ProviderConfig["managedGroup"]>> = {};
+type RuntimeCredentialProvider = Pick<ProviderConfig, "credentialRef" | "managedGroup" | "managedGroupOverride">;
+let credentialProviders: Readonly<Record<string, RuntimeCredentialProvider>> = {};
+let modelCredentials: ModelCredentialStore | undefined;
+
+function injectProviderCredential(providerId: string, key: string | undefined): void {
+	if (!sharedModelAuth) return;
+	if (key) {
+		sharedModelAuth.setRuntimeApiKey(providerId, key);
+		syncedCredentialProviderIds.add(providerId);
+	} else {
+		sharedModelAuth.removeRuntimeApiKey(providerId);
+		syncedCredentialProviderIds.delete(providerId);
+	}
+}
+
+function hydrateProviderCredential(providerId: string): void {
+	const provider = credentialProviders[providerId];
+	if (!provider) return;
+	if (isManagedCredentialProvider(provider)) {
+		injectProviderCredential(providerId, resolveManagedApiKey(provider));
+	} else if (provider.credentialRef) {
+		injectProviderCredential(providerId, modelCredentials?.get(provider.credentialRef));
+	}
+}
+
+onManagedCredentialsChanged(() => {
+	for (const [providerId, provider] of Object.entries(credentialProviders)) {
+		if (isManagedCredentialProvider(provider)) injectProviderCredential(providerId, resolveManagedApiKey(provider));
+	}
+});
 
 export function getOrCreateSharedModelRuntime(): CodingAgentModelRuntime {
 	if (sharedModelRuntime) return sharedModelRuntime;
@@ -39,13 +74,25 @@ export function getOrCreateSharedModelRuntime(): CodingAgentModelRuntime {
 		modelsJsonPath: join(agentDir, "models.json"),
 		configFileSource: nodeSyncTextFileSource,
 		configurationValueResolver: nodeConfigurationValueResolver,
-		validateModelAccess: (model) =>
-			assertFlowstokenModelAccess(model.provider, model.id, managedGroupBindings[model.provider], model.modelId, {
-				baseUrl: model.baseUrl,
-				headers: model.headers,
-			}),
-		validateProviderAccess: (provider) =>
-			assertFlowstokenModelAccess(provider, undefined, managedGroupBindings[provider]),
+		validateModelAccess: async (model) => {
+			const lease = await assertFlowstokenModelAccess(
+				model.provider,
+				model.id,
+				managedGroupBindings[model.provider],
+				model.modelId,
+				{
+					baseUrl: model.baseUrl,
+					headers: model.headers,
+				},
+			);
+			hydrateProviderCredential(model.provider);
+			return lease;
+		},
+		validateProviderAccess: async (provider) => {
+			const lease = await assertFlowstokenModelAccess(provider, undefined, managedGroupBindings[provider]);
+			hydrateProviderCredential(provider);
+			return lease;
+		},
 	});
 	runtime.setServerUrl(DEFAULT_SERVER_URL);
 	runtime.setServerToken(readServerTokenFromDisk());
@@ -57,25 +104,21 @@ export function getOrCreateSharedModelRuntime(): CodingAgentModelRuntime {
 
 export function syncSharedModelRuntimeCredentials(
 	credentials: ModelCredentialStore,
-	providers: Record<string, { credentialRef?: string; managedGroup?: ProviderConfig["managedGroup"] }>,
+	providers: Record<string, RuntimeCredentialProvider>,
 ): void {
 	const auth = sharedModelAuth;
+	modelCredentials = credentials;
+	credentialProviders = Object.fromEntries(Object.entries(providers).map(([id, provider]) => [id, { ...provider }]));
 	managedGroupBindings = Object.fromEntries(
 		Object.entries(providers).map(([id, provider]) => [id, provider.managedGroup]),
 	);
 	if (!auth) return;
-	const nextProviderIds = new Set<string>();
+	for (const providerId of syncedCredentialProviderIds) auth.removeRuntimeApiKey(providerId);
+	syncedCredentialProviderIds = new Set();
 	for (const [providerId, provider] of Object.entries(providers)) {
-		if (!provider.credentialRef) continue;
-		const apiKey = credentials.get(provider.credentialRef);
-		if (!apiKey) continue;
-		auth.setRuntimeApiKey(providerId, apiKey);
-		nextProviderIds.add(providerId);
+		if (isManagedCredentialProvider(provider)) injectProviderCredential(providerId, resolveManagedApiKey(provider));
+		else if (provider.credentialRef) injectProviderCredential(providerId, credentials.peek?.(provider.credentialRef));
 	}
-	for (const providerId of syncedCredentialProviderIds) {
-		if (!nextProviderIds.has(providerId)) auth.removeRuntimeApiKey(providerId);
-	}
-	syncedCredentialProviderIds = nextProviderIds;
 }
 
 export function readDesktopMcpDebug(cwd: string, agentDir: string): boolean {

@@ -95,6 +95,20 @@ describe("syncAgentRpcModelCredentials", () => {
 });
 
 describe("extractCredentialRefProviders", () => {
+	it("leaves managed legacy ciphertext untouched while retaining explicitly overridden custom credentials", () => {
+		expect(
+			extractCredentialRefProviders({
+				providers: {
+					managed: { credentialRef: "old-managed", managedGroup: { source: "flowstoken" } },
+					custom: {
+						credentialRef: "custom-key",
+						managedGroup: { source: "flowstoken" },
+						managedGroupOverride: true,
+					},
+				},
+			}),
+		).toEqual({ custom: { credentialRef: "custom-key" } });
+	});
 	it("只保留带非空 credentialRef 的 provider", () => {
 		expect(
 			extractCredentialRefProviders({

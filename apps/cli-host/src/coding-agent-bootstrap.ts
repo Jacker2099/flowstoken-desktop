@@ -13,6 +13,7 @@ import {
 } from "@vetta/runtime-node/host";
 import chalk from "chalk";
 import { createCliSessionResourceRuntime, createCliSettingsRuntime } from "./coding-agent-resource-runtime.js";
+import { createDesktopManagedModelAccess } from "./desktop-managed-model-access.js";
 import { runMigrations as runCodingAgentStartupMigrations } from "./startup-migrations.js";
 
 export interface CreateCliCodingAgentBootstrapOptions extends CodingAgentBootstrapDiagnostics {
@@ -38,6 +39,7 @@ export async function createCliCodingAgentBootstrap(
 		modelsJsonPath: join(agentDir, "models.json"),
 		configFileSource: nodeSyncTextFileSource,
 		configurationValueResolver: nodeConfigurationValueResolver,
+		...createDesktopManagedModelAccess({ modelsJsonPath: join(agentDir, "models.json"), authStorage }),
 	});
 
 	return createCodingAgentBootstrap({

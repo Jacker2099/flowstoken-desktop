@@ -8,6 +8,8 @@ import { useModelCatalogSync } from "../hooks/useModelCatalogSync";
 import { authTokenAtom, remoteProvidersAtom } from "./auth-atoms";
 import { localModelsConfigAtom, modelCatalog } from "./model-catalog";
 
+vi.mock("@/shared/feature-flags", () => ({ isCloudBuildEnabled: () => true }));
+
 const LOCAL_CONFIG = { providers: {}, defaultModel: undefined };
 
 type RemoteCatalog = Record<string, { api: string; models: { id: string; name: string }[] }>;

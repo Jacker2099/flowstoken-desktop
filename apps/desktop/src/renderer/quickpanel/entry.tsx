@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { I18nextProvider } from "react-i18next";
 import { QuickPanelApp } from "./QuickPanelApp";
 import { i18n, initQuickPanelI18n } from "./i18n";
-import { applyInitialTheme, applyStoredTheme, MODE_STORAGE_KEY, THEME_STORAGE_KEY } from "../shared/theme/apply";
+import { applyInitialTheme, applyStoredTheme, getStoredThemeMode, MODE_STORAGE_KEY, THEME_STORAGE_KEY } from "../shared/theme/apply";
 import { initializeRendererErrorMonitoring } from "../telemetry/error-monitoring";
 import "../styles.css";
 import "./index.css";
@@ -21,7 +21,7 @@ window.addEventListener("storage", (event) => {
 });
 
 window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
-	if (localStorage.getItem(MODE_STORAGE_KEY) === "auto") {
+	if (getStoredThemeMode() === "auto") {
 		applyStoredTheme();
 	}
 });

@@ -1,5 +1,11 @@
 import { ActionRpcError } from "./errors.js";
-import type { ActionRpcEndpoint, ActionRpcResponse, LocalRpcRequest } from "./types.js";
+import type {
+	ActionRpcEndpoint,
+	ActionRpcResponse,
+	LocalRpcRequest,
+	ModelCredentialRequest,
+	ModelCredentialResponse,
+} from "./types.js";
 
 type ActionRpcSuccessResponse = Extract<ActionRpcResponse, { ok: true }>;
 
@@ -27,6 +33,13 @@ function parseResponse(value: unknown, requestId: string): ActionRpcResponse {
 }
 
 async function send(endpoint: ActionRpcEndpoint, request: LocalRpcRequest): Promise<ActionRpcSuccessResponse> {
+	const credentialRequest = request.method === "models.resolveCredential";
+	if (credentialRequest) {
+		const url = new URL(endpoint.url);
+		if (url.protocol !== "http:" || !["127.0.0.1", "[::1]"].includes(url.hostname) || url.username || url.password) {
+			throw new ActionRpcError("INVALID_ENDPOINT", "Credential requests require a loopback endpoint");
+		}
+	}
 	let response: Response;
 	try {
 		response = await fetch(new URL("/rpc", endpoint.url), {
@@ -36,6 +49,7 @@ async function send(endpoint: ActionRpcEndpoint, request: LocalRpcRequest): Prom
 				Authorization: `Bearer ${endpoint.token}`,
 			},
 			body: JSON.stringify(request),
+			...(credentialRequest ? { redirect: "error" as const, signal: AbortSignal.timeout(15_000) } : {}),
 		});
 	} catch (error) {
 		throw new ActionRpcError(
@@ -58,6 +72,28 @@ async function send(endpoint: ActionRpcEndpoint, request: LocalRpcRequest): Prom
 		throw new ActionRpcError(payload.error.code, payload.error.message, payload.error.details);
 	}
 	return payload;
+}
+
+/** Never log, persist, or forward this response outside the requesting model runtime. */
+export async function resolveModelCredential(
+	endpoint: ActionRpcEndpoint,
+	params: ModelCredentialRequest,
+): Promise<ModelCredentialResponse> {
+	const { result } = await send(endpoint, { id: crypto.randomUUID(), method: "models.resolveCredential", params });
+	if (
+		!isRecord(result) ||
+		typeof result.apiKey !== "string" ||
+		!result.apiKey ||
+		result.accountId !== params.accountId ||
+		result.groupId !== params.groupId ||
+		result.tokenId !== params.tokenId ||
+		typeof result.authRevision !== "number" ||
+		!Number.isSafeInteger(result.authRevision) ||
+		result.authRevision < 0
+	) {
+		throw new ActionRpcError("INVALID_CREDENTIAL_RESPONSE", "Managed model credential binding is invalid");
+	}
+	return result as unknown as ModelCredentialResponse;
 }
 
 export function createActionRpcClient(endpoint: ActionRpcEndpoint) {

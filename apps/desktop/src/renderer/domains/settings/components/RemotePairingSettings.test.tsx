@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * 「设置 → 远程连接」的配对入口：打开页面后自动准备二维码，并保留已有邀请。
+ * 「设置 → 远程连接」的配对入口：首次创建由用户发起，已检查过的会话自动续码，并保留已有邀请。
  * 从真实连接层进入并渲染完整 View，只替换 Electron preload 这一外部边界。
  */
 import type { RemotePairingState } from "@preload/api-types/remote-pairing";
@@ -96,6 +96,33 @@ afterEach(() => {
 });
 
 describe("远程连接设置", () => {
+	it("未检查钥匙串时浏览页面不会自动配对，也不会误报不可用或禁用创建", async () => {
+		const { createInvite, push } = installRemotePairing({ initial: { ...BASE_STATE, vaultAvailable: null } });
+		render(<RemotePairingSettings />);
+		const create = await screen.findByRole("button", { name: "remote.pairing.create" });
+		expect(create.hasAttribute("disabled")).toBe(false);
+		expect(screen.queryByText("remote.pairing.vaultUnavailable")).toBeNull();
+		expect(createInvite).not.toHaveBeenCalled();
+		act(() => push({ ...BASE_STATE, vaultAvailable: null }));
+		expect(createInvite).not.toHaveBeenCalled();
+		await userEvent.setup().click(create);
+		await screen.findByRole("img", { name: "remote.pairing.qrAlt" });
+		expect(createInvite).toHaveBeenCalledTimes(1);
+	});
+
+	it("曾检查不可用时允许用户显式重试，状态推送本身不重复打开钥匙串", async () => {
+		const { createInvite, push } = installRemotePairing({ initial: { ...BASE_STATE, vaultAvailable: false } });
+		render(<RemotePairingSettings />);
+		const create = await screen.findByRole("button", { name: "remote.pairing.create" });
+		expect(screen.getByText("remote.pairing.vaultUnavailable")).toBeTruthy();
+		expect(createInvite).not.toHaveBeenCalled();
+		act(() => push({ ...BASE_STATE, vaultAvailable: false }));
+		expect(createInvite).not.toHaveBeenCalled();
+		await userEvent.setup().click(create);
+		await screen.findByRole("img", { name: "remote.pairing.qrAlt" });
+		expect(createInvite).toHaveBeenCalledTimes(1);
+	});
+
 	it("打开页面就自动准备二维码，等待期间先显示明确反馈", async () => {
 		const pending = deferred<RemotePairingState>();
 		const { createInvite } = installRemotePairing({ createInvite: () => pending.promise });

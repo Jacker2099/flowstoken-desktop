@@ -1,5 +1,5 @@
 import type { Session } from "electron";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FLOWSTOKEN_API_ORIGIN, FLOWSTOKEN_GROUPS } from "./constants.js";
 import {
 	clearCachedAccessToken,
@@ -8,9 +8,13 @@ import {
 	fetchUsableGroups,
 	findManagedToken,
 	getCachedAccessToken,
+	getCachedFlowstokenUser,
+	getFlowstokenAccountId,
 	listTokens,
 	managedTokenName,
+	onFlowstokenAuthChanged,
 	refreshAuth,
+	revealTokenKey,
 	setCachedAccessToken,
 } from "./newapi-client.js";
 
@@ -24,6 +28,150 @@ vi.mock("electron", () => ({
 vi.mock("../i18n/index.js", () => ({ mainT: (key: string) => key }));
 
 beforeEach(() => clearCachedAccessToken());
+afterEach(() => vi.useRealTimers());
+
+describe("temporary account failures", () => {
+	function sessionFixture() {
+		const fetch = vi.fn(async () =>
+			Response.json({
+				success: true,
+				data: { access_token: "fixture-access", user: { id: 7, username: "fixture" } },
+			}),
+		);
+		const session = { cookies: { get: async () => [] }, fetch } as unknown as Session;
+		return { session, fetch };
+	}
+
+	it.each([429, 500, 503])(
+		"HTTP %s refresh failures preserve the verified account and access token",
+		async (status) => {
+			const { session, fetch } = sessionFixture();
+			await refreshAuth(session);
+			fetch.mockResolvedValue(Response.json({ success: false, message: "temporarily unavailable" }, { status }));
+			await expect(refreshAuth(session)).rejects.toMatchObject({ status });
+			expect(getCachedAccessToken()).toBe("fixture-access");
+			expect(getFlowstokenAccountId()).toBe(7);
+		},
+	);
+
+	it.each(["1113", "Wed, 07 Oct 2026 12:18:33 GMT"])(
+		"a token-key 429 blocks refresh and token requests for its Retry-After window: %s",
+		async (retryAfter) => {
+			vi.useFakeTimers();
+			vi.setSystemTime(new Date("2026-10-07T12:00:00Z"));
+			const { session, fetch } = sessionFixture();
+			await refreshAuth(session);
+			fetch.mockResolvedValueOnce(
+				new Response("rate limited", { status: 429, headers: { "Retry-After": retryAfter } }),
+			);
+			await expect(revealTokenKey(session, 1)).rejects.toMatchObject({ status: 429, retryAfterMs: 1_113_000 });
+			const sent = fetch.mock.calls.length;
+			await expect(refreshAuth(session)).rejects.toMatchObject({ status: 429 });
+			await expect(revealTokenKey(session, 1)).rejects.toMatchObject({ status: 429 });
+			clearCachedAccessToken();
+			await expect(refreshAuth(session)).rejects.toMatchObject({ status: 429 });
+			expect(fetch).toHaveBeenCalledTimes(sent);
+			await vi.advanceTimersByTimeAsync(1_112_000);
+			await expect(refreshAuth(session)).rejects.toMatchObject({ status: 429, retryAfterMs: 1_000 });
+			await vi.advanceTimersByTimeAsync(1_000);
+			await expect(refreshAuth(session)).resolves.toMatchObject({ user: { id: 7 } });
+			expect(fetch).toHaveBeenCalledTimes(sent + 1);
+		},
+	);
+
+	it("a 429 without Retry-After imposes a conservative cooldown instead of immediately retrying", async () => {
+		vi.useFakeTimers();
+		const { session, fetch } = sessionFixture();
+		fetch.mockResolvedValueOnce(Response.json({ success: false }, { status: 429 }));
+		await expect(refreshAuth(session)).rejects.toMatchObject({ status: 429, retryAfterMs: 60_000 });
+		await expect(refreshAuth(session)).rejects.toMatchObject({ status: 429 });
+		expect(fetch).toHaveBeenCalledTimes(1);
+	});
+
+	it("an offline refresh and bearer fallback do not discard a previously verified account", async () => {
+		const { session, fetch } = sessionFixture();
+		await refreshAuth(session);
+		fetch.mockRejectedValue(new Error("offline"));
+		await expect(fetchSelf(session)).rejects.toThrow("offline");
+		expect(getCachedAccessToken()).toBe("fixture-access");
+		expect(getFlowstokenAccountId()).toBe(7);
+	});
+
+	it("a genuine unauthorized refresh invalidates the account without falling back to the rejected session", async () => {
+		const { session, fetch } = sessionFixture();
+		await refreshAuth(session);
+		fetch.mockResolvedValueOnce(Response.json({ success: false, message: "expired" }, { status: 401 }));
+		await expect(fetchSelf(session)).rejects.toMatchObject({ status: 401 });
+		expect(getCachedAccessToken()).toBeNull();
+		expect(getFlowstokenAccountId()).toBeNull();
+		expect(fetch).toHaveBeenCalledTimes(2);
+	});
+
+	it("canceling one refresh consumer does not cancel another consumer's verified session", async () => {
+		const { session, fetch } = sessionFixture();
+		let finish!: (response: Response) => void;
+		let signal: AbortSignal | undefined;
+		fetch.mockImplementation((_url?: unknown, init?: unknown) => {
+			signal = (init as RequestInit).signal ?? undefined;
+			return new Promise<Response>((resolve) => {
+				finish = resolve;
+			});
+		});
+		const canceled = new AbortController();
+		const first = refreshAuth(session, { signal: canceled.signal }).catch((error: unknown) => error);
+		const second = refreshAuth(session);
+		await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+		const reason = new Error("window closed");
+		canceled.abort(reason);
+		await expect(first).resolves.toBe(reason);
+		expect(signal?.aborted).toBe(false);
+		finish(Response.json({ success: true, data: { access_token: "fixture-access", user: { id: 7 } } }));
+		await expect(second).resolves.toMatchObject({ user: { id: 7 } });
+		expect(getCachedFlowstokenUser()?.id).toBe(7);
+	});
+
+	it("logout aborts an in-flight refresh instead of only ignoring its eventual account data", async () => {
+		const { session, fetch } = sessionFixture();
+		let finish!: (response: Response) => void;
+		let signal: AbortSignal | undefined;
+		fetch.mockImplementation((_url?: unknown, init?: unknown) => {
+			signal = (init as RequestInit).signal ?? undefined;
+			return new Promise<Response>((resolve) => {
+				finish = resolve;
+			});
+		});
+		const pending = refreshAuth(session).catch((error: unknown) => error);
+		await vi.waitFor(() => expect(signal).toBeDefined());
+		clearCachedAccessToken();
+		expect(signal?.aborted).toBe(true);
+		finish(Response.json({ success: true, data: { access_token: "late", user: { id: 7 } } }));
+		await expect(pending).resolves.toBeInstanceOf(Error);
+		expect(getCachedAccessToken()).toBeNull();
+	});
+
+	it("auth observers invalidate session keys on logout and account changes, but not temporary failures", async () => {
+		const { session, fetch } = sessionFixture();
+		const changed = vi.fn();
+		const unsubscribe = onFlowstokenAuthChanged(changed);
+		try {
+			await refreshAuth(session);
+			fetch.mockResolvedValueOnce(Response.json({ success: false }, { status: 503 }));
+			await expect(refreshAuth(session)).rejects.toMatchObject({ status: 503 });
+			expect(changed).not.toHaveBeenCalled();
+			fetch.mockResolvedValueOnce(
+				Response.json({ success: true, data: { access_token: "other", user: { id: 8 } } }),
+			);
+			await refreshAuth(session);
+			expect(changed).toHaveBeenCalledTimes(1);
+			expect(getCachedFlowstokenUser()?.id).toBe(8);
+			clearCachedAccessToken();
+			expect(changed).toHaveBeenCalledTimes(2);
+			expect(getCachedFlowstokenUser()).toBeNull();
+		} finally {
+			unsubscribe();
+		}
+	});
+});
 
 describe("FlowsToken cookie scope", () => {
 	it("bounds an incomplete metadata body and never installs a late access token", async () => {

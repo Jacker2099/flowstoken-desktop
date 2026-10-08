@@ -12,6 +12,7 @@
  * 子进程同样是 Electron，且 `app.name` 与主进程一致（见 shared/app-identity.ts），
  * 保险库又存在共享的 `~/.vetta/desktop-app/credentials`（不是 userData），
  * 所以子进程可以自己解密——明文 key 不需要经过 argv 或环境变量外传。
+ * FlowsToken 托管凭据不从旧保险库注入，由 CLI 的模型访问钩子按次向桌面认证 RPC 获取。
  */
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -65,6 +66,8 @@ export function extractCredentialRefProviders(parsed: unknown): CredentialRefPro
 	const result: CredentialRefProviders = {};
 	for (const [providerId, provider] of Object.entries(providers as Record<string, unknown>)) {
 		if (!provider || typeof provider !== "object") continue;
+		const managed = provider as { managedGroup?: { source?: unknown }; managedGroupOverride?: unknown };
+		if (managed.managedGroup?.source === "flowstoken" && managed.managedGroupOverride !== true) continue;
 		const credentialRef = (provider as { credentialRef?: unknown }).credentialRef;
 		if (typeof credentialRef !== "string" || credentialRef.length === 0) continue;
 		result[providerId] = { credentialRef };

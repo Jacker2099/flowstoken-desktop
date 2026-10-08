@@ -61,6 +61,8 @@ export default defineConfig(({ mode }) => {
 	define[`process.env.${SPEECH_INPUT_ENABLED_ENV}`] = JSON.stringify(String(speechInputBuildConfig.enabled));
 	// 未配置时按 false（lite）内联，保证 cloud 判断能被常量折叠掉。
 	define["process.env.VETTA_CLOUD_ENABLED"] = JSON.stringify(cloudEnabled ? "true" : "false");
+	// Squirrel's installer job is keyed by the packaged bundle ID, never by a later launch environment.
+	define["process.env.VETTA_APP_ID"] = JSON.stringify(env.VETTA_APP_ID?.trim() || "com.flowstoken.desktop");
 	// 固化发行配置，防止打包后意外继承启动环境；空仓库由运行时解析为 Vetta 官方源。
 	define["process.env.VETTA_OPEN_MARKETPLACE_REPOSITORY"] = JSON.stringify(
 		env.VETTA_OPEN_MARKETPLACE_REPOSITORY?.trim() || "",

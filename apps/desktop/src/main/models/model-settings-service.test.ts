@@ -36,6 +36,21 @@ function createCredentialStore(initial: Record<string, string> = {}): ModelCrede
 }
 
 describe("ModelSettingsService", () => {
+	it("does not unlock an older credential-store implementation without an optional process cache", async () => {
+		const credentials = createCredentialStore({ "openai-credential": "fixture-key" });
+		const read = vi.spyOn(credentials, "get");
+		const availability = vi.spyOn(credentials, "isAvailable");
+		const service = new ModelSettingsService({
+			readConfig: async () => createConfig(),
+			writeConfig: vi.fn(),
+			refreshRegistry: vi.fn(),
+			credentials,
+		});
+		await expect(service.getCachedProviderApiKey("openai")).resolves.toBeUndefined();
+		expect(read).not.toHaveBeenCalled();
+		expect(availability).not.toHaveBeenCalled();
+	});
+
 	it("masks renderer headers and preserves their real values through an ordinary edit/save", async () => {
 		let config = createConfig();
 		config.providers.openai.headers = {
@@ -655,7 +670,7 @@ describe("ModelSettingsService", () => {
 		expect(credentials.values.get("openai-credential")).toBe("secret");
 	});
 
-	it("moves a legacy literal key into the credential store before removing plaintext", async () => {
+	it("keeps metadata reads side-effect free and migrates legacy plaintext during an explicit credential read", async () => {
 		let config: ModelsConfig = {
 			providers: { openai: { apiKey: "sk-legacy", models: [{ id: "gpt-5" }] } },
 		};
@@ -670,6 +685,9 @@ describe("ModelSettingsService", () => {
 		});
 
 		const renderer = await service.getRendererConfig();
+		expect(config.providers.openai?.apiKey).toBe("sk-legacy");
+		expect(credentials.values.size).toBe(0);
+		await service.getConfig();
 		const credentialRef = config.providers.openai?.credentialRef;
 
 		expect(credentialRef).toBeTypeOf("string");

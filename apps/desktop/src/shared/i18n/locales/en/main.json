@@ -1,6 +1,14 @@
 {
 	"flowstoken": {
+		"desktopAuthorizationComplete": "Authorization complete. You are signed in to the app and may close this page.",
 		"errors": {
+			"sessionMismatch": "The app session does not match its authorization. Sign out and authorize again.",
+			"desktopAuthorizationFailed": "Browser authorization could not be completed. Please try again.",
+			"desktopCallbackInvalid": "This authorization callback is invalid. Start sign-in again from the app.",
+			"rateLimited": "Too many requests. Please wait {{seconds}} seconds before retrying.",
+			"loginTimedOut": "Login verification timed out. Please try again.",
+			"loginCancelled": "The login window was closed.",
+			"requestUnavailable": "Your session cannot be verified right now. Please try again later.",
 			"catalogChanged": "The model catalog is being updated. Try again.",
 			"requestTimeout": "The account request timed out. Please try again.",
 			"tokenInventoryUnavailable": "Unable to read account keys safely. Please refresh your account.",

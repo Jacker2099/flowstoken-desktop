@@ -66,6 +66,7 @@ export interface FlowstokenEnsureKeysResult {
 export interface DesktopFlowstokenApi {
 	getSnapshot: () => Promise<FlowstokenAccountSnapshot>;
 	loginWithBrowser: () => Promise<FlowstokenLoginResult>;
+	cancelLogin: () => Promise<void>;
 	loginWithPassword: (username: string, password: string) => Promise<FlowstokenLoginResult>;
 	logout: () => Promise<FlowstokenAccountSnapshot>;
 	ensureKeys: (groupIds?: string[]) => Promise<FlowstokenEnsureKeysResult>;
