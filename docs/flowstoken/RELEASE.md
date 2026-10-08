@@ -2,7 +2,7 @@
 
 ## 日常发布
 
-1. 在 `main` 准备客户端版本和 `.github/release-notes/v<版本>.md`，提交并推送。已经公开的版本不能覆盖。
+1. 在独立分支准备客户端版本和 `.github/release-notes/v<版本>.md`，经 PR 差异审查和既有 CI 门禁通过后合并到 `main`。已经公开的版本不能覆盖。
 2. GitHub → Actions → **flowstoken-release** → **Run workflow**，选择 `main`，填写可选 `reason`。正常发布不填 `reuse_build_run` 或 `expected_sha`。
 3. 流程自动执行 FlowsToken 相关测试、品牌/构建配置检查、四平台打包、Mac 签名公证及 Gatekeeper/票据验证、四平台独立安装包检查和真实 packaged/updater E2E、产物来源/大小/哈希验证，然后核对 GitHub 草稿资产后公开。上游 `desktop-release` 是内部构建步骤，不作为 FlowsToken 的日常发布入口。
 4. 服务器每 10 分钟自动校验并镜像到官网更新源，再对齐下载页、安装脚本和阿里云盘。客户端从 `https://www.flowstoken.com/downloads/desktop` 检查更新。
@@ -46,13 +46,15 @@ gh workflow run flowstoken-release.yml -R Jacker2099/flowstoken-desktop --ref ma
 
 CI 使用 Python 3.12 预检查归档成员，真正解包采用平台原生 tar：macOS 使用 `/usr/bin/tar` 合并 AppleDouble 元数据；Windows 固定 `%SystemRoot%\System32\tar.exe`，避免 Git GNU tar 错读盘符路径。本地运行恢复归档测试需提供 Python 3.12+，例如 `RECOVERY_PYTHON=python3.12 node --test branding/flowstoken/tests/recovery-ci.test.mjs`。
 
-## 上游自动同步
+## 上游更新检查与审核
 
-`flowstoken-upstream-sync` 每日计划检查 Open Vetta 的正式 Release；GitHub 定时器可能延迟，不保证精确执行时刻。发现新版本后按三方合并规则保留 FlowsToken 修改、运行门禁、递增客户端版本，并以准确提交 SHA 触发一键发布。
+当前已发布的 0.6.9 包含已审核的 Open Vetta 0.5.60 基线。日常安排是每日只读检查上游正式 Release、来源提交、许可证和兼容影响；发现更新后报告待审范围，不自动修改客户端源码、版本、标签或主分支。
 
-这是一套固定合并规则和自动测试。无法安全解析的冲突会停止并保留独立失败分支/日志，不能替代人工判断任意上游业务变更。已经同步但未公开的版本会重试发布，不重复合并或递增版本；已公开版本直接跳过。
+旧 [`flowstoken-upstream-sync`](../../.github/workflows/flowstoken-upstream-sync.yml) 工作流保持手动停用。它包含自动合并、递增版本和触发发布的写入步骤，不能作为只读检查入口，也不能因阅读本说明而默认启用或派发。恢复此类自动流程需要单独明确授权及重新审查。
 
-`FT_SYNC_TOKEN` 需要仓库 Contents 和 Workflows 写权限。Apple 签名凭据继续由仓库 Secrets 提供，任何私钥/密码都不进入源码或安装包。
+后续更新按 [`UPSTREAM_POLICY.md`](UPSTREAM_POLICY.md) 在独立分支准备，通过 PR 审查完整差异、来源和依赖变化，并运行既有 CI 门禁。必须保留 FlowsToken 账户、计费组映射、自有更新源、凭据身份、历史数据及用户配置；需要迁移时先明确兼容方案。固定三方合并规则只处理已知冲突，不能保证任意上游业务改动零风险。同步通过审核也不自动授权发版，发布仍需明确指令并绑定确切源码与验证结果。
+
+[`product.json`](../../branding/flowstoken/product.json) 中的 `syncWithUpstream` 是品牌元数据，当前没有运行代码读取它来启停工作流；该字段不能表示自动同步已启用。实际启停以 GitHub 工作流状态和当前维护安排为准。签名公证凭据继续由仓库 Secrets 提供，任何私钥或密码都不进入源码和安装包。
 
 ## 发布后验收
 
