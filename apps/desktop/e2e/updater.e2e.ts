@@ -37,6 +37,19 @@ async function activateRendererControl(element: WebdriverIO.Element): Promise<vo
 	await browser.execute((control) => control.click(), element);
 }
 
+async function focusAndShowMainWindow(): Promise<void> {
+	// An occluded window on macOS gets rAF frozen, which stalls the renderer boot gate.
+	// Optional-chained: the host-access contract harness models only a minimal window surface.
+	await browser.electron.execute((electron) => {
+		for (const window of electron.BrowserWindow.getAllWindows()) {
+			if (window.isDestroyed() || !window.webContents.getURL().includes("index.html")) continue;
+			if (window.isMinimized?.()) window.restore?.();
+			if (window.isVisible?.() === false) window.show?.();
+			window.focus?.();
+		}
+	});
+}
+
 async function dumpUpdaterE2eState(label: string): Promise<void> {
 	try {
 		const pageState = await browser.execute(async () => {
@@ -51,10 +64,26 @@ async function dumpUpdaterE2eState(label: string): Promise<void> {
 			} catch (ipcError) {
 				ipcResult = `ipc-error:${String(ipcError).slice(0, 160)}`;
 			}
+			const rafProbe = await new Promise<string>((resolve) => {
+				const timer = setTimeout(() => resolve("stuck"), 2000);
+				let frames = 0;
+				const tick = () => {
+					frames += 1;
+					if (frames >= 2) {
+						clearTimeout(timer);
+						resolve("ok");
+						return;
+					}
+					requestAnimationFrame(tick);
+				};
+				requestAnimationFrame(tick);
+			});
 			return {
 				hash: window.location.hash,
 				title: document.title,
 				readyState: document.readyState,
+				visibility: document.visibilityState,
+				rafProbe,
 				bodyText: (document.body?.innerText ?? "").slice(0, 400),
 				bodyHtml: (document.body?.innerHTML ?? "").slice(0, 400),
 				rootHtml: (document.getElementById("root")?.innerHTML ?? "").slice(0, 300),
@@ -62,12 +91,31 @@ async function dumpUpdaterE2eState(label: string): Promise<void> {
 				ipcResult,
 			};
 		});
-		const windowUrls = await browser.electron.execute((electron) =>
-			electron.BrowserWindow.getAllWindows()
+		const mainInfo = await browser.electron.execute(async (electron) => {
+			const windows = electron.BrowserWindow.getAllWindows()
 				.filter((w) => !w.isDestroyed())
-				.map((w) => `${w.id}:${w.webContents.getURL()}`),
-		);
-		console.error(`[updater-e2e] ${label}: ${JSON.stringify({ pageState, windowUrls })}`);
+				.map((w) => `${w.id}:${w.webContents.getURL()}`);
+			let logTail = "unavailable";
+			try {
+				const fs = await import("node:fs");
+				const os = await import("node:os");
+				const path = await import("node:path");
+				const home = process.env.VETTA_HOME ?? path.join(os.homedir(), ".vetta-e2e");
+				const logDir = path.join(home, "desktop-app", "logs", "main");
+				const files = fs
+					.readdirSync(logDir)
+					.filter((f: string) => f.endsWith(".log"))
+					.sort();
+				const latest = files.at(-1);
+				if (latest) {
+					logTail = fs.readFileSync(path.join(logDir, latest), "utf8").slice(-2000);
+				}
+			} catch (logError) {
+				logTail = `err:${String(logError).slice(0, 200)}`;
+			}
+			return { windows, logTail };
+		});
+		console.error(`[updater-e2e] ${label}: ${JSON.stringify({ pageState, mainInfo })}`);
 	} catch (diagError) {
 		console.error(`[updater-e2e] ${label}: diagnostics failed: ${String(diagError)}`);
 	}
@@ -90,6 +138,7 @@ async function runUpdaterCheck(): Promise<void> {
 	await browser.electron.execute(installUpdaterAuthFixture, UPDATER_ACCOUNT_SNAPSHOT);
 	await browser.refresh();
 	await focusMainRenderer();
+	await focusAndShowMainWindow();
 	// Observe the normal account UI: raw window.vetta calls lack the renderer's private host token.
 	// Slow runners can race the renderer boot: keep pinning the route until the router owns it.
 	await browser.waitUntil(
