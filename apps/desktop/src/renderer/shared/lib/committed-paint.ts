@@ -20,9 +20,16 @@ export function waitForCommittedPaint({ timeoutMs = 100 }: CommittedPaintOptions
 			if (settled) return;
 			settled = true;
 			if (timeoutId !== null) window.clearTimeout(timeoutId);
+			document.removeEventListener("visibilitychange", onWindowHidden);
 			resolve(result);
 		};
+		// 等待期间窗口被系统判为遮挡（锁屏/切 Space/守护进程拉起）会冻结 rAF：
+		// 此刻没有可见内容可等，按 hidden 放行，避免无限挂起。
+		const onWindowHidden = (): void => {
+			if (document.visibilityState === "hidden") finish("skipped-hidden");
+		};
 		const timeoutId = timeoutMs === null ? null : window.setTimeout(() => finish("timeout"), timeoutMs);
+		document.addEventListener("visibilitychange", onWindowHidden);
 		window.requestAnimationFrame(() => {
 			window.requestAnimationFrame(() => finish("painted"));
 		});

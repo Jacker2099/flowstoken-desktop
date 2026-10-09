@@ -1,6 +1,7 @@
 import { AppBootLoadingView } from "@vetta-org/theme-ui/app-boot";
 import { createRoot } from "react-dom/client";
 import { preloadStartupPage } from "./root-layout/preload-startup-page";
+import { waitForCommittedPaint } from "./shared/lib/committed-paint";
 import { installInactiveWindowAnimationPause } from "./shared/lib/inactive-window-animations";
 import { installLiveAnimations } from "./shared/lib/live-animations";
 import { applyPlatformAttribute } from "./shared/lib/platform";
@@ -39,16 +40,14 @@ const appReadyPromise = window.vetta.appLifecycle.whenReady();
 root.render(<AppBootLoadingView />);
 
 // 两帧后再通知主进程显示窗口，确保主题变量与 theme-ui 启动骨架已经完成绘制。
-const bootPaintedPromise = new Promise<void>((resolve) => {
-	requestAnimationFrame(() => {
-		requestAnimationFrame(() => {
-			void nativeThemeReady.then(() => {
-				window.vetta.appLifecycle.reportRendererBootPainted();
-				resolve();
-			});
-		});
+// 窗口被系统判为遮挡时 Chromium 会冻结 rAF（锁屏、其他 Space、守护进程拉起均会
+// 触发），此时没有可见内容可等——waitForCommittedPaint 直接放行或限时兜底，
+// 否则主进程等不到 painted 信号、启动永久停在骨架屏。
+const bootPaintedPromise = waitForCommittedPaint({ timeoutMs: 10_000 })
+	.then(() => nativeThemeReady)
+	.then(() => {
+		window.vetta.appLifecycle.reportRendererBootPainted();
 	});
-});
 const renderAppPromise = import("./renderApp");
 if (import.meta.env.DEV) void preloadStartupPage(window.location.hash);
 
