@@ -97,9 +97,10 @@ async function dumpUpdaterE2eState(label: string): Promise<void> {
 				.map((w) => `${w.id}:${w.webContents.getURL()}`);
 			let logTail = "unavailable";
 			try {
-				const fs = await import("node:fs");
-				const os = await import("node:os");
-				const path = await import("node:path");
+				// electron.execute runs inside a VM context where dynamic import() has no callback.
+				const fs = process.getBuiltinModule("node:fs");
+				const os = process.getBuiltinModule("node:os");
+				const path = process.getBuiltinModule("node:path");
 				const home = process.env.VETTA_HOME ?? path.join(os.homedir(), ".vetta-e2e");
 				const logDir = path.join(home, "desktop-app", "logs", "main");
 				const files = fs
