@@ -169,6 +169,16 @@ jobs:
           path: ${{ runner.temp }}/ipa-export/
           if-no-files-found: error
 
+      - name: Attach IPA to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          IPA=$(ls "$RUNNER_TEMP/ipa-export"/*.ipa | head -1)
+          OUT="FlowsToken-${RELEASE_TAG#v}.ipa"
+          cp "$IPA" "$OUT"
+          gh release upload "$RELEASE_TAG" "$OUT" --clobber
+
       # ASC 应用记录（com.flowstoken.mobile）必须先在 App Store Connect 网页端建好，
       # 否则本步会报找不到应用——这是 iOS 无法绕过的唯一手工步骤。
       - name: Upload to TestFlight
