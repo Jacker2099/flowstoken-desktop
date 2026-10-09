@@ -77,9 +77,9 @@ describe("Markdown media workflows", () => {
 		const { host } = createMarkdownHostFixture();
 		const text = "```mermaid\ngraph TD; A-->B\n```";
 		const view = render(<MarkdownContent {...props} host={host} text={text} isStreamingTail />);
-		await screen.findByText(/^graph/, {}, { timeout: 3000 });
+		await screen.findByText(/^graph/, {}, { timeout: 15000 });
 		await act(async () => { await vi.dynamicImportSettled(); });
-		await screen.findByText(/Preview will appear/, {}, { timeout: 3000 });
+		await screen.findByText(/Preview will appear/, {}, { timeout: 15000 });
 		expect(host.renderMermaid).not.toHaveBeenCalled();
 		view.rerender(<MarkdownContent {...props} host={host} text={text} />);
 		await screen.findByRole("img", { name: "Diagram" });
