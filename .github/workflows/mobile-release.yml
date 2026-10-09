@@ -175,15 +175,26 @@ jobs:
         env:
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           set -o pipefail
+          printf '%s\n' \
+            '<?xml version="1.0" encoding="UTF-8"?>' \
+            '<plist version="1.0">' \
+            '<dict>' \
+            '<key>method</key><string>app-store-connect</string>' \
+            '<key>destination</key><string>upload</string>' \
+            '<key>signingStyle</key><string>automatic</string>' \
+            "<key>teamID</key><string>${APPLE_TEAM_ID}</string>" \
+            '<key>manageAppVersionAndBuildNumber</key><false/>' \
+            '</dict>' \
+            '</plist>' > "$RUNNER_TEMP/UploadOptions.plist"
           xcodebuild -exportArchive \
             -archivePath "$RUNNER_TEMP/FlowsToken.xcarchive" \
             -exportPath "$RUNNER_TEMP/ipa-upload" \
-            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -exportOptionsPlist "$RUNNER_TEMP/UploadOptions.plist" \
             -allowProvisioningUpdates \
             -authenticationKeyPath "$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8" \
             -authenticationKeyID "$APPLE_API_KEY_ID" \
             -authenticationKeyIssuerID "$APPLE_API_ISSUER" \
-            -destination upload \
             -quiet
