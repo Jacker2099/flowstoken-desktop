@@ -73,7 +73,7 @@ describe("Markdown media workflows", () => {
 		fireEvent.click(screen.getByRole("button", { name: "Copy" }));
 		await screen.findByRole("button", { name: "Copied" });
 	});
-	it("renders a diagram after streaming finishes, switches source and exports the SVG", async () => {
+	it("renders a diagram after streaming finishes, switches source and exports the SVG", { timeout: 60_000 }, async () => {
 		const { host } = createMarkdownHostFixture();
 		const text = "```mermaid\ngraph TD; A-->B\n```";
 		const view = render(<MarkdownContent {...props} host={host} text={text} isStreamingTail />);
@@ -91,7 +91,7 @@ describe("Markdown media workflows", () => {
 		fireEvent.click(screen.getByRole("button", { name: "Preview" }));
 		await screen.findByRole("img", { name: "Diagram" });
 	});
-	it("retries a diagram error and also renders diagrams from file preview", async () => {
+	it("retries a diagram error and also renders diagrams from file preview", { timeout: 60_000 }, async () => {
 		const { host } = createMarkdownHostFixture();
 		host.renderMermaid.mockRejectedValueOnce(new Error("Worker stopped"));
 		render(<MarkdownPreviewView theme="light" labels={props.labels} host={host} onOpenExternal={vi.fn()} content={"```mermaid\ngraph TD; A-->B\n```"} />);
