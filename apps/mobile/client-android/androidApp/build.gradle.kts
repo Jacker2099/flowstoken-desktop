@@ -1,4 +1,5 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.util.Properties
 
 plugins {
     alias(libs.plugins.androidApplication)
@@ -37,13 +38,13 @@ android {
     }
     // Release signing is local-only: copy keystore.properties.example to
     // keystore.properties (git-ignored) and fill in the FlowsToken upload key.
-    val releaseKeystoreProps = java.util.Properties().apply {
+    val releaseKeystoreProps = Properties().apply {
         val propsFile = rootProject.file("keystore.properties")
-        if (propsFile.exists()) propsFile.inputStream().use(::load)
+        if (propsFile.exists()) propsFile.inputStream().use { stream -> load(stream) }
     }
     signingConfigs {
         create("release") {
-            storeFile = releaseKeystoreProps.getProperty("storeFile")?.let(rootProject::file)
+            storeFile = releaseKeystoreProps.getProperty("storeFile")?.let { path -> rootProject.file(path) }
             storePassword = releaseKeystoreProps.getProperty("storePassword")
             keyAlias = releaseKeystoreProps.getProperty("keyAlias")
             keyPassword = releaseKeystoreProps.getProperty("keyPassword")
