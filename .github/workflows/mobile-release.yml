@@ -21,6 +21,9 @@ env:
   RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
   BUILD_REF: ${{ inputs.ref || github.event.release.tag_name || inputs.tag }}
 
+permissions:
+  contents: write # gh release upload
+
 jobs:
   android-apk:
     name: Android release APK
