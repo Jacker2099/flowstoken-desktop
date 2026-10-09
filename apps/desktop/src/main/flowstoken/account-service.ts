@@ -259,10 +259,10 @@ function toProviderModels(models: readonly FlowstokenCatalogModel[], existing: r
 			name: model.name,
 			api: previous?.api ?? "openai-completions",
 			input: previous?.input ?? (model.vision ? ["text", "image"] : ["text"]),
-			...(previous?.contextWindow !== undefined || model.contextWindow === undefined
-				? {}
-				: { contextWindow: model.contextWindow }),
-			...(previous?.maxTokens !== undefined || model.maxTokens === undefined ? {} : { maxTokens: model.maxTokens }),
+			// 目录是托管模型规格的权威来源：服务端下发值必须覆盖本地旧值，
+			// 只在目录未给出时保留本地兜底（旧目录版本/规格暂缺）。
+			...(model.contextWindow === undefined ? {} : { contextWindow: model.contextWindow }),
+			...(model.maxTokens === undefined ? {} : { maxTokens: model.maxTokens }),
 			...(levels?.length === 0
 				? { reasoning: false }
 				: previous?.reasoning !== undefined || model.reasoning === undefined
