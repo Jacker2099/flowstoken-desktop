@@ -49,12 +49,21 @@ const WORKFLOW_CONTRACT_TESTS = new Map([
 /**
  * Keep narrowly reviewed source-to-test mappings here when Vitest's dependency
  * graph is unavailable or substantially broader than the component contract.
- * Every mapped test must exercise the source through a real host path.
+ * Mapped tests must exercise the source through its production contract or public
+ * host path. Unmapped sources and public exports retain dependency-based selection.
  */
 const MODEL_SELECTOR_VIEW_TEST = "src/renderer/domains/conversation/components/ModelSelectorView.test.tsx";
 const TEAM_MODEL_SELECTOR_TEST = "src/renderer/domains/conversation/connectors/team/TeamModelSelector.test.tsx";
 const desktopTests = (...tests) => ({ workspaceKey: "desktop", tests });
 const sshFixtureTests = { ...desktopTests(...WINDOWS_DESKTOP_SSH_SUITES), sshPlatform: true };
+const goalTests = {
+	workspaceKey: "coding-agent",
+	tests: [
+		"test/composition/continuation-orchestration.test.ts",
+		"test/composition/goal-execution.test.ts",
+		"test/features/goal/goal-session-extension.test.ts",
+	],
+};
 const EXPLICIT_SOURCE_TESTS = new Map([
 	["packages/ssh-transport/src/remote-command.ts", sshFixtureTests],
 	["packages/ssh-transport/src/remote-command-signals.test.ts", sshFixtureTests],
@@ -62,6 +71,13 @@ const EXPLICIT_SOURCE_TESTS = new Map([
 	["packages/ssh-transport/src/testing-process-runner.ts", sshFixtureTests],
 	["packages/ssh-transport/src/testing-readonly-endpoint.ts", sshFixtureTests],
 	["packages/ssh-transport/src/testing.ts", sshFixtureTests],
+	[
+		"packages/ai/src/providers/google-stream/request.ts",
+		{ workspaceKey: "ai", tests: ["test/google-native-adapters.test.ts"] },
+	],
+	["packages/coding-agent/src/features/goal/goal-feature.ts", goalTests],
+	["packages/coding-agent/src/features/goal/goal-runtime.ts", goalTests],
+	["packages/coding-agent/src/features/goal/goal-session-extension.ts", goalTests],
 	[
 		"apps/desktop/src/renderer/domains/conversation/connectors/team/TeamModelSelector.tsx",
 		desktopTests(TEAM_MODEL_SELECTOR_TEST),

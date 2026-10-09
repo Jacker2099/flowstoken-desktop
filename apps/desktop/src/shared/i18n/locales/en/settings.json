@@ -147,7 +147,8 @@
 			"lastSeen": "Last connected {{time}}",
 			"neverSeen": "Never connected",
 			"revoke": "Remove",
-			"desktop": "Control the desktop"
+			"desktop": "Control the desktop",
+			"emptyHint": "Use the QR code or connection code above in Vetta on your phone."
 		},
 		"pairing": {
 			"create": "Generate QR code",

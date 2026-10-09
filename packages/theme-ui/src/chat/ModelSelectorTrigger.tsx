@@ -1,4 +1,5 @@
-import { Button, cn } from "@vetta-org/ui";
+import { cn } from "@vetta-org/ui/utils";
+import { Button } from "@vetta-org/ui/button";
 import type { ComponentPropsWithoutRef } from "react";
 import { forwardRef } from "react";
 import { ProviderIcon } from "../shared/provider-icon";

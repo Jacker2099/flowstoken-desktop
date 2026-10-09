@@ -170,37 +170,17 @@ describe("Desktop release workflow contracts", () => {
 		expect(outer.build.steps.some((step) => step.name === "Tag the release commit")).toBe(true);
 	});
 
-	it("saves successful dependency downloads before later build or verification failures", () => {
-		const steps = actionSteps("install-bun-dependencies");
-		const restore = steps.findIndex((step) => step.uses === "actions/cache/restore@v4");
-		const install = steps.findIndex((step) => step.run?.includes("install-ci-dependencies.mjs"));
-		const save = steps.findIndex((step) => step.uses === "actions/cache/save@v4");
-		expect(restore).toBeLessThan(install);
-		expect(install).toBeLessThan(save);
-		expect(steps[save].if).toBe("steps.bun-cache.outputs.cache-hit != 'true'");
-		expect(steps[restore].with.path).toBe("~/.bun/install/cache");
-		expect(steps[restore].with.key).toContain("runner.arch");
-	});
-
-	it("isolates model inputs and saves resources before compilation without caching application outputs", () => {
-		const steps = actionSteps("prepare-desktop-resources");
-		const restore = steps.find((step) => step.uses === "actions/cache/restore@v4");
-		expect(restore.with["restore-keys"]).toBeUndefined();
-		for (const input of [
-			"runtimes/manifest.json",
-			"speech-input/model-manifest.json",
-			"fetch-ocr-models.js",
-			"runner.arch",
-		]) {
-			expect(restore.with.key).toContain(input);
+	it("downloads packaging inputs directly instead of restoring Actions caches", () => {
+		expect(actionSteps("install-bun-dependencies").some((step) => step.uses?.startsWith("actions/cache"))).toBe(
+			false,
+		);
+		expect(workflow).not.toContain("actions/cache");
+		expect(workflow).not.toContain("desktop-download-cache");
+		expect(workflow).not.toContain("prepare-desktop-resources");
+		for (const job of [jobs.quality, jobs.build]) {
+			const setupGo = job.steps.find((step) => step.uses === "actions/setup-go@v5");
+			expect(setupGo.with.cache).toBe(false);
 		}
-		const save = steps.findIndex((step) => step.uses === "actions/cache/save@v4");
-		expect(steps.findIndex((step) => step.name === "Download release resources")).toBeLessThan(save);
-		expect(steps[save].with.path).toBe(restore.with.path);
-		expect(restore.with.path).not.toMatch(/node_modules|build-stage|\.turbo|release\//);
-		expect(
-			jobs.build.steps.findIndex((step) => step.uses === "./.github/actions/prepare-desktop-resources"),
-		).toBeLessThan(jobs.build.steps.findIndex((step) => step.name === "Build updater artifacts"));
 	});
 
 	it("retries verification using the same run's completed build without packaging again", () => {
@@ -285,32 +265,52 @@ describe("Desktop release workflow contracts", () => {
 		}
 	});
 
-	it("prewarms tag-readable downloads on the default branch without building or publishing", () => {
-		const warm = parse(readFileSync(join(import.meta.dirname, "../../.github/workflows/desktop-cache.yml"), "utf8"));
-		expect(warm.on.schedule).toHaveLength(1);
-		expect(warm.jobs.warm.if).toContain("github.event.repository.default_branch");
-		expect([...warm.jobs.warm.strategy.matrix.runner].sort()).toEqual(
-			jobs.build.strategy.matrix.include.map((entry) => entry.runner).sort(),
+	it("keeps the staged-promotion workflow callable for a later direct adoption", () => {
+		const promote = parse(
+			readFileSync(join(import.meta.dirname, "../../.github/workflows/desktop-promote.yml"), "utf8"),
 		);
-		expect(warm.jobs.warm.steps.some((step) => /dist:|publish:/.test(step.run ?? ""))).toBe(false);
+		expect(Object.keys(promote.on).sort()).toEqual(["workflow_call", "workflow_dispatch"]);
+		for (const trigger of ["workflow_call", "workflow_dispatch"]) {
+			expect(promote.on[trigger].inputs.version.required).toBe(true);
+			expect(promote.on[trigger].inputs.dry_run.default).toBe(false);
+		}
+		expect(promote.jobs.promote.concurrency.group).toBe("desktop-promote-$" + "{{ inputs.channel }}");
+		const steps = promote.jobs.promote.steps;
+		const resolve = steps.find((step) => step.name === "Resolve R2 update target");
+		expect(resolve.env.INPUT_RELEASE_TARGET).toBe("r2");
+		expect(resolve.env.VAR_RELEASE_CHANNEL).toBe("$" + "{{ vars.VETTA_RELEASE_CHANNEL }}");
+		expect(resolve.run).toContain("resolve-desktop-release-config.mjs --export-env");
+		const run = steps.find((step) => step.name === "Promote staged update metadata");
+		expect(run.run).toContain("node scripts/promote-update-metadata-r2.mjs");
+		expect(run.run).toContain("--dry-run");
+		const attach = steps.find((step) => step.name === "Attach promoted metadata to GitHub Release");
+		expect(attach.if).toContain("!inputs.dry_run");
+		expect(attach.if).toContain("inputs.channel != 'test'");
+		expect(JSON.stringify(promote)).not.toContain("github.event.inputs");
 	});
 
 	it("runs quality and packaging tests before the platform matrix", () => {
 		expect(workflow).toContain("  quality:");
-		expect(workflow).toContain("run: bun run check");
+		expect(workflow).toMatch(/run: bun run check\r?\n/);
 		expect(workflow).toContain("run: bun run test:quality");
 		expect(workflow).toContain("run: bun run verify:desktop:contracts");
 		expect(workflow).toContain("run: bun run test:desktop:packaging");
 		expect(jobs.build.needs).toEqual(["prepare", "quality", "source-quality"]);
 	});
 
-	it("builds and verifies the pinned Windows sandbox before normal packaging", () => {
+	it("downloads and verifies the pinned Windows sandbox release before packaging", () => {
 		const sandboxSteps = actionSteps("prepare-windows-sandbox");
-		const checkout = sandboxSteps.find((step) => step.name === "Check out pinned Codex sandbox source");
-		expect(checkout.with.repository).toBe("openvetta/codex");
-		expect(checkout.with.ref).toMatch(/^[0-9a-f]{40}$/);
-		expect(sandboxSteps.some((step) => step.run?.includes("cargo build --locked"))).toBe(true);
-		expect(sandboxSteps.some((step) => step.run?.includes("--capabilities --json"))).toBe(true);
+		expect(sandboxSteps).toHaveLength(1);
+		const [download] = sandboxSteps;
+		expect(download.env.SANDBOX_REPOSITORY).toBe("openvetta/codex");
+		expect(download.env.SANDBOX_TAG).toMatch(/^vetta-sandbox-v\d+\.\d+\.\d+$/);
+		expect(download.env.SANDBOX_COMMIT).toMatch(/^[0-9a-f]{40}$/);
+		expect(download.env.SANDBOX_ARCHIVE_SHA256).toMatch(/^[0-9a-f]{64}$/);
+		expect(download.run).toContain("SHA-256 mismatch");
+		expect(download.run).toContain("$manifest.commit -ne $env:SANDBOX_COMMIT");
+		expect(download.run).toContain("--capabilities --json");
+		expect(JSON.stringify(sandboxSteps)).not.toMatch(/cargo|rust-toolchain|actions\/checkout/);
+
 		for (const buildSteps of [jobs.build.steps, packagedJobs.smoke.steps]) {
 			const sandbox = buildSteps.findIndex((step) => step.uses === "./.github/actions/prepare-windows-sandbox");
 			expect(sandbox).toBeGreaterThanOrEqual(0);
@@ -424,14 +424,14 @@ describe("Desktop release workflow contracts", () => {
 
 	it("installs the IM gateway Go toolchain from its module declaration", () => {
 		const packagedSmokeJob = packagedWorkflow.split("\n  smoke:\n")[1];
-		const releaseBuildJob = workflow.split("\n  build:\n")[1]?.split("\n  publish-github:\n")[0];
+		const releaseBuildJob = workflow.split("\n  build:\n")[1];
 		for (const jobSource of [packagedSmokeJob, releaseBuildJob]) {
 			expect(jobSource).toBeDefined();
 			expect(jobSource).toContain("Set up Go for IM gateway");
 			expect(jobSource).toContain("uses: actions/setup-go@v5");
 			expect(jobSource).toContain("go-version-file: apps/im-gateway/go.mod");
-			expect(jobSource).toContain("cache-dependency-path: apps/im-gateway/go.sum");
 		}
+		expect(packagedSmokeJob).toContain("cache-dependency-path: apps/im-gateway/go.sum");
 	});
 
 	it("uses the same publish jobs for tagged stable and dispatched test/stable releases", () => {
@@ -465,7 +465,7 @@ describe("Desktop release workflow contracts", () => {
 	});
 
 	it("allows enough wall clock for signing and notarizing both macOS architectures", () => {
-		const buildJob = workflow.slice(workflow.indexOf("\n  build:"), workflow.indexOf("\n  publish-r2:"));
+		const buildJob = workflow.slice(workflow.indexOf("\n  build:"));
 		const timeout = Number(buildJob.match(/timeout-minutes: (\d+)/)?.[1]);
 		expect(timeout).toBeGreaterThanOrEqual(120);
 	});
@@ -474,8 +474,9 @@ describe("Desktop release workflow contracts", () => {
 	// 按 release_target 互斥，商业版发版在 GitHub 上什么都看不到。
 	it("publishes a GitHub Release alongside R2 for every non-test channel", () => {
 		expect(workflow).toContain("  publish-github:");
-		expect(workflow).toContain("needs.prepare.outputs.channel != 'test'");
-		expect(workflow).not.toContain("needs.prepare.outputs.release_target != 'r2'");
+		expect(jobs["publish-github"].if).toContain("needs.prepare.outputs.channel != 'test'");
+		expect(jobs["publish-github"].if).not.toContain("needs.prepare.outputs.release_target != 'r2'");
+		expect(workflow).toContain("- name: Publish release after all assets are ready");
 	});
 
 	it("uses the versioned release note as the GitHub Release body", () => {
