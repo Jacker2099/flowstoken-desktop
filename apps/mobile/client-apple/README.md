@@ -1,6 +1,6 @@
-# Vetta for iPhone（client-apple）
+# FlowsToken for iPhone（client-apple）
 
-Vetta 手机端的 iOS 原生客户端（Swift 6 + SwiftUI，iOS 26 起，Liquid Glass）。它通过 `@vetta/remote-control` 的协议 v2 与 Vetta Desktop 配对，在手机上镜像电脑正在处理的会话：查看进度、继续追问、回答电脑弹出的提问、中止任务。Android 端在 [`../client-android`](../client-android)。
+FlowsToken 手机端的 iOS 原生客户端（Swift 6 + SwiftUI，iOS 26 起，Liquid Glass）。它通过 `@vetta/remote-control` 的协议 v2 与 FlowsToken Desktop 配对，在手机上镜像电脑正在处理的会话：查看进度、继续追问、回答电脑弹出的提问、中止任务。Android 端在 [`../client-android`](../client-android)。
 
 原 Expo/React Native 客户端已移出仓库；本工程在功能上与它一一对应（配对、双通道连接、会话镜像、离线缓存、设置项），界面按原设计还原，但全部换成系统原生控件：导航栏、分段控件、开关、弹层、`glassEffect` 玻璃材质。深浅色跟随系统，不提供应用内切换。
 
@@ -27,7 +27,7 @@ Vetta 手机端的 iOS 原生客户端（Swift 6 + SwiftUI，iOS 26 起，Liquid
 ```bash
 cd apps/mobile/client-apple
 xcodegen generate
-open Vetta.xcodeproj
+open Vetta.xcodeproj  # 工程名沿用内部代号 Vetta
 ```
 
 真机运行需要自己的 Team（免费 Apple ID 即可本机签名）。签名写在本地、不进仓库：复制 `Config/Local.xcconfig.example` 为 `Config/Local.xcconfig`，填入 Team ID。不要在 Xcode 的 Signing & Capabilities 里直接选 Team，那会写进 `project.pbxproj`。
@@ -56,7 +56,7 @@ UI 测试只构建一次，再按外观各跑一遍。每个用例都是一部�
 
 ```bash
 bun scripts/interop-desktop.ts /tmp/vetta-interop.json
-xcrun simctl launch booted com.openvetta.mobile -VettaPairURI "$(jq -r .invite /tmp/vetta-interop.json)"
+xcrun simctl launch booted com.flowstoken.mobile -VettaPairURI "$(jq -r .invite /tmp/vetta-interop.json)"
 ```
 
 `-VettaEphemeralStorage` 让 App 使用内存存储（UI 测试用，每次启动都是全新安装的状态）。它同时关掉通知和 Live Activity，免得权限弹框挡住 UI 测试。

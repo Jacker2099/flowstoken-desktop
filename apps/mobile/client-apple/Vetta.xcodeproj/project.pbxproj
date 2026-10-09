@@ -626,7 +626,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.openvetta.mobile.uitests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.flowstoken.mobile.uitests;
 				SDKROOT = iphoneos;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -646,8 +646,8 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.openvetta.mobile;
-				PRODUCT_NAME = Vetta;
+				PRODUCT_BUNDLE_IDENTIFIER = com.flowstoken.mobile;
+				PRODUCT_NAME = FlowsToken;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = 1;
 			};
@@ -665,8 +665,8 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.openvetta.mobile;
-				PRODUCT_NAME = Vetta;
+				PRODUCT_BUNDLE_IDENTIFIER = com.flowstoken.mobile;
+				PRODUCT_NAME = FlowsToken;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = 1;
 			};
@@ -681,8 +681,8 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.openvetta.mobile.widgets;
-				PRODUCT_NAME = VettaWidgets;
+				PRODUCT_BUNDLE_IDENTIFIER = com.flowstoken.mobile.widgets;
+				PRODUCT_NAME = FlowsTokenWidgets;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = 1;
 			};
@@ -698,7 +698,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.openvetta.mobile.uitests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.flowstoken.mobile.uitests;
 				SDKROOT = iphoneos;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -777,8 +777,8 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.openvetta.mobile.widgets;
-				PRODUCT_NAME = VettaWidgets;
+				PRODUCT_BUNDLE_IDENTIFIER = com.flowstoken.mobile.widgets;
+				PRODUCT_NAME = FlowsTokenWidgets;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = 1;
 			};
@@ -794,7 +794,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.openvetta.mobile.rtctests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.flowstoken.mobile.rtctests;
 				SDKROOT = iphoneos;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -811,7 +811,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.openvetta.mobile.rtctests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.flowstoken.mobile.rtctests;
 				SDKROOT = iphoneos;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
 				TARGETED_DEVICE_FAMILY = "1,2";

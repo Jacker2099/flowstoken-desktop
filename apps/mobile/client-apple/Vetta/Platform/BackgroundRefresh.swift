@@ -3,7 +3,7 @@ import UIKit
 
 /// Background time for session news, within what iOS grants without push.
 enum BackgroundRefresh {
-	static let identifier = "com.openvetta.mobile.refresh"
+	static let identifier = "com.flowstoken.mobile.refresh"
 
 	/// Asks to be woken in a while to look at the sessions again. iOS decides
 	/// when, going by how the app is used, and may not at all.

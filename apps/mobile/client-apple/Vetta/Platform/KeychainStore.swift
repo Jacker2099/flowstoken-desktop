@@ -7,7 +7,7 @@ import VettaKit
 final class KeychainStore: KeyValueStore {
 	private let service: String
 
-	init(service: String = "com.openvetta.mobile") {
+	init(service: String = "com.flowstoken.mobile") {
 		self.service = service
 	}
 

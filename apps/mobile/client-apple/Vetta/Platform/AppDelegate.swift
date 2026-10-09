@@ -21,7 +21,7 @@ enum OrientationLock {
 @Observable
 final class QuickActions {
 	static let shared = QuickActions()
-	static let remoteType = "com.openvetta.mobile.remote"
+	static let remoteType = "com.flowstoken.mobile.remote"
 
 	/// Set by the icon's menu, taken by the root view once it can act on it.
 	var remoteRequested = false

@@ -4,7 +4,7 @@ import os
 import VettaKit
 @preconcurrency import WebRTC
 
-private let log = Logger(subsystem: "com.openvetta.mobile", category: "remote-desktop")
+private let log = Logger(subsystem: "com.flowstoken.mobile", category: "remote-desktop")
 
 /// One WebRTC session with the paired desktop, set up through the relay's viewer
 /// signaling: the desktop offers, this phone answers. It carries the P2P control

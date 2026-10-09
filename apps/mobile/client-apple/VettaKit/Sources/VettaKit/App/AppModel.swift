@@ -2,7 +2,7 @@ import Foundation
 import Observation
 import os
 
-private let log = Logger(subsystem: "com.openvetta.mobile", category: "app")
+private let log = Logger(subsystem: "com.flowstoken.mobile", category: "app")
 
 public struct Preferences: Equatable, Codable, Sendable {
 	public var liveThinking: Bool
