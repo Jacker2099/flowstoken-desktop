@@ -39,14 +39,29 @@ async function activateRendererControl(element: WebdriverIO.Element): Promise<vo
 
 async function dumpUpdaterE2eState(label: string): Promise<void> {
 	try {
-		const pageState = await browser.execute(() => ({
-			hash: window.location.hash,
-			title: document.title,
-			body: (document.body?.innerText ?? "").slice(0, 600),
-			hasAccountBridge:
-				typeof (window as { vetta?: { flowstoken?: { refresh?: unknown } } }).vetta?.flowstoken
-					?.refresh === "function",
-		}));
+		const pageState = await browser.execute(async () => {
+			let ipcResult = "no-bridge";
+			try {
+				const refresh = (window as { vetta?: { flowstoken?: { refresh?: () => Promise<unknown> } } })
+					.vetta?.flowstoken?.refresh;
+				if (refresh) {
+					const snapshot = await refresh();
+					ipcResult = snapshot ? "snapshot-ok" : "snapshot-empty";
+				}
+			} catch (ipcError) {
+				ipcResult = `ipc-error:${String(ipcError).slice(0, 160)}`;
+			}
+			return {
+				hash: window.location.hash,
+				title: document.title,
+				readyState: document.readyState,
+				bodyText: (document.body?.innerText ?? "").slice(0, 400),
+				bodyHtml: (document.body?.innerHTML ?? "").slice(0, 400),
+				rootHtml: (document.getElementById("root")?.innerHTML ?? "").slice(0, 300),
+				hasAccountBridge: ipcResult !== "no-bridge",
+				ipcResult,
+			};
+		});
 		const windowUrls = await browser.electron.execute((electron) =>
 			electron.BrowserWindow.getAllWindows()
 				.filter((w) => !w.isDestroyed())
