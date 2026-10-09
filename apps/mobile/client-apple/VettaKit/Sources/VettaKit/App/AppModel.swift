@@ -32,6 +32,9 @@ public struct AppPlatform {
 	public var configureManager: ((inout ChannelManagerOptions) -> Void)?
 	public var configurePairing: ((inout PairingFlowOptions) -> Void)?
 	public var inviteLookup = InviteCodeLookup()
+	/// Direct-chat seams; tests replay canned HTTP/SSE instead of the network.
+	public var directFetch: DirectFetch?
+	public var directLines: DirectLineSource?
 
 	public init(settings: KeyValueStore, secrets: KeyValueStore, cache: SessionCache, createTransport: @escaping TransportFactory, deviceName: String, onTurnEnd: (() -> Void)? = nil) {
 		self.settings = settings
@@ -60,7 +63,7 @@ public final class AppModel {
 	public private(set) var paired = false
 	public private(set) var desktop: StoredDesktop?
 	public private(set) var link: LinkSnapshot = .offline
-	public private(set) var sessions: [RemoteSessionSummary] = [] {
+	public internal(set) var sessions: [RemoteSessionSummary] = [] {
 		didSet { sessionsChanged(from: oldValue) }
 	}
 	public private(set) var sessionsLoaded = false
@@ -77,12 +80,16 @@ public final class AppModel {
 	/// Skills the composer may reference, per project; "" holds the global ones.
 	/// In memory only: `loadSkills` refreshes a list each time the picker opens.
 	public private(set) var skillCatalogs: [String: SkillCatalog] = [:]
-	public private(set) var transcripts: [String: TranscriptState] = [:]
+	public internal(set) var transcripts: [String: TranscriptState] = [:]
 	/// Sessions opened by `startSession`: the local id the chat opened on → the desktop's id.
 	public private(set) var startedSessions: [String: String] = [:]
 	public private(set) var startingSessions: Set<String> = []
 	public private(set) var preferences: Preferences = .defaults
 	public private(set) var pairing: PairingPhase = .idle
+	/// The signed-in FlowsToken account, for direct chat without a desktop.
+	public internal(set) var direct: DirectAccount?
+	/// Models the account may chat with directly; fetched after sign-in.
+	public internal(set) var directModels: [RemoteModelOption] = []
 	public var lastError: String?
 	/// What the desktop said about its screen while the remote desktop page is open; nil
 	/// otherwise (ADR-0140).
@@ -91,15 +98,15 @@ public final class AppModel {
 	/// from a desktop that cannot (the phone then draws a plain arrow).
 	public private(set) var screenCursor: RemoteScreenCursor?
 
-	@ObservationIgnored private let platform: AppPlatform
+	@ObservationIgnored let platform: AppPlatform
 	@ObservationIgnored private let pairingStore: PairingStore
 	@ObservationIgnored private var identity: LinkIdentity!
 	@ObservationIgnored private var manager: ChannelManager?
-	@ObservationIgnored private var desktopKey: String?
+	@ObservationIgnored var desktopKey: String?
 	@ObservationIgnored private var flow: PairingFlow?
 	@ObservationIgnored private var unsubscribe: [() -> Void] = []
 	@ObservationIgnored private var transcriptSave: [String: Task<Void, Never>] = [:]
-	@ObservationIgnored private var active = true
+	@ObservationIgnored var active = true
 	/// The remote desktop page is open; the desktop captures only while it is and the app is in front.
 	@ObservationIgnored private var screenOpen = false
 	@ObservationIgnored private var newSessionModelsLoad: Task<Void, Never>?
@@ -108,11 +115,20 @@ public final class AppModel {
 	@ObservationIgnored private let fileCache = FileContentCache()
 	@ObservationIgnored private var watch = SessionWatch()
 	/// Sessions whose latest user message has no reply yet; the first output buzzes once.
-	@ObservationIgnored private var awaitingOutput: Set<String> = []
+	@ObservationIgnored var awaitingOutput: Set<String> = []
+	/// Account sign-in for direct chat; tokens live in `platform.secrets`.
+	@ObservationIgnored let directAuth: DirectAuth
+	@ObservationIgnored let directChatClient: DirectChatClient
+	/// Direct-mode sessions; `sessions` always equals these plus the desktop's list.
+	@ObservationIgnored var directSessions: [RemoteSessionSummary] = []
+	/// Streaming completions in flight, by direct session id.
+	@ObservationIgnored var directTasks: [String: Task<Void, Never>] = [:]
 
 	public init(platform: AppPlatform) {
 		self.platform = platform
 		pairingStore = PairingStore(settings: platform.settings, secrets: platform.secrets)
+		directAuth = DirectAuth(secrets: platform.secrets, fetch: platform.directFetch)
+		directChatClient = DirectChatClient(lines: platform.directLines ?? DirectChatClient.urlLines)
 	}
 
 	public var online: Bool { link.isUsable }
@@ -137,7 +153,11 @@ public final class AppModel {
 		pairingStore.load()
 		identity = LinkIdentity(identity: pairingStore.getIdentity(), deviceId: loadDeviceId(), deviceName: platform.deviceName)
 		preferences = Preferences.decode(platform.settings.get(Self.preferencesKey))
+		loadDirectState()
 		if let current = pairingStore.getCurrent() { attachManager(current) }
+		if !directSessions.isEmpty { sessions = mergeSessions(remote: sessions) }
+		sessionsLoaded = sessionsLoaded || !directSessions.isEmpty
+		if direct != nil { Task { await loadDirectModels() } }
 		ready = true
 	}
 
@@ -247,14 +267,14 @@ public final class AppModel {
 		desktopKey = nil
 		paired = false
 		desktop = nil
-		sessions = []
-		sessionsLoaded = false
+		sessions = directSessions
+		sessionsLoaded = !directSessions.isEmpty
 		projects = []
 		models = [:]
 		newSessionModels = []
 		skillCatalogs = [:]
 		lastModelChoice = ModelChoice()
-		transcripts = [:]
+		transcripts = transcripts.filter { Self.isDirectId($0.key) }
 		fileCache.removeAll()
 		link = .offline
 	}
@@ -296,8 +316,8 @@ public final class AppModel {
 		let cached = platform.cache.loadSessions(key)
 		paired = true
 		desktop = record.stored
-		sessions = cached
-		sessionsLoaded = !cached.isEmpty
+		sessions = mergeSessions(remote: cached)
+		sessionsLoaded = !cached.isEmpty || !directSessions.isEmpty
 		projects = loadProjects(key)
 		models = [:]
 		newSessionModels = cachedNewSessionModels(key)
@@ -401,7 +421,7 @@ public final class AppModel {
 		return manager
 	}
 
-	private func reportError(_ error: Error, _ action: String = #function) {
+	func reportError(_ error: Error, _ action: String = #function) {
 		// Diagnostic metadata only: never prompts, payloads or credentials.
 		log.error("\(action, privacy: .public) failed: \(String(describing: type(of: error)), privacy: .public) \(error.localizedDescription, privacy: .public)")
 		lastError = error is LinkOfflineError ? L10n.Common.notConnected : L10n.Common.unknownError
@@ -409,14 +429,14 @@ public final class AppModel {
 
 	// MARK: Events
 
-	private func dispatch(_ sessionId: String, _ action: TranscriptAction) {
+	func dispatch(_ sessionId: String, _ action: TranscriptAction) {
 		let next = TranscriptReducer.reduce(transcripts[sessionId] ?? .empty, action)
 		transcripts[sessionId] = next
 		scheduleTranscriptSave(sessionId, next)
 	}
 
 	private func scheduleTranscriptSave(_ sessionId: String, _ transcript: TranscriptState) {
-		guard let key = desktopKey, !transcript.stale, transcript.loaded else { return }
+		guard let key = transcriptStoreKey(sessionId), !transcript.stale, transcript.loaded else { return }
 		transcriptSave[sessionId]?.cancel()
 		transcriptSave[sessionId] = schedule(after: 400) { [weak self] in
 			self?.transcriptSave[sessionId] = nil
@@ -424,7 +444,7 @@ public final class AppModel {
 		}
 	}
 
-	private func patchSession(_ sessionId: String, _ patch: (inout RemoteSessionSummary) -> Void) {
+	func patchSession(_ sessionId: String, _ patch: (inout RemoteSessionSummary) -> Void) {
 		guard let index = sessions.firstIndex(where: { $0.id == sessionId }) else { return }
 		patch(&sessions[index])
 	}
@@ -442,7 +462,7 @@ public final class AppModel {
 		signals.show(liveDigest, active: active)
 	}
 
-	private func outputStarted(_ sessionId: String) {
+	func outputStarted(_ sessionId: String) {
 		guard awaitingOutput.remove(sessionId) != nil, preferences.haptics, active else { return }
 		platform.onTurnStart?()
 	}
@@ -452,7 +472,7 @@ public final class AppModel {
 		switch event.name {
 		case .sessionList:
 			let list = RemoteAPI.readSessionSummaries(event.payload)
-			sessions = list
+			sessions = mergeSessions(remote: list)
 			sessionsLoaded = true
 			if let key = desktopKey { platform.cache.saveSessions(key, list) }
 		case .sessionState:
@@ -523,7 +543,7 @@ public final class AppModel {
 		do {
 			let result = try await requireManager().request(.sessionList, payload: ["limit": 200])
 			let list = RemoteAPI.readSessionSummaries(result)
-			sessions = list
+			sessions = mergeSessions(remote: list)
 			sessionsLoaded = true
 			if let key = desktopKey { platform.cache.saveSessions(key, list) }
 			// Ready before New Session opens. Only when it is cheap or there is nothing yet:
@@ -560,12 +580,22 @@ public final class AppModel {
 	public func openSession(_ sessionId: String) async {
 		platform.signals?.withdraw(sessionId)
 		let fresh = freshSessions.remove(sessionId) != nil && transcripts[sessionId]?.stale == false
-		if transcripts[sessionId] == nil, let key = desktopKey, let cached = platform.cache.loadTranscript(key, sessionId) {
+		if transcripts[sessionId] == nil, let key = transcriptStoreKey(sessionId), let cached = platform.cache.loadTranscript(key, sessionId) {
 			var restored = TranscriptState.empty
 			restored.items = cached
 			restored.loaded = true
 			restored.stale = true
 			transcripts[sessionId] = restored
+		}
+		// Direct sessions keep their own history; nothing on a desktop to ask.
+		guard !Self.isDirectId(sessionId) else {
+			if transcripts[sessionId] == nil {
+				var restored = TranscriptState.empty
+				restored.loaded = true
+				transcripts[sessionId] = restored
+			}
+			transcripts[sessionId]?.stale = false
+			return
 		}
 		do {
 			let manager = try requireManager()
@@ -588,6 +618,11 @@ public final class AppModel {
 	}
 
 	public func loadModels(_ sessionId: String) async {
+		if Self.isDirectId(sessionId) {
+			if directModels.isEmpty { await loadDirectModels() }
+			models[sessionId] = directModels
+			return
+		}
 		do {
 			let result = try await requireManager().request(.modelList, sessionId: sessionId)
 			let options = RemoteAPI.readModelOptions(result)
@@ -682,6 +717,10 @@ public final class AppModel {
 		if let modelKey { payload["modelKey"] = .string(modelKey) }
 		if let thinkingLevel { payload["thinkingLevel"] = .string(thinkingLevel) }
 		guard !payload.isEmpty else { return false }
+		if Self.isDirectId(sessionId) {
+			if let modelKey { configureDirect(sessionId, modelKey: modelKey) }
+			return true
+		}
 		do {
 			let result = try await requireManager().request(.sessionConfigure, payload: .object(payload), sessionId: sessionId)
 			let state = RemoteAPI.readSessionState(result?["state"])
@@ -702,6 +741,13 @@ public final class AppModel {
 	public func sendPrompt(_ sessionId: String?, _ text: String, projectCwd: String? = nil, modelKey: String? = nil, thinkingLevel: String? = nil, attachments: [PromptAttachment] = []) async -> String? {
 		let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
 		guard !trimmed.isEmpty else { return nil }
+		if let sessionId {
+			let resolved = resolve(sessionId)
+			if Self.isDirectId(resolved) || session(resolved)?.isDirect == true {
+				sendDirectPrompt(resolved, trimmed)
+				return resolved
+			}
+		}
 		do {
 			var target = sessionId
 			if target == nil {
@@ -830,6 +876,10 @@ public final class AppModel {
 	}
 
 	public func abort(_ sessionId: String) async {
+		if Self.isDirectId(sessionId) {
+			directTasks[sessionId]?.cancel()
+			return
+		}
 		do {
 			_ = try await requireManager().request(.sessionAbort, sessionId: sessionId)
 		} catch {
@@ -838,6 +888,8 @@ public final class AppModel {
 	}
 
 	public func resync(_ sessionId: String) async {
+		// Direct sessions are the source of truth locally; nothing to resync.
+		guard !Self.isDirectId(sessionId) else { return }
 		dispatch(sessionId, .resync)
 		await openSession(sessionId)
 		await refreshSessions()
@@ -848,6 +900,9 @@ public final class AppModel {
 	public func rename(_ sessionId: String, to title: String) async -> Bool {
 		let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
 		guard !trimmed.isEmpty else { return false }
+		if Self.isDirectId(sessionId) {
+			return applyDirectLocal(sessionId) { $0.title = trimmed }
+		}
 		do {
 			let result = try await requireManager().request(.sessionRename, payload: ["title": .string(trimmed)], sessionId: sessionId)
 			adopt(result?["session"])
@@ -862,6 +917,9 @@ public final class AppModel {
 	/// moves at once; the desktop's pin time replaces the phone's when it answers.
 	@discardableResult
 	public func setPinned(_ sessionId: String, _ pinned: Bool) async -> Bool {
+		if Self.isDirectId(sessionId) {
+			return applyDirectLocal(sessionId) { $0.pinnedAt = pinned ? WallClock.nowMs() : nil }
+		}
 		let before = session(sessionId)?.pinnedAt
 		patchSession(sessionId) { $0.pinnedAt = pinned ? WallClock.nowMs() : nil }
 		do {
@@ -878,6 +936,10 @@ public final class AppModel {
 	/// Deletes the session on the desktop, and with it everything kept here.
 	@discardableResult
 	public func deleteSession(_ sessionId: String) async -> Bool {
+		if Self.isDirectId(sessionId) {
+			deleteDirectSession(sessionId)
+			return true
+		}
 		do {
 			_ = try await requireManager().request(.sessionDelete, sessionId: sessionId)
 			sessions.removeAll { $0.id == sessionId }

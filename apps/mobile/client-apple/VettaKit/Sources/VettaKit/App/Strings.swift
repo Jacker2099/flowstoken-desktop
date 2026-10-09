@@ -112,6 +112,26 @@ public enum L10n {
 		public static var location: String { tr("newSession.location") }
 	}
 
+	/// The account sign-in and the desktop-free chat it unlocks.
+	public enum Direct {
+		public static var signIn: String { tr("direct.signIn") }
+		public static var badge: String { tr("direct.badge") }
+		public static var account: String { tr("direct.account") }
+		public static var signOut: String { tr("direct.signOut") }
+		public static var signOutConfirm: String { tr("direct.signOutConfirm") }
+		public static var signOutHint: String { tr("direct.signOutHint") }
+
+		/// The account's server-side group, with a localized label for the known tiers.
+		public static func group(_ group: String) -> String {
+			switch group {
+			case "default": tr("direct.groupDefault")
+			case "smart": tr("direct.groupSmart")
+			case "vip": tr("direct.groupVip")
+			default: group
+			}
+		}
+	}
+
 	/// What can be done to a session, from the chat's More menu and the list's swipe.
 	public enum Session {
 		public static var rename: String { tr("session.rename") }

@@ -11,6 +11,8 @@ struct ChatInputBar: View {
 	var placeholder: String
 	/// The project the prompt goes to, for the skills it may reference; nil for a conversation.
 	var skillScope: String?
+	/// Attachments upload through the desktop link; direct chats have nowhere to put them.
+	var canAttach = true
 	/// Only sending waits on the link; typing, attaching and dictating never do.
 	var sendDisabled = false
 	var busy = false
@@ -57,15 +59,17 @@ struct ChatInputBar: View {
 			}
 			HStack(alignment: .bottom, spacing: 8) {
 				// Plain glass circle at the field's height: .buttonStyle(.glass) pads it larger.
-				Button { attaching = true } label: {
-					Image(systemName: "command")
-						.font(.system(size: 19, weight: .medium))
-						.frame(width: Self.barHeight, height: Self.barHeight)
-						.glassEffect(.regular.interactive(), in: .circle)
+				if canAttach {
+					Button { attaching = true } label: {
+						Image(systemName: "command")
+							.font(.system(size: 19, weight: .medium))
+							.frame(width: Self.barHeight, height: Self.barHeight)
+							.glassEffect(.regular.interactive(), in: .circle)
+					}
+					.buttonStyle(.plain)
+					.accessibilityLabel(L10n.Chat.attach)
+					.accessibilityIdentifier("composer.attach")
 				}
-				.buttonStyle(.plain)
-				.accessibilityLabel(L10n.Chat.attach)
-				.accessibilityIdentifier("composer.attach")
 
 				field
 			}

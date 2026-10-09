@@ -2,7 +2,8 @@ import SwiftUI
 import VettaKit
 
 /// The root slot with no session in it: a blank page for starting one in a conversation or a project.
-/// Until a desktop is paired it only shows how to pair.
+/// Paired it is the desktop's; signed in it chats directly on the account; otherwise it
+/// only shows the two ways in.
 struct NewSessionView: View {
 	@Environment(AppModel.self) private var model
 	@Environment(Router.self) private var router
@@ -26,6 +27,8 @@ struct NewSessionView: View {
 		Group {
 			if model.paired {
 				welcome
+			} else if model.directSignedIn {
+				directWelcome
 			} else {
 				UnpairedView()
 					.opacity(model.ready ? 1 : 0)
@@ -41,11 +44,15 @@ struct NewSessionView: View {
 				// Where the chat keeps its model, so both pages switch it in the same place.
 				ToolbarItem(placement: .topBarLeading) { modelMenu }
 					.sharedBackgroundVisibility(.hidden)
+			} else if model.directSignedIn {
+				ToolbarItem(placement: .topBarLeading) { DrawerButton() }
+				ToolbarItem(placement: .topBarLeading) { directModelMenu }
+					.sharedBackgroundVisibility(.hidden)
 			}
 		}
 		.onAppear {
 			guard let start = router.failedStart else {
-				modelChoice = model.lastModelChoice.available(in: model.newSessionModels)
+				modelChoice = model.lastModelChoice.available(in: pickerOptions)
 				return
 			}
 			router.failedStart = nil
@@ -53,8 +60,8 @@ struct NewSessionView: View {
 			projectCwd = start.projectCwd
 			modelChoice = start.modelChoice
 		}
-		// A remembered model the desktop has since dropped falls back to its default.
-		.onChange(of: model.newSessionModels) { _, options in
+		// A remembered model the list has since dropped falls back to its default.
+		.onChange(of: pickerOptions) { _, options in
 			modelChoice = modelChoice.available(in: options)
 		}
 		.task(id: model.online) {
@@ -63,6 +70,15 @@ struct NewSessionView: View {
 			await model.loadNewSessionModels()
 			await projects
 		}
+		.task(id: model.directSignedIn) {
+			guard model.directSignedIn, model.directModels.isEmpty else { return }
+			await model.loadDirectModels()
+		}
+	}
+
+	/// What the picker offers: the desktop's catalog when paired, the account's when direct.
+	private var pickerOptions: [RemoteModelOption] {
+		model.paired ? model.newSessionModels : model.directModels
 	}
 
 	private var welcome: some View {
@@ -125,6 +141,61 @@ struct NewSessionView: View {
 		.multilineTextAlignment(.leading)
 		.accessibilityElement(children: .combine)
 		.accessibilityAddTraits(.isHeader)
+	}
+
+	/// The desktop-free welcome: same greeting, a "this phone" chip instead of the project
+	/// picker, and the composer talking to the account's chat API.
+	private var directWelcome: some View {
+		VStack(alignment: .leading, spacing: 0) {
+			BotAvatar(size: 40, blinksOnAppear: 3)
+				.padding(.bottom, 18)
+			greeting
+			HStack(spacing: 5) {
+				Image(systemName: "iphone")
+				Text(L10n.Direct.badge).lineLimit(1)
+			}
+			.font(.subheadline.weight(.medium))
+			.foregroundStyle(Theme.ink2)
+			.padding(.top, 18)
+			Spacer(minLength: 16)
+		}
+		.padding(.horizontal, 24)
+		.padding(.top, 12)
+		.padding(.bottom, 12)
+		.frame(maxWidth: .infinity, alignment: .leading)
+		.contentShape(Rectangle())
+		.onTapGesture { dismissKeyboard() }
+		.animation(.snappy, value: keyboardUp)
+		.onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in keyboardUp = true }
+		.onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in keyboardUp = false }
+		.safeAreaInset(edge: .bottom, spacing: 0) {
+			ChatInputBar(draft: $draft, placeholder: L10n.Chat.composerPlaceholder, canAttach: false) { sent in
+				sendDirect(sent)
+			}
+		}
+	}
+
+	private var directModelMenu: some View {
+		let options = model.directModels
+		let name = options.first { $0.key == modelChoice.modelKey }?.name ?? L10n.NewSession.defaultModel
+		return Button { pickingModel = true } label: {
+			ModelTitle(title: L10n.NewSession.title, detail: name, online: true, picks: !options.isEmpty)
+				.frame(width: max(120, pageWidth - 110), alignment: .leading)
+		}
+		.buttonStyle(.plain)
+		.disabled(options.isEmpty)
+		.accessibilityLabel(L10n.Chat.model)
+		.accessibilityValue(name)
+		.accessibilityIdentifier("newSession.model")
+		.sheet(isPresented: $pickingModel) {
+			ModelSheet(options: options, choice: modelChoice, offersDefault: true) { modelChoice = $0 }
+		}
+	}
+
+	/// Direct sessions have a final id at once; the chat opens on it immediately.
+	private func sendDirect(_ sent: PromptDraft) {
+		guard let id = model.startDirectChat(sent.promptText, modelKey: modelChoice.modelKey) else { return }
+		router.show(id)
 	}
 
 	private var modelMenu: some View {

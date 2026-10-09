@@ -107,7 +107,8 @@ struct RootView: View {
 	@State private var router = Router()
 
 	var body: some View {
-		HomeDrawer(enabled: model.paired) {
+		// The drawer holds sessions and Settings; either mode owns something there.
+		HomeDrawer(enabled: model.paired || model.directSignedIn) {
 			NavigationStack {
 				switch router.slot {
 				case let .newSession(projectCwd):
@@ -191,6 +192,12 @@ struct RootView: View {
 		.onOpenURL { url in
 			if let sessionId = SessionLink.sessionId(url) {
 				if model.paired { router.show(sessionId) }
+				return
+			}
+			// The sign-in sheet normally returns the callback itself; a link that
+			// reaches here anyway still finishes the login.
+			if url.scheme?.lowercased() == "flowstoken", url.host?.lowercased() == "auth" {
+				Task { await model.finishDirectLogin(url) }
 				return
 			}
 			// Case-blind: a code-only QR code is upper case (ADR-0138). Legacy vetta:// links keep working.

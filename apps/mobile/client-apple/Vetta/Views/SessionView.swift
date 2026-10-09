@@ -30,11 +30,16 @@ struct SessionView: View {
 	private var id: String { model.resolve(sessionId) }
 	/// The first prompt of a new session is still on its way to the desktop.
 	private var starting: Bool { model.isStarting(sessionId) }
+	/// A phone-local chat: the account API answers it, so the desktop's link is irrelevant here.
+	private var direct: Bool { model.session(id)?.isDirect == true }
+	/// What reaches this session's backend: the account when direct, the desktop link otherwise.
+	private var reachable: Bool { direct ? model.directSignedIn : model.online }
 	private var transcript: TranscriptState { model.transcript(id) }
 	/// New Session from here starts in this chat's project; `nil` is the conversations.
 	private var newSessionCwd: String? {
-		guard let cwd = model.session(id)?.projectCwd, cwd != model.conversationCwd else { return nil }
-		return cwd
+		guard let session = model.session(id), !session.isDirect,
+		      session.projectCwd != model.conversationCwd else { return nil }
+		return session.projectCwd
 	}
 
 	var body: some View {
@@ -146,8 +151,9 @@ struct SessionView: View {
 				ChatInputBar(
 					draft: $draft,
 					placeholder: L10n.Chat.composerPlaceholder,
-					skillScope: model.session(model.resolve(id))?.projectCwd,
-					sendDisabled: !model.online || starting,
+					skillScope: direct ? nil : model.session(id)?.projectCwd,
+					canAttach: !direct,
+					sendDisabled: !reachable || starting,
 					busy: active,
 					onStop: { if !starting { Task { await model.abort(id) } } },
 					onSend: { sent in
@@ -186,29 +192,32 @@ struct SessionView: View {
 				.accessibilityIdentifier("chat.newSession")
 				Menu {
 					// The desktop's activity panel tabs, one entry each as the phone gains them.
-					Section(L10n.Files.panels) {
-						ForEach(SessionPanel.allCases) { item in
-							let available = model.isAvailable(item)
-							Button { panel = item } label: {
-								Label(item.title, systemImage: item.systemImage)
-								// Said only once the desktop's status is in, so a slow link does not claim it is old.
-								if !available, model.link.desktop != nil { Text(L10n.Files.needsDesktopUpdate) }
+					// Direct sessions have no desktop behind them, so the panels stay away entirely.
+					if !direct {
+						Section(L10n.Files.panels) {
+							ForEach(SessionPanel.allCases) { item in
+								let available = model.isAvailable(item)
+								Button { panel = item } label: {
+									Label(item.title, systemImage: item.systemImage)
+									// Said only once the desktop's status is in, so a slow link does not claim it is old.
+									if !available, model.link.desktop != nil { Text(L10n.Files.needsDesktopUpdate) }
+								}
+								.disabled(!available || !model.online)
 							}
-							.disabled(!available || !model.online)
 						}
+						Button(L10n.Chat.resync, systemImage: "arrow.clockwise") { Task { await model.resync(id) } }
 					}
-					Button(L10n.Chat.resync, systemImage: "arrow.clockwise") { Task { await model.resync(id) } }
-					// The desktop's own sidebar actions, so it shows the same title and pin.
+					// Rename and pin are local for direct chats, remote for the desktop's.
 					Button(L10n.Session.rename, systemImage: "pencil") {
 						newTitle = model.session(id)?.title ?? ""
 						renaming = true
 					}
-					.disabled(!model.online)
+					.disabled(!reachable)
 					let pinned = model.session(id)?.pinned == true
 					Button(pinned ? L10n.Session.unpin : L10n.Session.pin, systemImage: pinned ? "pin.slash" : "pin") {
 						Task { await model.setPinned(id, !pinned) }
 					}
-					.disabled(!model.online)
+					.disabled(!reachable)
 				} label: {
 					Image(systemName: "square.grid.2x2")
 				}
@@ -313,18 +322,23 @@ private struct ModelMenu: View {
 	@Environment(AppModel.self) private var model
 	@State private var picking = false
 
+	/// Direct sessions answer through the account; the desktop's link says nothing about them.
+	private var reachable: Bool {
+		model.session(sessionId)?.isDirect == true ? model.directSignedIn : model.online
+	}
+
 	var body: some View {
 		let state = model.transcript(sessionId).sessionState
 		let options = model.models[sessionId] ?? []
 		let current = options.first { $0.key == state.modelKey }
 		Button { picking = true } label: {
-			ModelTitle(title: title, detail: detail(state: state, current: current), online: model.online, picks: !options.isEmpty)
+			ModelTitle(title: title, detail: detail(state: state, current: current), online: reachable, picks: !options.isEmpty)
 			// A toolbar item only gets its ideal width; claim what the drawer button and the two on the right leave.
 			.frame(width: max(120, pageWidth - 212), alignment: .leading)
 		}
 		.buttonStyle(.plain)
 		// Switching mid-turn would change the model under a running reply.
-		.disabled(options.isEmpty || busy || !model.online)
+		.disabled(options.isEmpty || busy || !reachable)
 		.accessibilityIdentifier("chat.modelMenu")
 		.sheet(isPresented: $picking) {
 			ModelSheet(options: options, choice: ModelChoice(modelKey: state.modelKey, thinkingLevel: state.thinkingLevel)) { next in

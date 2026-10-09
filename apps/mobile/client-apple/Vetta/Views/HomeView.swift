@@ -36,7 +36,8 @@ struct HomeView: View {
 				SessionCardRows(rows: rows, deleting: $deleting)
 				if rows.isEmpty { emptyState }
 			} header: {
-				FilterBar(filter: $filter).pinnedFilterHeader(depth)
+				// Projects are the desktop's; direct chats keep only the status filter.
+				FilterBar(filter: $filter, showsProject: model.paired).pinnedFilterHeader(depth)
 			}
 		}
 		.listStyle(.plain)
@@ -124,8 +125,11 @@ struct HomeView: View {
 			EntryRow(symbol: "qrcode.viewfinder", title: L10n.Home.connectComputer, detail: model.desktop?.desktopName, identifier: "home.connect") {
 				router.showPairing = true
 			}
-			EntryRow(symbol: "display", title: L10n.Remote.title, identifier: "home.remote") {
-				router.openRemote()
+			// Remote desktop needs a live computer; signed-in users may have none paired.
+			if model.paired {
+				EntryRow(symbol: "display", title: L10n.Remote.title, identifier: "home.remote") {
+					router.openRemote()
+				}
 			}
 		}
 		.bareRow()

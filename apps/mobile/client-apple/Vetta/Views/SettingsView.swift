@@ -5,9 +5,11 @@ struct SettingsView: View {
 	@Environment(AppModel.self) private var model
 	@Environment(Router.self) private var router
 	@State private var confirmUnpair = false
+	@State private var confirmSignOut = false
 
 	var body: some View {
 		List {
+			accountSection
 			computerSection
 
 			Section {
@@ -39,6 +41,47 @@ struct SettingsView: View {
 			Button(L10n.Settings.unpair, role: .destructive) { model.unpair() }
 		} message: {
 			Text(L10n.Settings.unpairConfirm)
+		}
+		.alert(L10n.Direct.signOut, isPresented: $confirmSignOut) {
+			Button(L10n.Common.cancel, role: .cancel) {}
+			Button(L10n.Direct.signOut, role: .destructive) { Task { await model.signOutDirect() } }
+		} message: {
+			Text(L10n.Direct.signOutConfirm)
+		}
+	}
+
+	/// The FlowsToken sign-in that backs direct chats, independent of any paired computer.
+	@ViewBuilder
+	private var accountSection: some View {
+		Section {
+			if let account = model.direct {
+				HStack(spacing: 14) {
+					Image(systemName: "person.crop.circle.fill")
+						.font(.system(size: 26, weight: .medium))
+						.foregroundStyle(Theme.pillInk)
+						.frame(width: 56, height: 56)
+						.background(Theme.pill.gradient, in: .rect(cornerRadius: 14))
+					VStack(alignment: .leading, spacing: 2) {
+						Text(account.name)
+							.font(.title3.weight(.semibold))
+							.lineLimit(1)
+						Text(L10n.Direct.group(account.group))
+							.font(.subheadline)
+							.foregroundStyle(.secondary)
+					}
+				}
+				.padding(.vertical, 4)
+				.accessibilityElement(children: .combine)
+				.accessibilityIdentifier("settings.account")
+				Button(L10n.Direct.signOut, role: .destructive) { confirmSignOut = true }
+					.accessibilityIdentifier("settings.signOut")
+			} else {
+				DirectSignInButton(prominent: false)
+			}
+		} header: {
+			Text(L10n.Direct.account)
+		} footer: {
+			if model.direct != nil { Text(L10n.Direct.signOutHint) }
 		}
 	}
 

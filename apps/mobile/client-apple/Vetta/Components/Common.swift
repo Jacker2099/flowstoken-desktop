@@ -1,3 +1,4 @@
+import AuthenticationServices
 import SwiftUI
 import VettaKit
 
@@ -28,7 +29,8 @@ struct Pill: View {
 	}
 }
 
-/// Shown in place of New Session until a desktop is paired.
+/// Shown in place of New Session until a desktop is paired. The account sign-in
+/// is the always-available way in; pairing stays beside it for the full agent.
 struct UnpairedView: View {
 	@Environment(Router.self) private var router
 
@@ -38,11 +40,66 @@ struct UnpairedView: View {
 		} description: {
 			Text(L10n.Home.unpairedDescription)
 		} actions: {
+			DirectSignInButton()
 			Button(L10n.Home.unpairedScan) { router.showPairing = true }
+				.accessibilityIdentifier("home.pair")
+		}
+	}
+}
+
+/// Keeps the system sign-in sheet alive and anchors it to the key window.
+@MainActor
+final class DirectLoginSession: NSObject, ASWebAuthenticationPresentationContextProviding {
+	private var session: ASWebAuthenticationSession?
+
+	func start(model: AppModel) {
+		let url = model.beginDirectLogin()
+		let session = ASWebAuthenticationSession(url: url, callbackURLScheme: "flowstoken") { callback, _ in
+			// A dismissal comes back as an error with no URL; the user cancelling is silent.
+			guard let callback else { return }
+			Task { _ = await model.finishDirectLogin(callback) }
+		}
+		session.presentationContextProvider = self
+		session.prefersEphemeralWebBrowserSession = false
+		self.session = session
+		session.start()
+	}
+
+	func presentationAnchor(for _: ASWebAuthenticationSession) -> ASPresentationAnchor {
+		UIApplication.shared.connectedScenes
+			.lazy
+			.compactMap { ($0 as? UIWindowScene)?.keyWindow }
+			.first ?? ASPresentationAnchor()
+	}
+}
+
+/// The "sign in" button wherever the account may be needed: the unpaired page and Settings.
+struct DirectSignInButton: View {
+	@Environment(AppModel.self) private var model
+	/// The prominent fill on the empty page, a plain row in Settings.
+	var prominent = true
+	@State private var login = DirectLoginSession()
+
+	var body: some View {
+		Button(L10n.Direct.signIn) { login.start(model: model) }
+			.modifier(Prominence(prominent))
+			.accessibilityIdentifier("direct.signIn")
+	}
+}
+
+private struct Prominence: ViewModifier {
+	let prominent: Bool
+
+	init(_ prominent: Bool) { self.prominent = prominent }
+
+	func body(content: Content) -> some View {
+		if prominent {
+			content
 				.buttonStyle(.glassProminent)
 				.tint(Theme.pill)
 				.foregroundStyle(Theme.pillInk)
-				.accessibilityIdentifier("home.pair")
+		} else {
+			content.foregroundStyle(Theme.ink)
 		}
 	}
 }

@@ -18,7 +18,9 @@ struct SessionCard: View {
 	}
 
 	private var project: String? {
-		showsProject && session.projectCwd != conversationCwd ? session.projectName : nil
+		// A direct chat names where it runs rather than a project.
+		if session.isDirect { return L10n.Direct.badge }
+		return showsProject && session.projectCwd != conversationCwd ? session.projectName : nil
 	}
 
 	var body: some View {
@@ -36,7 +38,7 @@ struct SessionCard: View {
 			Spacer(minLength: 8)
 			if let project {
 				HStack(spacing: 4) {
-					Image(systemName: projectSymbol).font(.caption2.weight(.semibold))
+					Image(systemName: session.isDirect ? "iphone" : projectSymbol).font(.caption2.weight(.semibold))
 					Text(project).lineLimit(1)
 				}
 				.font(.caption.weight(.medium))
