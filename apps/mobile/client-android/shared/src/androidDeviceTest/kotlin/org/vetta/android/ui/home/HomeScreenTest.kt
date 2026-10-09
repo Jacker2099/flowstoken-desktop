@@ -28,6 +28,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import org.junit.Rule
 import org.junit.runner.RunWith
+import org.junit.runner.Description
+import org.junit.rules.TestWatcher
 import org.vetta.android.app.ThemeMode
 import org.vetta.android.domain.remote.RemoteProjectSummary
 import org.vetta.android.domain.remote.RemoteQuestionAnswer
@@ -53,6 +55,7 @@ import org.vetta.android.resources.session_rename
 import org.vetta.android.resources.work_clear_filters
 import org.vetta.android.resources.work_empty_filtered
 import org.vetta.android.resources.work_group_waiting
+import org.vetta.android.ui.captureDeviceTestFailure
 import org.vetta.android.ui.str
 import org.vetta.android.ui.theme.VettaTheme
 import org.vetta.android.ui.work.WorkActions
@@ -61,6 +64,14 @@ import org.vetta.android.ui.work.WorkActions
 class HomeScreenTest {
     @get:Rule
     val composeRule = createAndroidComposeRule<ComponentActivity>()
+
+    @get:Rule
+    val failureEvidence =
+        object : TestWatcher() {
+            override fun failed(e: Throwable, description: Description) {
+                captureDeviceTestFailure(composeRule.activity, description.methodName, e)
+            }
+        }
 
     private class RecordingActions : WorkActions {
         val calls = mutableListOf<String>()
