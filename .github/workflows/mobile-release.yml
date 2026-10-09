@@ -12,9 +12,14 @@ on:
         description: "要挂载手机端产物的 Release tag（如 v0.7.1）"
         required: true
         type: string
+      ref:
+        description: "构建源码 ref（默认用 tag 本身；仅手机端补发时传发布分支名）"
+        required: false
+        type: string
 
 env:
   RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+  BUILD_REF: ${{ inputs.ref || github.event.release.tag_name || inputs.tag }}
 
 jobs:
   android-apk:
@@ -27,7 +32,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ env.RELEASE_TAG }}
+          ref: ${{ env.BUILD_REF }}
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -86,7 +91,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ env.RELEASE_TAG }}
+          ref: ${{ env.BUILD_REF }}
 
       - name: Set up xcodegen
         run: brew install xcodegen
