@@ -73,14 +73,18 @@ public enum InviteCode {
 		public var relayBaseUrl: String?
 	}
 
-	private static let qrPrefix = "VETTA://PAIR/"
+	private static let qrPrefix = "FLOWSTOKEN://PAIR/"
+	/// The prefix older builds printed; still scanned and accepted.
+	private static let legacyQrPrefix = "VETTA://PAIR/"
 
 	/// The code, password and relay in a scanned QR code; nil for anything else, such as
 	/// a whole pairing link. Mirrors `parseInviteQr` in `@vetta/remote-control`.
 	public static func parseQR(_ text: String) -> QR? {
 		let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-		guard trimmed.uppercased().hasPrefix(qrPrefix) else { return nil }
-		let parts = trimmed.dropFirst(qrPrefix.count).split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)
+		let upper = trimmed.uppercased()
+		let prefix = upper.hasPrefix(qrPrefix) ? qrPrefix : upper.hasPrefix(legacyQrPrefix) ? legacyQrPrefix : nil
+		guard let prefix else { return nil }
+		let parts = trimmed.dropFirst(prefix.count).split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)
 		let path = parts[0].split(separator: "/", omittingEmptySubsequences: false)
 		guard path.count == 2, let code = normalize(String(path[0])), isValidPassword(String(path[1])) else { return nil }
 		var qr = QR(code: code, password: String(path[1]))

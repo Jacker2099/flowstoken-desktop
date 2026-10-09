@@ -78,6 +78,7 @@ describe("invite codes", () => {
 			relayBaseUrl: "wss://relay.mine.test",
 		});
 		expect(parseInviteQr(" vetta://pair/k7q2-9mxd/482913 ")).toEqual({ code: "K7Q29MXD", password: "482913" });
+		expect(parseInviteQr(" flowstoken://pair/K7Q2-9MXD/482913 ")).toEqual({ code: "K7Q29MXD", password: "482913" });
 		expect(parseInviteQr("vetta://pair?v=2&id=abc")).toBeUndefined();
 		expect(parseInviteQr("VETTA://PAIR/K7Q29MXD")).toBeUndefined();
 		expect(parseInviteQr("VETTA://PAIR/K7Q29MXD/48291")).toBeUndefined();
@@ -93,7 +94,7 @@ describe("invite codes", () => {
 	});
 });
 
-const QR = "VETTA://PAIR/K7Q29MXD/482913";
-const QR_WITH_RELAY = "VETTA://PAIR/K7Q29MXD/482913?relay=wss%3A%2F%2Frelay.mine.test";
+const QR = "FLOWSTOKEN://PAIR/K7Q29MXD/482913";
+const QR_WITH_RELAY = "FLOWSTOKEN://PAIR/K7Q29MXD/482913?relay=wss%3A%2F%2Frelay.mine.test";
 const BOX_ID = "oe8sfyla3JaUnRAk_OqKI8DJvl48e8IfsfQ1SK6dMS4";
 const CIPHERTEXT = "7v0nMbc3Dzwj2xiCL-L0UvCWmf7PDe03MwwUW09QZzU";

@@ -82,7 +82,9 @@ class MainActivity : ComponentActivity() {
 
 internal fun pairingInviteFrom(intent: Intent): String? {
     val data = intent.data ?: return null
-    return data.toString().takeIf { data.scheme.equals("vetta", ignoreCase = true) && data.host.equals("pair", ignoreCase = true) }
+    return data.toString().takeIf {
+        data.scheme?.lowercase() in setOf("flowstoken", "vetta") && data.host.equals("pair", ignoreCase = true)
+    }
 }
 
 @Preview

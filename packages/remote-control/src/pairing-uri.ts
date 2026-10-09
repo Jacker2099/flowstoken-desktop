@@ -1,7 +1,9 @@
 import { decodePublicKey } from "./crypto.js";
 import { RemoteProtocolError } from "./protocol.js";
 
-export const PAIRING_URI_SCHEME = "vetta";
+export const PAIRING_URI_SCHEME = "flowstoken";
+/** 上游/旧版发出的配对链接仍用 vetta://——解析时同样接受，不破坏存量链接。 */
+export const LEGACY_PAIRING_URI_SCHEMES: readonly string[] = ["vetta"];
 export const PAIRING_URI_HOST = "pair";
 export const PAIRING_URI_VERSION = 2;
 
@@ -45,11 +47,12 @@ export function parsePairingUri(text: string): RemotePairingInvite {
 	} catch {
 		throw new RemoteProtocolError("pairing link is not a valid URL");
 	}
+	const scheme = url.protocol.replace(/:$/, "").toLowerCase();
 	if (
-		url.protocol !== `${PAIRING_URI_SCHEME}:` ||
+		(scheme !== PAIRING_URI_SCHEME && !LEGACY_PAIRING_URI_SCHEMES.includes(scheme)) ||
 		(url.host !== PAIRING_URI_HOST && url.pathname !== `//${PAIRING_URI_HOST}`)
 	) {
-		throw new RemoteProtocolError("pairing link must start with vetta://pair");
+		throw new RemoteProtocolError("pairing link must start with flowstoken://pair");
 	}
 	const params = url.searchParams;
 	if (params.get("v") !== String(PAIRING_URI_VERSION))

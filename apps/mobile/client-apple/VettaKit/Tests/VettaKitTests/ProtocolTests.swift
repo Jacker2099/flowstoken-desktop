@@ -193,7 +193,7 @@ enum Vectors {
 
 	@Test func parsesTheDesktopEncodingWithPlusForSpaces() throws {
 		// What URLSearchParams on the desktop emits.
-		let text = "vetta://pair?v=2&id=pair-1234567890abcdef&s=secret-1234567890abcdef&k=\(Vectors.desktopIdentityPublic)&n=Jane%27s+MacBook+Pro&lan=192.168.1.20%3A43117&relay=https%3A%2F%2Frelay.example%2F"
+		let text = "flowstoken://pair?v=2&id=pair-1234567890abcdef&s=secret-1234567890abcdef&k=\(Vectors.desktopIdentityPublic)&n=Jane%27s+MacBook+Pro&lan=192.168.1.20%3A43117&relay=https%3A%2F%2Frelay.example%2F"
 		let parsed = try PairingURI.parse(text)
 		#expect(parsed.desktopName == "Jane's MacBook Pro")
 		#expect(parsed.lanEndpoints == ["192.168.1.20:43117"])

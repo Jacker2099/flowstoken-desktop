@@ -36,7 +36,10 @@ object InviteCode {
      */
     data class Qr(val code: String, val password: String, val relayBaseUrl: String? = null)
 
-    private const val QR_PREFIX = "VETTA://PAIR/"
+    private const val QR_PREFIX = "FLOWSTOKEN://PAIR/"
+
+    /** The prefix older builds printed; still scanned and accepted. */
+    private const val LEGACY_QR_PREFIX = "VETTA://PAIR/"
 
     /**
      * The code, password and relay in a scanned QR code; null for anything else, such as a
@@ -44,8 +47,14 @@ object InviteCode {
      */
     fun parseQr(text: String): Qr? {
         val trimmed = text.trim()
-        if (!trimmed.uppercase().startsWith(QR_PREFIX)) return null
-        val rest = trimmed.substring(QR_PREFIX.length)
+        val upper = trimmed.uppercase()
+        val prefix =
+            when {
+                upper.startsWith(QR_PREFIX) -> QR_PREFIX
+                upper.startsWith(LEGACY_QR_PREFIX) -> LEGACY_QR_PREFIX
+                else -> return null
+            }
+        val rest = trimmed.substring(prefix.length)
         val path = rest.substringBefore('?').split('/')
         if (path.size != 2) return null
         val code = normalize(path[0]) ?: return null

@@ -18,7 +18,7 @@ describe("oauth loopback callback", () => {
 		expect(response.status).toBe(200);
 		await response.text();
 
-		expect(received).toEqual(["vetta://oauth/callback?state=s1&access_token=t1&refresh_token=r1"]);
+		expect(received).toEqual(["flowstoken://oauth/callback?state=s1&access_token=t1&refresh_token=r1"]);
 	});
 
 	it("复用同一个端口", async () => {

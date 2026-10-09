@@ -23,7 +23,9 @@ public struct RemotePairingInvite: Equatable, Sendable {
 }
 
 public enum PairingURI {
-	public static let scheme = "vetta"
+	public static let scheme = "flowstoken"
+	/// Pairing links from older builds still arrive as vetta://; parse accepts them.
+	public static let legacySchemes: Set<String> = ["vetta"]
 	public static let host = "pair"
 
 	private static let idPattern = try! NSRegularExpression(pattern: "^[A-Za-z0-9_-]{16,128}$")
@@ -48,8 +50,10 @@ public enum PairingURI {
 		guard let components = URLComponents(string: trimmed), components.scheme != nil else {
 			throw RemoteProtocolError("pairing link is not a valid URL")
 		}
-		guard components.scheme?.lowercased() == scheme, components.host?.lowercased() == host || components.path == "//\(host)" else {
-			throw RemoteProtocolError("pairing link must start with vetta://pair")
+		let linkScheme = components.scheme?.lowercased() ?? ""
+		guard linkScheme == scheme || legacySchemes.contains(linkScheme),
+		      components.host?.lowercased() == host || components.path == "//\(host)" else {
+			throw RemoteProtocolError("pairing link must start with flowstoken://pair")
 		}
 		let params = formDecode(components.percentEncodedQuery ?? "")
 		guard params["v"] == String(RemotePairingInvite.version) else {
