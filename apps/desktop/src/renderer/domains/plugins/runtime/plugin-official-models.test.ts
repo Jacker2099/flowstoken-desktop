@@ -102,7 +102,7 @@ describe("official.models 合并远程目录", () => {
 
 		const result = await createOfficialModelsApi(() => undefined, "s").list();
 		const go = result.providers.find((provider) => provider.id === "vetta-go");
-		expect(go).toMatchObject({ displayName: "Vetta Go", remote: true, modelCount: 1 });
+		expect(go).toMatchObject({ displayName: "FlowsToken Go", remote: true, modelCount: 1 });
 		expect(go?.models[0]).toMatchObject({ id: "opus-5", name: "Opus 5" });
 		// 本地 provider 原样保留
 		expect(result.providers.find((provider) => provider.id === "openai")?.models).toHaveLength(1);

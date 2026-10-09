@@ -94,7 +94,7 @@ describe("Pi extension compatibility boundary", () => {
 
 		expect(result.extensions).toEqual([]);
 		expect(result.errors[0]?.error).toContain("agent_settled");
-		expect(result.errors[0]?.error).toContain("no equivalent settled Vetta fact");
+		expect(result.errors[0]?.error).toContain("no equivalent settled FlowsToken fact");
 	});
 
 	it("rejects API members that are not explicitly included in the compatibility profile", async () => {

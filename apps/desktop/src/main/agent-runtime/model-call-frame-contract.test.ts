@@ -337,7 +337,7 @@ describe("Desktop RuntimeHost model-call frame contract", () => {
 		);
 		expect(getPersonaPrompt("interactive")).toContain("replaces any default to act autonomously");
 		// 身份只由核心块声明一次。
-		expect(systemPrompt.match(/Your name is Vetta/g)).toHaveLength(1);
+		expect(systemPrompt.match(/Your name is Bestoo AI/g)).toHaveLength(1);
 		expect(systemPrompt).not.toMatch(/You are "Interactive"/);
 	}, 30_000);
 

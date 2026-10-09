@@ -190,7 +190,7 @@ describe("Agent Team storage layout", () => {
 			root,
 			".orphaned",
 			"workspaces",
-			`${createAgentTeamStorageKey("Vetta Team", migratedTeamId)}--percent`,
+			`${createAgentTeamStorageKey("FlowsToken Team", migratedTeamId)}--percent`,
 		);
 		expect(await readFile(join(orphanRoot, "kept.txt"), "utf8")).toBe("keep");
 		expect(existsSync(legacyRoot)).toBe(false);

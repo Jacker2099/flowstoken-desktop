@@ -59,14 +59,15 @@ describe("MarkdownContent 稳定块冻结", () => {
 		const chunksBefore = Array.from(view.container.querySelectorAll(".streaming-chunk"));
 		const displayedText = view.container.textContent;
 		expect(chunksBefore.length).toBeGreaterThan(0);
+		// 追平后 300ms 空闲即撤暗色（STREAMING_IDLE_SETTLE_MS），等不到回合结束；
+		// 此刻暗色已撤但分段节点必须仍在、可继续延长。
+		expect(view.container.querySelector(".markdown-streaming-tail")).toBeNull();
 
-		// 尾块翻为非流式的那一刻：settle 尚未到期，animateChunks 仍为 true。
 		view.rerender(<MarkdownContent {...environment} text={text} isStreamingTail={false} />);
 		expect(screen.getByText("Hello frozen paragraph.")).toBe(frozen);
 		expect(view.container.querySelector("pre, code")).toBe(frozenCode);
 		expect(screen.getByText(/Beta continues now/)).toBe(tail);
 		expect(view.container.querySelectorAll(".streaming-chunk").length).toBe(chunksBefore.length);
-		expect(view.container.querySelector(".markdown-streaming-tail")).not.toBeNull();
 
 		// settle 仅撤掉控制暗色的包裹类；已有分段不能移除或重建，否则尾块会闪动。
 		act(() => {

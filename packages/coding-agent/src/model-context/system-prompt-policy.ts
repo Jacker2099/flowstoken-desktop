@@ -49,7 +49,7 @@ const builtInToolDescriptions: Record<string, string> = {
 	tool_search: "Search the deferred MCP tool index by keyword and activate matching tools so they become callable",
 };
 
-export const VETTA_CLI_GUIDANCE = `# Desktop CLI\n\n${[
+export const VETTA_CLI_GUIDANCE = `# FlowsToken Desktop CLI\n\n${[
 	"Desktop CLI is your interface to the running Desktop app: use `vetta action` both to learn what Desktop can do and to operate it.",
 	"First resolve the target from the user's request and conversation: built-in App Actions operate Desktop itself, not the application, website, repository, or external service the user is working on. Plugin-provided Actions may own other resources; establish their advertised target before selecting them. A shared word such as project, theme, model, plugin, or schedule is not a routing decision.",
 	"For example: adding dark mode to a website means editing its styles, not changing Desktop appearance; creating a React project means using its scaffold, not registering a sidebar or batch project; implementing cron in an application means editing that application, not creating a scheduled Agent task. Use repository tools for those tasks. Managing Desktop's own sidebar, settings, or scheduled tasks does belong here.",

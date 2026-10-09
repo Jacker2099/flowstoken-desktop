@@ -314,23 +314,23 @@ describe("InnoWindowsUpdateController", () => {
 
 describe("Windows Inno update paths", () => {
 	it("recognizes only executables inside the matching version directory", () => {
-		expect(isVersionedWindowsExecutable("C:\\Vetta\\versions\\1.2.3\\Vetta.exe", "1.2.3")).toBe(true);
-		expect(isVersionedWindowsExecutable("C:\\Vetta\\Vetta.exe", "1.2.3")).toBe(false);
-		expect(isVersionedWindowsExecutable("C:\\Vetta\\versions\\1.2.2\\Vetta.exe", "1.2.3")).toBe(false);
+		expect(isVersionedWindowsExecutable("C:\\FlowsToken\\versions\\1.2.3\\FlowsToken.exe", "1.2.3")).toBe(true);
+		expect(isVersionedWindowsExecutable("C:\\FlowsToken\\FlowsToken.exe", "1.2.3")).toBe(false);
+		expect(isVersionedWindowsExecutable("C:\\FlowsToken\\versions\\1.2.2\\FlowsToken.exe", "1.2.3")).toBe(false);
 	});
 
-	it("matches the injected product executable name instead of assuming Vetta.exe", () => {
-		const flowstokenPath = "C:\\FlowsToken\\versions\\1.2.3\\FlowsToken.exe";
-		expect(isVersionedWindowsExecutable(flowstokenPath, "1.2.3")).toBe(false);
-		expect(isVersionedWindowsExecutable(flowstokenPath, "1.2.3", "FlowsToken.exe")).toBe(true);
+	it("matches the injected product executable name instead of assuming FlowsToken.exe", () => {
+		const vettaPath = "C:\\Vetta\\versions\\1.2.3\\Vetta.exe";
+		expect(isVersionedWindowsExecutable(vettaPath, "1.2.3")).toBe(false);
+		expect(isVersionedWindowsExecutable(vettaPath, "1.2.3", "Vetta.exe")).toBe(true);
 	});
 
 	it("uses the stable per-user application root", () => {
 		expect(resolveInnoUpdateStoreRoot("C:\\Users\\test\\AppData\\Local")).toBe(
-			"C:\\Users\\test\\AppData\\Local\\Vetta",
-		);
-		expect(resolveInnoUpdateStoreRoot("C:\\Users\\test\\AppData\\Local", "FlowsToken")).toBe(
 			"C:\\Users\\test\\AppData\\Local\\FlowsToken",
+		);
+		expect(resolveInnoUpdateStoreRoot("C:\\Users\\test\\AppData\\Local", "Vetta")).toBe(
+			"C:\\Users\\test\\AppData\\Local\\Vetta",
 		);
 	});
 

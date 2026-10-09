@@ -326,7 +326,7 @@ describe("DesktopRemoteAccessManager", () => {
 
 		release();
 		await vi.waitFor(() => expect(manager.getState().invite?.code?.status).toBe("ready"));
-		expect(manager.getState().invite?.qrText).toMatch(/^VETTA:\/\/PAIR\//);
+		expect(manager.getState().invite?.qrText).toMatch(/^FLOWSTOKEN:\/\/PAIR\//);
 		await manager.shutdown();
 	});
 

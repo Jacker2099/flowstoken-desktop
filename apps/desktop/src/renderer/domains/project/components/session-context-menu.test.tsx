@@ -8,8 +8,7 @@ import { describe, expect, it, vi } from "vitest";
  * 结构等价的轻量实现（见 content-creation/test/canvas-project-menu.dom.test.tsx），
  * 这里沿用同一策略：菜单树的渲染与回调路由是被测对象，定位行为交给 radix。
  */
-vi.mock("@vetta-org/ui", () => ({
-	cn: (...classes: unknown[]) => classes.filter(Boolean).join(" "),
+const dropdownMenuMock = {
 	DropdownMenu: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 	DropdownMenuTrigger: () => null,
 	DropdownMenuContent: ({ children }: { children: ReactNode }) => <div role="menu">{children}</div>,
@@ -26,7 +25,15 @@ vi.mock("@vetta-org/ui", () => ({
 		</button>
 	),
 	DropdownMenuSubContent: ({ children }: { children: ReactNode }) => <div role="menu">{children}</div>,
+};
+
+vi.mock("@vetta-org/ui", () => ({
+	cn: (...classes: unknown[]) => classes.filter(Boolean).join(" "),
+	...dropdownMenuMock,
 }));
+
+// theme-ui 菜单从子路径入口导入同一组原语，两个入口都要 mock 住。
+vi.mock("@vetta-org/ui/dropdown-menu", () => dropdownMenuMock);
 
 const { SessionContextMenuView } = await import("@vetta-org/theme-ui/project");
 
