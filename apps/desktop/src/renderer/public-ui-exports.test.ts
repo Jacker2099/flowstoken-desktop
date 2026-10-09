@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
-import { createServer } from "vite";
+import { createServer, normalizePath } from "vite";
 import { describe, expect, it } from "vitest";
 
 const repoRoot = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -31,7 +31,7 @@ describe("source UI package public entrypoints", () => {
 						specifier,
 						resolve(repoRoot, "apps/desktop/src/renderer/main.tsx"),
 					);
-					expect(result?.id, specifier).toBe(resolve(packageRoot, entry.import));
+					expect(result?.id, specifier).toBe(normalizePath(resolve(packageRoot, entry.import)));
 				}
 			}
 		} finally {
