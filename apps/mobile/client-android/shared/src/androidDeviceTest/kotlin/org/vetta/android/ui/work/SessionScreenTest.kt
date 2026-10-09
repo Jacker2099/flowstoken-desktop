@@ -297,11 +297,12 @@ class SessionScreenTest {
     @Test
     fun headerOpensFilesAndNoLongerOffersPinRenameOrRefresh() {
         val actions = RecordingActions()
+        var sessionId by mutableStateOf("s1")
         var sessionState by mutableStateOf(state(RemoteSessionStatus.Completed, finishedTurn))
         var workActions by mutableStateOf<WorkActions>(actions)
         composeRule.setContent {
             VettaTheme(ThemeMode.Light) {
-                SessionScreen("s1", sessionState, PromptDraft(), workActions, onOpenHome = {})
+                SessionScreen(sessionId, sessionState, PromptDraft(), workActions, onOpenHome = {})
             }
         }
         composeRule.onNodeWithTag("chat.more").assertDoesNotExist()
@@ -331,6 +332,7 @@ class SessionScreenTest {
                     ),
             )
         composeRule.runOnIdle {
+            sessionId = "s2"
             sessionState = linked
             workActions = reading
         }
