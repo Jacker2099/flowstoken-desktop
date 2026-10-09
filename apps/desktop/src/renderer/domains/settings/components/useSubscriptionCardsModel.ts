@@ -8,7 +8,7 @@ import { useTranslation } from "react-i18next";
 import { recordSettingsUsage } from "./recordSettingsUsage";
 
 /** 官网定价页（升级套餐外链目标） */
-const PRICING_URL = "https://openvetta.com/pricing";
+const PRICING_URL = "https://flowstoken.com/pricing";
 
 export type ModelCost = { cacheRead: number; cacheWrite: number; input: number; output: number };
 export type RemoteModel = {

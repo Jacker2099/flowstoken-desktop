@@ -10,7 +10,9 @@
 		"remoteName": "plugin_workbench",
 		"expose": "./plugin"
 	},
-	"styles": ["dist/style.css"],
+	"styles": [
+		"dist/style.css"
+	],
 	"permissions": [
 		"ui.slot.activity-tab",
 		"ui.slot.input-action",
@@ -24,16 +26,26 @@
 		"fs.read",
 		"fs.write"
 	],
-	"commands": ["node", "npm"],
+	"commands": [
+		"node",
+		"npm"
+	],
 	"agent": {
-		"skillPaths": ["agent/skills"],
+		"skillPaths": [
+			"agent/skills"
+		],
 		"systemPrompt": {
-			"promptPaths": ["agent/prompts/workbench-mode.md"]
+			"promptPaths": [
+				"agent/prompts/workbench-mode.md"
+			]
 		}
 	},
 	"description": "%plugin.description%",
-	"author": "Vetta",
-	"guidingWords": ["%guidingWords.createPlugin%", "%guidingWords.applyPlugin%"],
+	"author": "FlowsToken",
+	"guidingWords": [
+		"%guidingWords.createPlugin%",
+		"%guidingWords.applyPlugin%"
+	],
 	"contributionMode": {
 		"hardIsolation": true
 	}

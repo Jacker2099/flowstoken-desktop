@@ -45,7 +45,7 @@ function emit(
 	message: string,
 	fields: PluginLogFields | undefined,
 ): void {
-	if (!pluginLogSink) throw new Error("Vetta plugin log sink is not installed");
+	if (!pluginLogSink) throw new Error("FlowsToken plugin log sink is not installed");
 	pluginLogSink({
 		level,
 		plugin,

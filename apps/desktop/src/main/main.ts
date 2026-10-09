@@ -519,7 +519,7 @@ if (!gotSingleLock) {
 		if (!app.isPackaged) {
 			const appVersion = getAppVersion();
 			app.setAboutPanelOptions({
-				applicationName: "Vetta",
+				applicationName: "FlowsToken",
 				applicationVersion: appVersion,
 				version: "",
 			});

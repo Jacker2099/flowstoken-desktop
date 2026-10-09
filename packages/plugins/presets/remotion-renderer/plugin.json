@@ -24,13 +24,22 @@
 		"fs.write"
 	],
 	"network": {
-		"allowedHosts": ["127.0.0.1", "localhost"]
+		"allowedHosts": [
+			"127.0.0.1",
+			"localhost"
+		]
 	},
-	"styles": ["dist/style.css"],
-	"commands": ["node"],
+	"styles": [
+		"dist/style.css"
+	],
+	"commands": [
+		"node"
+	],
 	"agent": {
-		"skillPaths": ["agent/skills/remotion-video"]
+		"skillPaths": [
+			"agent/skills/remotion-video"
+		]
 	},
 	"description": "%plugin.description%",
-	"author": "Vetta"
+	"author": "FlowsToken"
 }

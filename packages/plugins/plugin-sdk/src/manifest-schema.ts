@@ -443,7 +443,7 @@ export const PluginManifestSchema = Type.Object(
 	{
 		$id: "PluginManifest",
 		additionalProperties: true,
-		description: "Vetta desktop plugin manifest (plugin.json).",
+		description: "FlowsToken desktop plugin manifest (plugin.json).",
 	},
 );
 

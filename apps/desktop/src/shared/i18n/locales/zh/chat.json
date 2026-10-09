@@ -699,7 +699,8 @@
 			"processing": "处理中…",
 			"waiting": "等待模型响应",
 			"preparing": "正在准备请求",
-			"creatingSession": "正在创建会话"
+			"creatingSession": "正在创建会话",
+			"fallbackName": "Bestoo"
 		},
 		"duration": {
 			"lessThanSecond": "少于1秒",
@@ -960,7 +961,7 @@
 			"sendFeedback": "发送修改意见",
 			"sendFeedbackWithComments": "发送修改意见（{{count}}）",
 			"stepCommentPlaceholder": "这一步要怎么改…",
-			"subtitle": "批准后 Vetta 会按这份计划开始执行；在此之前不会改动任何内容。",
+			"subtitle": "批准后 FlowsToken 会按这份计划开始执行；在此之前不会改动任何内容。",
 			"title": "计划待你批准"
 		},
 		"switchFailed": "无法切换计划模式",

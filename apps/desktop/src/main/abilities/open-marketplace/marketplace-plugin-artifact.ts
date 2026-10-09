@@ -60,7 +60,7 @@ export async function fetchVerifiedMarketplacePluginArtifact(
 				redirect: "follow",
 				headers: {
 					Accept: "application/octet-stream",
-					"User-Agent": "Vetta-Desktop",
+					"User-Agent": "FlowsToken-Desktop",
 				},
 			});
 		} else {
@@ -71,7 +71,7 @@ export async function fetchVerifiedMarketplacePluginArtifact(
 					redirect: "manual",
 					headers: {
 						Accept: "application/octet-stream",
-						"User-Agent": "Vetta-Desktop",
+						"User-Agent": "FlowsToken-Desktop",
 						...(authorization ? { Authorization: authorization } : {}),
 					},
 				});

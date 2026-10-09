@@ -88,7 +88,7 @@ export function ensureAskpassAssets(electronExecutablePath: string): AskpassAsse
 	const scriptPath = join(directory, "askpass.sh");
 	const script = [
 		"#!/bin/sh",
-		"# 由 Vetta 运行时生成。",
+		"# 由 FlowsToken 运行时生成。",
 		`ELECTRON_RUN_AS_NODE=1 exec ${quoteForShell(electronExecutablePath)} ${quoteForShell(entryPath)} "$@"`,
 		"",
 	].join("\n");

@@ -1,4 +1,4 @@
-export const EXTRACT_TEXT_FROM_PDF_TOOL_DESCRIPTION = `Extract text from a PDF (scanned or born-digital) using Vetta Desktop's bundled OCR runner.
+export const EXTRACT_TEXT_FROM_PDF_TOOL_DESCRIPTION = `Extract text from a PDF (scanned or born-digital) using FlowsToken Desktop's bundled OCR runner.
 
 Pages with an embedded text layer are read directly (near-perfect accuracy, milliseconds per page). Pages without a usable text layer fall through to PP-OCRv5 (Chinese + English, ~1-2s per page on a modern machine). All work runs locally — no network calls.
 

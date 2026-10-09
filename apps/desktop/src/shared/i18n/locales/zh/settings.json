@@ -148,12 +148,12 @@
 			"neverSeen": "尚未连接过",
 			"revoke": "解除配对",
 			"desktop": "操作桌面",
-			"emptyHint": "用上方的二维码或连接码，在手机上的 Vetta 里完成配对。"
+			"emptyHint": "用上方的二维码或连接码，在手机上的 FlowsToken 里完成配对。"
 		},
 		"pairing": {
 			"create": "生成二维码",
 			"cancel": "刷新",
-			"qrAlt": "Vetta 手机配对二维码",
+			"qrAlt": "FlowsToken 手机配对二维码",
 			"generating": "正在准备二维码…",
 			"empty": "二维码不可用",
 			"createFailed": "二维码生成失败，请重试。",
@@ -184,7 +184,7 @@
 			"result": {
 				"ok": "可以使用",
 				"noInviteCodes": "可以连接，但版本较旧，不支持连接码配对",
-				"incompatible": "不是兼容的 Vetta 中继",
+				"incompatible": "不是兼容的 FlowsToken 中继",
 				"unreachable": "连接不上这个地址",
 				"invalid": "请输入 wss:// 或 https:// 开头的地址"
 			},
@@ -543,14 +543,14 @@
 		"description": "Git 面板和 Agent 执行 git 命令都依赖它",
 		"missing": "未安装",
 		"installing": "安装中…",
-		"managedSuffix": "Vetta 专用",
+		"managedSuffix": "FlowsToken 专用",
 		"installXcode": "安装",
-		"installManaged": "为 Vetta 安装",
+		"installManaged": "为 FlowsToken 安装",
 		"redetect": "重新检测",
 		"detecting": "检测中…",
 		"xcodeHint": "点「安装」会打开系统的「命令行开发者工具」安装窗口，装好后回到这里点「重新检测」。",
 		"xcodeLaunched": "已打开系统安装窗口。安装完成后点「重新检测」。",
-		"managedHint": "「为 Vetta 安装」只在 Vetta 内生效，不修改系统环境。想在终端或其他软件里也能用 Git，请",
+		"managedHint": "「为 FlowsToken 安装」只在 FlowsToken 内生效，不修改系统环境。想在终端或其他软件里也能用 Git，请",
 		"download": "下载 Git 安装包",
 		"packageManagerHint": "在终端运行下面的命令安装，装好后点「重新检测」。",
 		"packageManagerFallback": "请用系统的包管理器安装 git，装好后点「重新检测」。也可以",

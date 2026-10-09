@@ -24,7 +24,7 @@
 		"fs.read"
 	],
 	"description": "%plugin.description%",
-	"author": "Vetta",
+	"author": "FlowsToken",
 	"defaultLocale": "zh",
 	"guidingWords": []
 }

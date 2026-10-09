@@ -8,8 +8,8 @@ import { CancellationError } from "builder-util-runtime";
 import type { ResolvedUpdateFileInfo } from "electron-updater";
 
 const VERSION_PATTERN = /^[0-9A-Za-z][0-9A-Za-z.+-]{0,63}$/;
-const WINDOWS_EXECUTABLE_NAME = "Vetta.exe";
-const WINDOWS_STORE_DIRECTORY_NAME = "Vetta";
+const WINDOWS_EXECUTABLE_NAME = "FlowsToken.exe";
+const WINDOWS_STORE_DIRECTORY_NAME = "FlowsToken";
 const INSTALL_COMPLETE_FILE_NAME = ".install-complete";
 const PROGRESS_POLL_INTERVAL_MS = 250;
 const INSTALL_VISIBILITY_TIMEOUT_MS = 30_000;

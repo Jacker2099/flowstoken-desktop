@@ -10,8 +10,12 @@
 		"remoteName": "svg_viewer",
 		"expose": "./plugin"
 	},
-	"styles": ["dist/style.css"],
-	"permissions": ["ui.slot.file-preview"],
+	"styles": [
+		"dist/style.css"
+	],
+	"permissions": [
+		"ui.slot.file-preview"
+	],
 	"description": "%plugin.description%",
-	"author": "Vetta"
+	"author": "FlowsToken"
 }

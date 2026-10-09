@@ -8,7 +8,9 @@
 		"remoteName": "mobile_ui_preview",
 		"expose": "./plugin"
 	},
-	"styles": ["dist/style.css"],
+	"styles": [
+		"dist/style.css"
+	],
 	"permissions": [
 		"ui.slot.activity-tab",
 		"agent.session.read",
@@ -18,9 +20,11 @@
 		"workspace.read"
 	],
 	"agent": {
-		"skillPaths": ["agent/skills/mobile-ui-design"]
+		"skillPaths": [
+			"agent/skills/mobile-ui-design"
+		]
 	},
 	"defaultLocale": "zh",
 	"description": "%plugin.description%",
-	"author": "Vetta"
+	"author": "FlowsToken"
 }

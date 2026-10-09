@@ -143,7 +143,7 @@ function configureLogger(logger: ElectronLogger, type: AppLogType): void {
 	if (logger.transports.ipc) {
 		logger.transports.ipc.level = false;
 	}
-	logger.transports.file.setAppName("Vetta");
+	logger.transports.file.setAppName("FlowsToken");
 	// 角色化文件名：GUI 不带后缀（保持 `<日期>.log`），sidecar/CLI 带 role+pid，
 	// 不再与主进程共写同一文件，消除并发追加与归档 rename 的竞态。
 	logger.transports.file.fileName = `${type}${FILE_SUFFIX}.log`;

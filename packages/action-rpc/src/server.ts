@@ -77,7 +77,7 @@ async function dispatch(
 		});
 	}
 	if (!runtime.debug) {
-		throw new ActionRpcError("DEBUG_NOT_AVAILABLE", "Vetta Debug is only available in development mode.");
+		throw new ActionRpcError("DEBUG_NOT_AVAILABLE", "FlowsToken Debug is only available in development mode.");
 	}
 	if (request.method === "debug.search") {
 		return await runtime.debug.search({

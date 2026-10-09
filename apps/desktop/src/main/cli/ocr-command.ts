@@ -68,7 +68,7 @@ export interface OcrCliResponse {
 	};
 }
 
-const HELP_TEXT = `Vetta OCR command line interface
+const HELP_TEXT = `FlowsToken OCR command line interface
 
 Usage:
   Vetta.exe --ocr-pdf <input.pdf>   --output <output.json> [pdf options]
@@ -77,7 +77,7 @@ Usage:
   Vetta.exe ocr img <input.image>   --output <output.json> [img options]
 
 Description:
-  Run local OCR on a multi-page PDF using Vetta Desktop's bundled Electron
+  Run local OCR on a multi-page PDF using FlowsToken Desktop's bundled Electron
   renderer plus an in-process Tesseract.js pipeline. No network calls.
 
   By default, pages with an embedded text layer are extracted directly

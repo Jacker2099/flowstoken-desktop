@@ -1,4 +1,4 @@
-export const EXTRACT_TEXT_FROM_IMAGE_TOOL_DESCRIPTION = `Extract text from an image (PNG / JPG / WebP / BMP / GIF) using Vetta Desktop's local PP-OCRv5 runner.
+export const EXTRACT_TEXT_FROM_IMAGE_TOOL_DESCRIPTION = `Extract text from an image (PNG / JPG / WebP / BMP / GIF) using FlowsToken Desktop's local PP-OCRv5 runner.
 
 Runs entirely locally — no network calls. Designed for screenshots, scanned single pages, photographed documents.
 

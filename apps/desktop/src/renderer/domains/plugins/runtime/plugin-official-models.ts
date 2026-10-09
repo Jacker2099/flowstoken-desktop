@@ -59,7 +59,7 @@ function readRemoteProviders(): PluginOfficialProviderSummary[] {
 			{
 				id,
 				// 与宿主选择器同一套兜底：远程目录没给显示名时，vetta-go 有专名，其余回落 provider id。
-				displayName: entry.displayName ?? (id === "vetta-go" ? "Vetta Go" : id),
+				displayName: entry.displayName ?? (id === "vetta-go" ? "FlowsToken Go" : id),
 				...(entry.baseUrl ? { baseUrl: entry.baseUrl } : {}),
 				...(entry.api ? { api: entry.api } : {}),
 				...(entry.icon ? { icon: entry.icon } : {}),

@@ -67,8 +67,8 @@ async function findVettaExecutable(
 	const candidates =
 		options.platform === "win32"
 			? [
-					nodePath.join(options.environment.LOCALAPPDATA ?? "", "Programs", "Vetta", "Vetta.exe"),
-					nodePath.join(options.environment.ProgramFiles ?? "C:\\Program Files", "Vetta", "Vetta.exe"),
+					nodePath.join(options.environment.LOCALAPPDATA ?? "", "Programs", "FlowsToken", "FlowsToken.exe"),
+					nodePath.join(options.environment.ProgramFiles ?? "C:\\Program Files", "FlowsToken", "FlowsToken.exe"),
 				]
 			: ["/Applications/Vetta.app/Contents/MacOS/Vetta", "/usr/local/bin/vetta-desktop"];
 	for (const candidate of candidates) {
