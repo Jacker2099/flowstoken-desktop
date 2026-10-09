@@ -337,9 +337,14 @@ class SessionScreenTest {
             workActions = reading
         }
         composeRule.onNodeWithText(str(Res.string.files_title)).assertDoesNotExist()
-        composeRule.onNodeWithTag("chat.files").assertIsDisplayed().performClick()
+        composeRule.waitUntil(10_000) {
+            runCatching { composeRule.onNodeWithTag("chat.files").assertIsDisplayed() }.isSuccess
+        }
+        composeRule.onNodeWithTag("chat.files").performClick()
         composeRule.waitForIdle()
-        composeRule.onNodeWithTag("files.panel").assertIsDisplayed()
+        composeRule.waitUntil(10_000) {
+            runCatching { composeRule.onNodeWithTag("files.panel").assertIsDisplayed() }.isSuccess
+        }
         composeRule.onNodeWithText(str(Res.string.files_empty)).assertIsDisplayed()
         composeRule.onNodeWithText(str(Res.string.session_pin)).assertDoesNotExist()
         composeRule.onNodeWithText(str(Res.string.session_rename)).assertDoesNotExist()

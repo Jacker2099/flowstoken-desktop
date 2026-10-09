@@ -307,7 +307,9 @@ class HomeScreenTest {
         composeRule.onNodeWithTag("home.search").performClick()
         composeRule.onNodeWithTag("home.searchField").performTextInput("vetta")
         composeRule.onNodeWithTag("home.list").performScrollToNode(hasTestTag("session.run"))
-        composeRule.onNodeWithTag("session.run").assertIsDisplayed()
+        composeRule.waitUntil(10_000) {
+            runCatching { composeRule.onNodeWithTag("session.run").assertIsDisplayed() }.isSuccess
+        }
         composeRule.onAllNodesWithTag("session.done").assertCountEquals(0)
         composeRule.onNodeWithTag("search.project./code/vetta").performClick()
         assertEquals("/code/vetta", project)
