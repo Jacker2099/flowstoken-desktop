@@ -79,6 +79,7 @@ import org.vetta.android.domain.work.SkillTokens
 import org.vetta.android.domain.work.TurnSegment
 import org.vetta.android.domain.work.WorkStep
 import org.vetta.android.resources.Res
+import org.vetta.android.resources.chat_assistant_name
 import org.vetta.android.resources.chat_duration_ms
 import org.vetta.android.resources.chat_steps_done
 import org.vetta.android.resources.chat_thinking
@@ -170,7 +171,7 @@ fun AgentTurnView(turn: AgentTurn, note: String?) {
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             BotAvatar(size = 22.dp)
-            Text("Vetta", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            Text(stringResource(Res.string.chat_assistant_name), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
             turn.startedAt?.let {
                 Text(relativeTimeLabel(it), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.vettaExtra.secondaryText)
             }

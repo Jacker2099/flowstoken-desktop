@@ -10,3 +10,8 @@ captures
 .externalNativeBuild
 .cxx
 node_modules/
+
+# FlowsToken release signing (never committed)
+keystore.properties
+*.jks
+*.keystore

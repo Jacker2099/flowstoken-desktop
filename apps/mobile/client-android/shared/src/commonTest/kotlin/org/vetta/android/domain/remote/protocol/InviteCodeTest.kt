@@ -24,10 +24,12 @@ class InviteCodeTest {
     @Test
     fun readsTheQrCodeTheDesktopShows() {
         // Pinned in packages/remote-control/test/invite-code.test.ts.
+        assertEquals(InviteCode.Qr("K7Q29MXD", "482913"), InviteCode.parseQr("FLOWSTOKEN://PAIR/K7Q29MXD/482913"))
+        // The prefix older builds printed is still accepted.
         assertEquals(InviteCode.Qr("K7Q29MXD", "482913"), InviteCode.parseQr("VETTA://PAIR/K7Q29MXD/482913"))
         assertEquals(
             InviteCode.Qr("K7Q29MXD", "482913", "wss://relay.mine.test"),
-            InviteCode.parseQr("VETTA://PAIR/K7Q29MXD/482913?relay=wss%3A%2F%2Frelay.mine.test"),
+            InviteCode.parseQr("FLOWSTOKEN://PAIR/K7Q29MXD/482913?relay=wss%3A%2F%2Frelay.mine.test"),
         )
         assertEquals(InviteCode.Qr("K7Q29MXD", "482913"), InviteCode.parseQr(" vetta://pair/k7q2-9mxd/482913 "))
         assertNull(InviteCode.parseQr("vetta://pair?v=2&id=abc"), "a whole pairing link is left to parsePairingInvite")

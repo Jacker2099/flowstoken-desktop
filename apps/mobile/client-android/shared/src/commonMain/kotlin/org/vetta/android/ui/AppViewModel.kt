@@ -172,7 +172,7 @@ class AppViewModel(
         _state.update { it.copy(showPairing = false, pairingError = null) }
     }
 
-    /** A `vetta://pair` link from outside the app: checked before anything goes on the network. */
+    /** A `flowstoken://pair` (or legacy `vetta://pair`) link from outside the app: checked before anything goes on the network. */
     fun handlePairingInvite(target: String) {
         _state.update { it.copy(showPairing = true) }
         if (InviteCode.parseQr(target) == null && parsePairingInvite(target) == null) {
