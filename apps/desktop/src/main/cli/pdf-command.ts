@@ -29,7 +29,7 @@ export interface PdfCliResponse {
 	};
 }
 
-const HELP_TEXT = `Vetta PDF command line interface
+const HELP_TEXT = `FlowsToken PDF command line interface
 
 Usage:
   Vetta.exe --html-to-pdf <input.html> --output <output.pdf> [options]
@@ -38,7 +38,7 @@ Usage:
   Vetta.exe pdf --help
 
 Description:
-  Convert an HTML file to PDF using Vetta Desktop's bundled Electron Chromium
+  Convert an HTML file to PDF using FlowsToken Desktop's bundled Electron Chromium
   renderer. This does not require Google Chrome or Microsoft Edge to be
   installed on the user machine.
 

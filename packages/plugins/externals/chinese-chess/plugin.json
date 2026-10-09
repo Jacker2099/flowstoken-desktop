@@ -10,7 +10,9 @@
 		"remoteName": "chinese_chess",
 		"expose": "./plugin"
 	},
-	"styles": ["dist/style.css"],
+	"styles": [
+		"dist/style.css"
+	],
 	"permissions": [
 		"ui.slot.workspace-view",
 		"storage.read",
@@ -19,5 +21,5 @@
 		"ai.models.list"
 	],
 	"description": "%plugin.description%",
-	"author": "Vetta"
+	"author": "FlowsToken"
 }

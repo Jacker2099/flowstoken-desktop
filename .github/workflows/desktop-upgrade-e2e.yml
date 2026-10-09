@@ -54,10 +54,16 @@ jobs:
       - name: Install dependencies
         uses: ./.github/actions/install-bun-dependencies
 
+      - name: Install FUSE for AppImage launch
+        if: matrix.platform == 'linux'
+        run: sudo apt-get update -q && (sudo apt-get install -y --no-install-recommends libfuse2t64 || sudo apt-get install -y --no-install-recommends libfuse2)
+
       - name: Run real install, update, quit, restart and version check
         working-directory: apps/desktop
         env:
           VETTA_DESKTOP_UPGRADE_URL: ${{ inputs.update_url || vars.VETTA_UPDATE_URL_TEST }}
+          VETTA_PRODUCT_NAME: FlowsToken
+          VETTA_EXECUTABLE_NAME: FlowsToken
           VETTA_DESKTOP_UPGRADE_BASELINE: ${{ inputs.baseline_version }}
           VETTA_DESKTOP_UPGRADE_CANDIDATE: ${{ inputs.candidate_version }}
           VETTA_DESKTOP_UPGRADE_WORKDIR: ${{ runner.temp }}
@@ -80,7 +86,9 @@ jobs:
           retention-days: 14
           path: |
             ${{ runner.temp }}/vetta-upgrade-e2e-*/desktop.log
-            ${{ runner.temp }}/vetta-upgrade-e2e-*/desktop-upgrade-e2e.json
+            ${{ runner.temp }}/vetta-upgrade-e2e-*/home/desktop-upgrade-e2e.json
+            ${{ runner.temp }}/vetta-upgrade-e2e-*/inno-install.log
+            ${{ runner.temp }}/vetta-upgrade-e2e-*/inno-progress.txt
 
       - name: Write test-channel upgrade summary
         if: always()
@@ -94,9 +102,9 @@ jobs:
             echo ""
             echo "| Key | Value |"
             echo "| --- | --- |"
-            echo "| platform | `${{ matrix.platform }}` |"
-            echo "| baseline | `${{ inputs.baseline_version }}` |"
-            echo "| candidate | `${{ inputs.candidate_version }}` |"
-            echo "| feed | `${SUMMARY_FEED}` |"
+            echo "| platform | \`${{ matrix.platform }}\` |"
+            echo "| baseline | \`${{ inputs.baseline_version }}\` |"
+            echo "| candidate | \`${{ inputs.candidate_version }}\` |"
+            echo "| feed | \`${SUMMARY_FEED}\` |"
             if [[ -n "${SUMMARY_NOTES}" ]]; then echo "| notes | ${SUMMARY_NOTES} |"; fi
           } >> "${GITHUB_STEP_SUMMARY}"

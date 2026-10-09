@@ -52,6 +52,7 @@ export function getWindowsSensitiveDenyRoots(env: HostEnvironment | undefined = 
 			join(homeDir, ".docker"),
 			appData ? join(appData, "gcloud") : undefined,
 			appData ? join(appData, "Vetta") : undefined,
+			appData ? join(appData, "FlowsToken") : undefined,
 			join(homeDir, getVettaConfigDirName(), "agent"),
 			join(homeDir, ".pi"),
 		]),

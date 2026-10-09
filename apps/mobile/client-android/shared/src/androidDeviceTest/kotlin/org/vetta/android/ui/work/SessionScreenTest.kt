@@ -1,12 +1,12 @@
 package org.vetta.android.ui.work
 
-import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -16,12 +16,15 @@ import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeDown
+import androidx.test.espresso.Espresso
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Rule
 import org.junit.runner.RunWith
 import org.vetta.android.app.ThemeMode
 import org.vetta.android.domain.remote.AssistantTurn
+import org.vetta.android.domain.remote.RemoteDeviceStatus
+import org.vetta.android.domain.remote.RemoteFileEntry
+import org.vetta.android.domain.remote.RemoteFileInfo
 import org.vetta.android.domain.remote.RemoteModelOption
 import org.vetta.android.domain.remote.RemoteQuestionAnswer
 import org.vetta.android.domain.remote.RemoteSessionState
@@ -36,23 +39,41 @@ import org.vetta.android.domain.remote.TranscriptItem
 import org.vetta.android.domain.remote.TranscriptState
 import org.vetta.android.domain.remote.link.LinkSnapshot
 import org.vetta.android.domain.remote.link.LinkStatus
+import org.vetta.android.domain.work.FileContent
 import org.vetta.android.domain.work.MirrorState
 import org.vetta.android.domain.work.ModelChoice
 import org.vetta.android.domain.work.PromptDraft
 import org.vetta.android.resources.Res
 import org.vetta.android.resources.chat_question_title
 import org.vetta.android.resources.chat_model
+import org.vetta.android.resources.chat_resync
 import org.vetta.android.resources.chat_steps_done
+import org.vetta.android.resources.files_empty
+import org.vetta.android.resources.files_title
+import org.vetta.android.resources.session_pin
+import org.vetta.android.resources.session_rename
 import org.vetta.android.ui.str
-import org.vetta.android.ui.captureDeviceTestFailure
 import org.vetta.android.ui.theme.VettaTheme
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 @RunWith(AndroidJUnit4::class)
 class SessionScreenTest {
     @get:Rule
     val composeRule = createAndroidComposeRule<ComponentActivity>()
+
+    private fun buttonIsLeftOf(leftTag: String, rightTag: String): Boolean {
+        val left = composeRule.onNodeWithTag(leftTag).getUnclippedBoundsInRoot()
+        val right = composeRule.onNodeWithTag(rightTag).getUnclippedBoundsInRoot()
+        return left.right <= right.left
+    }
+
+    private fun buttonIsInside(innerTag: String, outerTag: String): Boolean {
+        val inner = composeRule.onNodeWithTag(innerTag).getUnclippedBoundsInRoot()
+        val outer = composeRule.onNodeWithTag(outerTag).getUnclippedBoundsInRoot()
+        return inner.left >= outer.left && inner.right <= outer.right && inner.top >= outer.top && inner.bottom <= outer.bottom
+    }
 
     private class RecordingActions : WorkActions {
         val calls = mutableListOf<String>()
@@ -156,41 +177,40 @@ class SessionScreenTest {
 
     @Test
     fun sendsWhatIsTypedAndStopsARunningTurn() {
-        val activity = composeRule.activity
-        try {
-            InstrumentationRegistry.getInstrumentation().runOnMainSync {
-                // Match MainActivity's manifest; a bare ComponentActivity otherwise pans for the IME.
-                activity.window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
-            }
-            val actions = RecordingActions()
-            var current by mutableStateOf(state(RemoteSessionStatus.Completed, finishedTurn))
-            // What the composer holds, fed back into the screen as the view model would.
-            var typed by mutableStateOf(PromptDraft())
-            val typing =
-                object : WorkActions by actions {
-                    override fun setDraft(sessionId: String, draft: PromptDraft) {
-                        typed = draft
-                    }
-                }
-            composeRule.setContent {
-                VettaTheme(ThemeMode.Light) {
-                    SessionScreen("s1", current, typed, typing, onOpenHome = {})
+        val actions = RecordingActions()
+        var current by mutableStateOf(state(RemoteSessionStatus.Completed, finishedTurn))
+        // What the composer holds, fed back into the screen as the view model would.
+        var typed by mutableStateOf(PromptDraft())
+        val typing =
+            object : WorkActions by actions {
+                override fun setDraft(sessionId: String, draft: PromptDraft) {
+                    typed = draft
                 }
             }
-            composeRule.onNodeWithTag("composer.field").performTextInput("再写一份月报")
-            composeRule.onNodeWithTag("composer.send").performClick()
-            assertEquals("send s1 再写一份月报", actions.calls.last())
-
-            current = state(RemoteSessionStatus.Running, finishedTurn)
-            composeRule.onNodeWithTag("composer.stop").assertIsDisplayed()
-            composeRule.onNodeWithTag("composer.stop").performClick()
-            assertEquals("stop s1", actions.calls.last())
-            composeRule.onNodeWithTag("turn.status").assertIsDisplayed()
-        } catch (failure: Throwable) {
-            // Capture before the Compose/Activity rules tear down the failed window.
-            captureDeviceTestFailure(activity, "SessionScreenTest.sendsWhatIsTypedAndStopsARunningTurn", failure)
-            throw failure
+        composeRule.setContent {
+            VettaTheme(ThemeMode.Light) {
+                SessionScreen("s1", current, typed, typing, onOpenHome = {})
+            }
         }
+        composeRule.onNodeWithTag("composer.field").performTextInput("再写一份月报")
+        assertTrue(buttonIsInside("composer.attach", "composer.box"), "attach sits inside the field")
+        assertTrue(buttonIsLeftOf("composer.attach", "composer.field"), "attach sits to the left of the text")
+        assertTrue(buttonIsInside("composer.voice", "composer.box"), "voice sits inside the field")
+        assertTrue(buttonIsLeftOf("composer.field", "composer.voice"), "voice sits to the right of the text")
+        assertTrue(buttonIsLeftOf("composer.box", "composer.send"), "send sits to the right of the field")
+        composeRule.onNodeWithTag("composer.send").performClick()
+        assertEquals("send s1 再写一份月报", actions.calls.last())
+
+        // The bare test activity pans for the keyboard, which the app itself does not.
+        Espresso.closeSoftKeyboard()
+        current = state(RemoteSessionStatus.Running, finishedTurn)
+        composeRule.waitForIdle()
+        assertTrue(buttonIsInside("composer.attach", "composer.box"), "attach stays inside the field")
+        assertTrue(buttonIsInside("composer.voice", "composer.box"), "voice stays inside the field")
+        assertTrue(buttonIsLeftOf("composer.box", "composer.stop"), "stop sits to the right of the field")
+        composeRule.onNodeWithTag("composer.stop").performClick()
+        assertEquals("stop s1", actions.calls.last())
+        composeRule.onNodeWithTag("turn.status").assertIsDisplayed()
     }
 
     @Test
@@ -272,6 +292,54 @@ class SessionScreenTest {
         composeRule.onNodeWithTag("question.otherField").performTextInput("设计")
         composeRule.onNodeWithTag("question.submit").performClick()
         assertEquals("respond s1 q1 继续吗？=继续, 通知谁？=测试+设计 false", actions.calls.last())
+    }
+
+    @Test
+    fun headerOpensFilesAndNoLongerOffersPinRenameOrRefresh() {
+        val actions = RecordingActions()
+        composeRule.setContent {
+            VettaTheme(ThemeMode.Light) {
+                SessionScreen("s1", state(RemoteSessionStatus.Completed, finishedTurn), PromptDraft(), actions, onOpenHome = {})
+            }
+        }
+        composeRule.onNodeWithTag("chat.more").assertDoesNotExist()
+        composeRule.onNodeWithTag("chat.files").assertDoesNotExist()
+        composeRule.onNodeWithText(str(Res.string.session_pin)).assertDoesNotExist()
+        composeRule.onNodeWithText(str(Res.string.session_rename)).assertDoesNotExist()
+        composeRule.onNodeWithText(str(Res.string.chat_resync)).assertDoesNotExist()
+
+        val reading =
+            object : WorkActions by actions {
+                override fun files(sessionId: String): FileSource =
+                    object : FileSource {
+                        override suspend fun list(path: String): List<RemoteFileEntry> = emptyList()
+
+                        override suspend fun stat(href: String): RemoteFileInfo = error("not used")
+
+                        override suspend fun read(info: RemoteFileInfo): FileContent = error("not used")
+                    }
+            }
+        val linked =
+            state(RemoteSessionStatus.Completed, finishedTurn).copy(
+                link =
+                    LinkSnapshot(
+                        LinkStatus.Online,
+                        peerOnline = true,
+                        desktop = RemoteDeviceStatus("desk", null, emptyList(), false, 0),
+                    ),
+            )
+        composeRule.setContent {
+            VettaTheme(ThemeMode.Light) {
+                SessionScreen("s1", linked, PromptDraft(), reading, onOpenHome = {})
+            }
+        }
+        composeRule.onNodeWithText(str(Res.string.files_title)).assertDoesNotExist()
+        composeRule.onNodeWithTag("chat.files").assertIsDisplayed().performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("files.panel").assertIsDisplayed()
+        composeRule.onNodeWithText(str(Res.string.files_empty)).assertIsDisplayed()
+        composeRule.onNodeWithText(str(Res.string.session_pin)).assertDoesNotExist()
+        composeRule.onNodeWithText(str(Res.string.session_rename)).assertDoesNotExist()
     }
 
     @Test

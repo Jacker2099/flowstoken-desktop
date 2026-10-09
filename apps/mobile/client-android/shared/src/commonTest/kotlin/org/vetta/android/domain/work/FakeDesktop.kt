@@ -101,7 +101,7 @@ class FakeDesktop(private val scope: CoroutineScope) {
 
     fun invite(name: String = "MacBook Pro", relay: String? = "wss://relay.example", lan: List<String> = emptyList()): String =
         buildString {
-            append("vetta://pair?v=2&id=$PAIRING_ID&s=$MOBILE_SECRET&k=$identityKey&n=")
+            append("flowstoken://pair?v=2&id=$PAIRING_ID&s=$MOBILE_SECRET&k=$identityKey&n=")
             append(URLEncoder.encode(name, "UTF-8"))
             if (relay != null) append("&relay=").append(URLEncoder.encode(relay, "UTF-8"))
             if (lan.isNotEmpty()) append("&lan=").append(URLEncoder.encode(lan.joinToString(","), "UTF-8"))

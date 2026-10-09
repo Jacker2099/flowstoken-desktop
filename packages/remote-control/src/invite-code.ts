@@ -86,7 +86,9 @@ export interface InviteQr {
 	readonly relayBaseUrl?: string;
 }
 
-const INVITE_QR_PREFIX = "VETTA://PAIR/";
+const INVITE_QR_PREFIX = "FLOWSTOKEN://PAIR/";
+/** 旧版二维码前缀，扫描端同样接受。 */
+const LEGACY_INVITE_QR_PREFIX = "VETTA://PAIR/";
 
 export function buildInviteQr(invite: InviteQr): string {
 	const text = `${INVITE_QR_PREFIX}${invite.code}/${invite.password}`;
@@ -96,8 +98,10 @@ export function buildInviteQr(invite: InviteQr): string {
 /** The code, password and relay in a scanned invite QR code, or undefined for any other text. */
 export function parseInviteQr(text: string): InviteQr | undefined {
 	const trimmed = text.trim();
-	if (trimmed.slice(0, INVITE_QR_PREFIX.length).toUpperCase() !== INVITE_QR_PREFIX) return undefined;
-	const [path = "", query = ""] = trimmed.slice(INVITE_QR_PREFIX.length).split("?", 2);
+	const upper = trimmed.toUpperCase();
+	const prefix = [INVITE_QR_PREFIX, LEGACY_INVITE_QR_PREFIX].find((p) => upper.startsWith(p));
+	if (!prefix) return undefined;
+	const [path = "", query = ""] = trimmed.slice(prefix.length).split("?", 2);
 	const [rawCode = "", password = "", ...rest] = path.split("/");
 	const code = normalizeInviteCode(rawCode);
 	if (!code || rest.length > 0 || !isValidInvitePassword(password)) return undefined;

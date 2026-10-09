@@ -10,10 +10,17 @@
 		"remoteName": "chart_renderer",
 		"expose": "./plugin"
 	},
-	"styles": ["dist/style.css"],
-	"permissions": ["ui.slot.tool-call", "agent.skills.control", "agent.tools.register", "agent.toolHandler.execute"],
+	"styles": [
+		"dist/style.css"
+	],
+	"permissions": [
+		"ui.slot.tool-call",
+		"agent.skills.control",
+		"agent.tools.register",
+		"agent.toolHandler.execute"
+	],
 	"description": "%plugin.description%",
-	"author": "Vetta",
+	"author": "FlowsToken",
 	"guidingWords": [
 		"%guiding.chart%",
 		"%guiding.bar%",
@@ -22,6 +29,8 @@
 		"%guiding.dataviz%"
 	],
 	"agent": {
-		"skillPaths": ["skills/"]
+		"skillPaths": [
+			"skills/"
+		]
 	}
 }

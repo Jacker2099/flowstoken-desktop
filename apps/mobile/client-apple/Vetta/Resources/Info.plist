@@ -4,12 +4,12 @@
 <dict>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
-		<string>com.openvetta.mobile.refresh</string>
+		<string>com.flowstoken.mobile.refresh</string>
 	</array>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-	<string>Vetta</string>
+	<string>FlowsToken</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -26,9 +26,10 @@
 	<array>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>com.openvetta.mobile.pair</string>
+			<string>com.flowstoken.mobile.pair</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
+				<string>flowstoken</string>
 				<string>vetta</string>
 			</array>
 		</dict>
@@ -49,15 +50,15 @@
 		<string>_vetta._tcp</string>
 	</array>
 	<key>NSCameraUsageDescription</key>
-	<string>Vetta uses the camera to scan the pairing code on your computer and to take photos you send.</string>
+	<string>FlowsToken uses the camera to scan the pairing code on your computer and to take photos you send.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Vetta needs local network access to connect directly to your computer on the same Wi-Fi.</string>
+	<string>FlowsToken needs local network access to connect directly to your computer on the same Wi-Fi.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Vetta uses the microphone while you hold the message field to dictate.</string>
+	<string>FlowsToken uses the microphone while you hold the message field to dictate.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Vetta shows your latest photos in the attach sheet so you can send one with a tap.</string>
+	<string>FlowsToken shows your latest photos in the attach sheet so you can send one with a tap.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Vetta turns what you say into text for your message.</string>
+	<string>FlowsToken turns what you say into text for your message.</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>

@@ -8,7 +8,9 @@
 		"remoteName": "security_probe",
 		"expose": "./plugin"
 	},
-	"styles": ["dist/style.css"],
+	"styles": [
+		"dist/style.css"
+	],
 	"permissions": [
 		"ui.slot.global",
 		"ui.slot.activity-tab",
@@ -24,10 +26,17 @@
 		"shell.openExternal"
 	],
 	"network": {
-		"allowedHosts": ["localhost", "127.0.0.1", "::1", "example.com"]
+		"allowedHosts": [
+			"localhost",
+			"127.0.0.1",
+			"::1",
+			"example.com"
+		]
 	},
-	"commands": ["node"],
+	"commands": [
+		"node"
+	],
 	"defaultLocale": "zh",
 	"description": "%plugin.description%",
-	"author": "Vetta Security"
+	"author": "FlowsToken Security"
 }

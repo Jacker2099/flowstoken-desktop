@@ -10,8 +10,13 @@
 		"remoteName": "media_viewer",
 		"expose": "./plugin"
 	},
-	"styles": ["dist/style.css"],
-	"permissions": ["ui.slot.file-preview", "ui.shortcuts.register"],
+	"styles": [
+		"dist/style.css"
+	],
+	"permissions": [
+		"ui.slot.file-preview",
+		"ui.shortcuts.register"
+	],
 	"description": "%plugin.description%",
-	"author": "Vetta"
+	"author": "FlowsToken"
 }

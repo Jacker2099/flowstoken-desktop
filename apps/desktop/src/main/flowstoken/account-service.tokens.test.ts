@@ -359,6 +359,22 @@ it("hot-adds an authorized server group once without login, preserving the saved
 	expect(state.tokens[0].name).toBe(managedTokenName("Research-X"));
 });
 
+it("lets the catalog override managed model specs while keeping fields the catalog omits", async () => {
+	state.catalog = dynamicCatalog();
+	const catalogModel = state.catalog.groups[0]!.vendors[0]!.models[0]!;
+	catalogModel.contextWindow = 200_000;
+	catalogModel.maxTokens = 24_000;
+	state.config.providers["flowstoken-default"] = {
+		...state.config.providers["flowstoken-default"],
+		models: [{ id: "existing-chat", name: "Existing", contextWindow: 250_000, maxTokens: 8_000 }],
+	};
+	await refreshAuth(getFlowstokenSession());
+	await getCatalogAndRefreshProviders({ force: true });
+	expect(state.config.providers["flowstoken-default"].models).toEqual([
+		expect.objectContaining({ id: "existing-chat", contextWindow: 200_000, maxTokens: 24_000 }),
+	]);
+});
+
 it("does not grant a public catalog group or create its token when the account API denies it", async () => {
 	state.catalog = dynamicCatalog();
 	state.tokens = [];

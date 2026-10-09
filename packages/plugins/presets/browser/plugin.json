@@ -10,7 +10,9 @@
 		"remoteName": "browser",
 		"expose": "./plugin"
 	},
-	"styles": ["dist/style.css"],
+	"styles": [
+		"dist/style.css"
+	],
 	"permissions": [
 		"ui.slot.workspace-view",
 		"agent.skills.control",
@@ -19,11 +21,15 @@
 		"shell.openExternal"
 	],
 	"browser": {
-		"allowedHosts": ["*"]
+		"allowedHosts": [
+			"*"
+		]
 	},
 	"agent": {
-		"skillPaths": ["agent/skills/browser-use"]
+		"skillPaths": [
+			"agent/skills/browser-use"
+		]
 	},
 	"description": "%plugin.description%",
-	"author": "Vetta"
+	"author": "FlowsToken"
 }

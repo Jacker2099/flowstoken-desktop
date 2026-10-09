@@ -27,6 +27,12 @@ class PairingInviteTest {
     }
 
     @Test
+    fun stillAcceptsTheLegacyVettaScheme() {
+        val invite = requireNotNull(parsePairingInvite(INVITE.replace("flowstoken://", "vetta://")))
+        assertEquals("pair-1234567890abcdef", invite.pairingId)
+    }
+
+    @Test
     fun rejectsV1MalformedKeysAndInvalidEndpoints() {
         assertNull(parsePairingInvite(INVITE.replace("v=2", "v=1")))
         assertNull(parsePairingInvite(INVITE.replace(DESKTOP_IDENTITY_PUBLIC, "short")))
@@ -37,6 +43,6 @@ class PairingInviteTest {
     private companion object {
         const val DESKTOP_IDENTITY_PUBLIC = "V-U_7B2yLhcIrcj6dteUYQTZpeC-YvqqG-h-d--vWyI"
         const val INVITE =
-            "vetta://pair?v=2&id=pair-1234567890abcdef&s=secret-1234567890abcdef&k=$DESKTOP_IDENTITY_PUBLIC&n=Jane%27s+MacBook+Pro&lan=192.168.1.20%3A43117&relay=https%3A%2F%2Frelay.example%2F"
+            "flowstoken://pair?v=2&id=pair-1234567890abcdef&s=secret-1234567890abcdef&k=$DESKTOP_IDENTITY_PUBLIC&n=Jane%27s+MacBook+Pro&lan=192.168.1.20%3A43117&relay=https%3A%2F%2Frelay.example%2F"
     }
 }

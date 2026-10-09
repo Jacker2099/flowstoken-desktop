@@ -22,7 +22,7 @@
 		]
 	},
 	"description": "%plugin.description%",
-	"author": "Vetta",
+	"author": "FlowsToken",
 	"defaultLocale": "zh",
 	"styles": [
 		"dist/style.css"

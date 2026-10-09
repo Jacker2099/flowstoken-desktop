@@ -193,8 +193,10 @@ struct RootView: View {
 				if model.paired { router.show(sessionId) }
 				return
 			}
-			// Case-blind: a code-only QR code is upper case (ADR-0138).
-			guard url.scheme?.lowercased() == PairingURI.scheme, url.host?.lowercased() == PairingURI.host else { return }
+			// Case-blind: a code-only QR code is upper case (ADR-0138). Legacy vetta:// links keep working.
+			let scheme = url.scheme?.lowercased() ?? ""
+			guard scheme == PairingURI.scheme || PairingURI.legacySchemes.contains(scheme),
+			      url.host?.lowercased() == PairingURI.host else { return }
 			Task {
 				if await model.pairWithCode(url.absoluteString) {
 					router.showPairing = false

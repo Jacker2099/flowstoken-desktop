@@ -24,7 +24,7 @@ android {
     compileSdk = libs.versions.android.compileSdk.get().toInt()
 
     defaultConfig {
-        applicationId = "org.vetta.android"
+        applicationId = "com.flowstoken.mobile"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         versionCode = 1
@@ -35,6 +35,19 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+    signingConfigs {
+        // Release signing is local-only: copy keystore.properties.example to
+        // keystore.properties (git-ignored) and fill in the FlowsToken upload key.
+        create("release") {
+            val props = java.util.Properties()
+            val file = rootProject.file("keystore.properties")
+            if (file.exists()) file.inputStream().use { props.load(it) }
+            storeFile = props.getProperty("storeFile")?.let { rootProject.file(it) }
+            storePassword = props.getProperty("storePassword")
+            keyAlias = props.getProperty("keyAlias")
+            keyPassword = props.getProperty("keyPassword")
+        }
+    }
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -42,6 +55,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            if (rootProject.file("keystore.properties").exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
     compileOptions {

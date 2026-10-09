@@ -9,8 +9,11 @@
 		"remoteName": "vetta_actions",
 		"expose": "./plugin"
 	},
-	"permissions": ["app.actions.register", "app.actionHandler.execute"],
+	"permissions": [
+		"app.actions.register",
+		"app.actionHandler.execute"
+	],
 	"description": "%plugin.description%",
-	"author": "Vetta",
+	"author": "FlowsToken",
 	"defaultLocale": "zh"
 }

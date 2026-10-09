@@ -22,10 +22,16 @@ const invite = {
 } as const;
 
 describe("pairing uri", () => {
-	it("round-trips an invite through the vetta://pair link", () => {
+	it("round-trips an invite through the flowstoken://pair link", () => {
 		const uri = buildPairingUri(invite);
-		expect(uri.startsWith("vetta://pair?")).toBe(true);
+		expect(uri.startsWith("flowstoken://pair?")).toBe(true);
 		expect(parsePairingUri(uri)).toEqual(invite);
+	});
+
+	it("still accepts pairing links emitted as vetta:// by older builds", () => {
+		const legacy = buildPairingUri(invite).replace("flowstoken://", "vetta://");
+		expect(parsePairingUri(legacy)).toEqual(invite);
+		expect(parsePairingUri(legacy.replace("vetta://", "VETTA://"))).toEqual(invite);
 	});
 
 	it("omits the relay when cloud access is off", () => {

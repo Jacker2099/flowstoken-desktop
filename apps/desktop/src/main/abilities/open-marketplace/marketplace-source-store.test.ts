@@ -105,7 +105,7 @@ describe("MarketplaceSourceStore", () => {
 	});
 
 	it.each(["true", "false"])(
-		"registers the Vetta official gh-pages distribution without configuration with cloud=%s",
+		"registers the FlowsToken official gh-pages distribution without configuration with cloud=%s",
 		async (cloud) => {
 			vi.stubEnv("VETTA_CLOUD_ENABLED", cloud);
 			vi.stubEnv("VETTA_OPEN_MARKETPLACE_REF", undefined);
@@ -115,7 +115,7 @@ describe("MarketplaceSourceStore", () => {
 				expect(new MarketplaceSourceStore({ filePath: await temporaryFile() }).list()).toMatchObject([
 					{
 						id: "vetta-official",
-						name: "Vetta Official",
+						name: "FlowsToken Official",
 						repository: OFFICIAL_MARKETPLACE_REPOSITORY,
 						ref: OFFICIAL_MARKETPLACE_REF,
 						archiveUrl: `${OFFICIAL_MARKETPLACE_REPOSITORY}/archive/refs/heads/${OFFICIAL_MARKETPLACE_REF}.zip`,
@@ -152,7 +152,7 @@ describe("MarketplaceSourceStore", () => {
 					{
 						...builtinSource(),
 						id: "vetta-official",
-						name: "Vetta Official",
+						name: "FlowsToken Official",
 						repository: OFFICIAL_MARKETPLACE_REPOSITORY,
 						archiveUrl: `${OFFICIAL_MARKETPLACE_REPOSITORY}/archive/refs/heads/main.zip`,
 						ref: "main",

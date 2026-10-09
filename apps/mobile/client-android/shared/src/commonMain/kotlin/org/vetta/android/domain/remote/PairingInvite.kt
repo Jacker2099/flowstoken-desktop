@@ -19,7 +19,8 @@ data class PairingInvite(
 
 fun parsePairingInvite(value: String): PairingInvite? = runCatching {
     val uri = URI(value.trim())
-    if (!uri.scheme.equals("vetta", ignoreCase = true) || !uri.host.equals("pair", ignoreCase = true)) error("scheme")
+    // The current scheme plus the one older builds emitted.
+    if (uri.scheme?.lowercase() !in setOf("flowstoken", "vetta") || !uri.host.equals("pair", ignoreCase = true)) error("scheme")
     val values = decodeQuery(uri.rawQuery.orEmpty())
     if (values["v"] != PAIRING_URI_VERSION.toString()) error("version")
     val pairingId = values["id"].orEmpty()

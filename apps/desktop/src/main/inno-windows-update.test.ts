@@ -56,6 +56,9 @@ describe("InnoWindowsUpdateController", () => {
 		await writeFile(installerPath, installer);
 		const relaunch = vi.fn();
 		const quit = vi.fn();
+		// FlowsToken 打包产物的可执行文件不叫 Vetta.exe；安装校验与回链路径都必须
+		// 跟注入的产品名走，否则版本目录校验永远等不到 Vetta.exe。
+		const executableName = "FlowsToken.exe";
 		const installInstaller = vi.fn(
 			async (
 				_installerPath: string,
@@ -66,7 +69,7 @@ describe("InnoWindowsUpdateController", () => {
 				onProgress(50);
 				const versionDir = join(destinationRoot, "versions", version);
 				await mkdir(join(versionDir, "resources"), { recursive: true });
-				await writeFile(join(versionDir, "Vetta.exe"), "executable");
+				await writeFile(join(versionDir, executableName), "executable");
 				await writeFile(join(versionDir, "resources", "app.asar"), "asar");
 				await writeFile(join(versionDir, ".install-complete"), version);
 			},
@@ -74,6 +77,7 @@ describe("InnoWindowsUpdateController", () => {
 		const controller = new InnoWindowsUpdateController({
 			currentVersion: "1.2.2",
 			storeRoot,
+			executableName,
 			installInstaller,
 			relaunch,
 			quit,
@@ -89,7 +93,7 @@ describe("InnoWindowsUpdateController", () => {
 			progress,
 			new AbortController().signal,
 		);
-		expect(executablePath).toBe(join(storeRoot, "versions", "1.2.3", "Vetta.exe"));
+		expect(executablePath).toBe(join(storeRoot, "versions", "1.2.3", executableName));
 		expect(progress).toHaveBeenCalledWith(expect.objectContaining({ percent: 95 }));
 		expect(progress).toHaveBeenLastCalledWith(expect.objectContaining({ percent: 100 }));
 
@@ -105,6 +109,7 @@ describe("InnoWindowsUpdateController", () => {
 		const healthyController = new InnoWindowsUpdateController({
 			currentVersion: "1.2.3",
 			storeRoot,
+			executableName,
 			relaunch,
 			quit,
 		});
@@ -138,6 +143,7 @@ describe("InnoWindowsUpdateController", () => {
 		const controller = new InnoWindowsUpdateController({
 			currentVersion: "1.2.3",
 			storeRoot,
+			executableName: "Vetta.exe",
 			relaunch: vi.fn(),
 			quit: vi.fn(),
 		});
@@ -156,6 +162,7 @@ describe("InnoWindowsUpdateController", () => {
 		const controller = new InnoWindowsUpdateController({
 			currentVersion: "1.2.2",
 			storeRoot,
+			executableName: "Vetta.exe",
 			installInstaller: async (_installerPath, destinationRoot, version) => {
 				const versionDir = join(destinationRoot, "versions", version);
 				await mkdir(versionDir, { recursive: true });
@@ -182,6 +189,7 @@ describe("InnoWindowsUpdateController", () => {
 		const controller = new InnoWindowsUpdateController({
 			currentVersion: "1.2.2",
 			storeRoot,
+			executableName: "Vetta.exe",
 			installInstaller: async (_installerPath, destinationRoot, version) => {
 				const versionDir = join(destinationRoot, "versions", version);
 				await mkdir(join(versionDir, "resources"), { recursive: true });
@@ -224,6 +232,7 @@ describe("InnoWindowsUpdateController", () => {
 			const controller = new InnoWindowsUpdateController({
 				currentVersion: "1.2.2",
 				storeRoot,
+				executableName: "Vetta.exe",
 				installInstaller: async (_installerPath, destinationRoot, version) => {
 					const versionDir = join(destinationRoot, "versions", version);
 					await mkdir(join(versionDir, "resources"), { recursive: true });
@@ -254,6 +263,7 @@ describe("InnoWindowsUpdateController", () => {
 		const controller = new InnoWindowsUpdateController({
 			currentVersion: "1.2.2",
 			storeRoot,
+			executableName: "Vetta.exe",
 			installInstaller: async (_installerPath, destinationRoot, version) => {
 				const versionDir = join(destinationRoot, "versions", version);
 				await mkdir(join(versionDir, "resources"), { recursive: true });
@@ -282,6 +292,7 @@ describe("InnoWindowsUpdateController", () => {
 		const controller = new InnoWindowsUpdateController({
 			currentVersion: "1.2.2",
 			storeRoot,
+			executableName: "Vetta.exe",
 			installInstaller: async (_installerPath, destinationRoot, version) => {
 				const destinationDir = join(destinationRoot, "versions", version);
 				await expect(readFile(join(destinationDir, "stale.txt"), "utf8")).rejects.toThrow();
@@ -308,9 +319,18 @@ describe("Windows Inno update paths", () => {
 		expect(isVersionedWindowsExecutable("C:\\Vetta\\versions\\1.2.2\\Vetta.exe", "1.2.3")).toBe(false);
 	});
 
+	it("matches the injected product executable name instead of assuming Vetta.exe", () => {
+		const flowstokenPath = "C:\\FlowsToken\\versions\\1.2.3\\FlowsToken.exe";
+		expect(isVersionedWindowsExecutable(flowstokenPath, "1.2.3")).toBe(false);
+		expect(isVersionedWindowsExecutable(flowstokenPath, "1.2.3", "FlowsToken.exe")).toBe(true);
+	});
+
 	it("uses the stable per-user application root", () => {
 		expect(resolveInnoUpdateStoreRoot("C:\\Users\\test\\AppData\\Local")).toBe(
 			"C:\\Users\\test\\AppData\\Local\\Vetta",
+		);
+		expect(resolveInnoUpdateStoreRoot("C:\\Users\\test\\AppData\\Local", "FlowsToken")).toBe(
+			"C:\\Users\\test\\AppData\\Local\\FlowsToken",
 		);
 	});
 

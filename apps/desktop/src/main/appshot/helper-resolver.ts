@@ -3,8 +3,8 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { app } from "electron";
 
-const APP_BUNDLE_NAME = "Vetta Computer Use.app";
-const EXECUTABLE_NAME = "Vetta Computer Use";
+const APP_BUNDLE_NAME = "FlowsToken Computer Use.app";
+const EXECUTABLE_NAME = "FlowsToken Computer Use";
 
 /**
  * Resolve the absolute path to the `Vetta Computer Use.app` bundle (macOS only).

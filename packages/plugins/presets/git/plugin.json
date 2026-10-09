@@ -10,7 +10,9 @@
 		"remoteName": "git",
 		"expose": "./plugin"
 	},
-	"styles": ["dist/style.css"],
+	"styles": [
+		"dist/style.css"
+	],
 	"permissions": [
 		"ui.slot.activity-tab",
 		"ui.slot.turn-card",
@@ -24,7 +26,9 @@
 		"storage.write",
 		"fs.write"
 	],
-	"commands": ["git"],
+	"commands": [
+		"git"
+	],
 	"description": "%plugin.description%",
-	"author": "Vetta"
+	"author": "FlowsToken"
 }

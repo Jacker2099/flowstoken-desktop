@@ -30,8 +30,9 @@ struct InviteCodeTests {
 
 	@Test func readsTheQRCodeTheDesktopShows() {
 		// Pinned in packages/remote-control/test/invite-code.test.ts.
-		#expect(InviteCode.parseQR("VETTA://PAIR/K7Q29MXD/482913") == InviteCode.QR(code: "K7Q29MXD", password: "482913"))
-		#expect(InviteCode.parseQR("VETTA://PAIR/K7Q29MXD/482913?relay=wss%3A%2F%2Frelay.mine.test") == InviteCode.QR(code: "K7Q29MXD", password: "482913", relayBaseUrl: "wss://relay.mine.test"))
+		#expect(InviteCode.parseQR("FLOWSTOKEN://PAIR/K7Q29MXD/482913") == InviteCode.QR(code: "K7Q29MXD", password: "482913"))
+		#expect(InviteCode.parseQR("FLOWSTOKEN://PAIR/K7Q29MXD/482913?relay=wss%3A%2F%2Frelay.mine.test") == InviteCode.QR(code: "K7Q29MXD", password: "482913", relayBaseUrl: "wss://relay.mine.test"))
+		#expect(InviteCode.parseQR("VETTA://PAIR/K7Q29MXD/482913") == InviteCode.QR(code: "K7Q29MXD", password: "482913"), "the legacy prefix older builds printed")
 		#expect(InviteCode.parseQR(" vetta://pair/k7q2-9mxd/482913 ") == InviteCode.QR(code: "K7Q29MXD", password: "482913"))
 		#expect(InviteCode.parseQR("vetta://pair?v=2&id=abc") == nil, "a whole pairing link is left to PairingURI")
 		#expect(InviteCode.parseQR("VETTA://PAIR/K7Q29MXD") == nil)

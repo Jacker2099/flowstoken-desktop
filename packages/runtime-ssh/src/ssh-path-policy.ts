@@ -23,7 +23,7 @@ export function createSshPathPolicies(remoteCwd: string): {
 		const target = normalizeRemotePath(absolutePath);
 		for (const protectedRoot of protectedRoots) {
 			if (target === protectedRoot || target.startsWith(`${protectedRoot}/`)) {
-				return `${protectedRoot} is managed by Vetta and is read-only.`;
+				return `${protectedRoot} is managed by FlowsToken and is read-only.`;
 			}
 		}
 		return undefined;

@@ -8,7 +8,8 @@ import { CancellationError } from "builder-util-runtime";
 import type { ResolvedUpdateFileInfo } from "electron-updater";
 
 const VERSION_PATTERN = /^[0-9A-Za-z][0-9A-Za-z.+-]{0,63}$/;
-const WINDOWS_EXECUTABLE_NAME = "Vetta.exe";
+const WINDOWS_EXECUTABLE_NAME = "FlowsToken.exe";
+const WINDOWS_STORE_DIRECTORY_NAME = "FlowsToken";
 const INSTALL_COMPLETE_FILE_NAME = ".install-complete";
 const PROGRESS_POLL_INTERVAL_MS = 250;
 const INSTALL_VISIBILITY_TIMEOUT_MS = 30_000;
@@ -47,6 +48,9 @@ export interface InnoUpdateAsset {
 export interface InnoUpdateRuntime {
 	currentVersion: string;
 	storeRoot: string;
+	// 产品实际的可执行文件名（如 FlowsToken.exe）。沿用 Vetta.exe 会让版本化
+	// 检测永远不通过，Windows 后台更新退化成 electron-updater 拉起的交互式向导。
+	executableName: string;
 	installInstaller?: (
 		installerPath: string,
 		storeRoot: string,
@@ -241,21 +245,25 @@ async function removePhysicalDirectory(path: string): Promise<void> {
 	});
 }
 
-async function assertCompleteVersionDirectory(versionDir: string): Promise<void> {
+async function assertCompleteVersionDirectory(versionDir: string, executableName: string): Promise<void> {
 	await assertFile(join(versionDir, INSTALL_COMPLETE_FILE_NAME));
 	await Promise.all([
-		assertFile(join(versionDir, WINDOWS_EXECUTABLE_NAME)),
+		assertFile(join(versionDir, executableName)),
 		assertFile(join(versionDir, "resources", "app.asar")),
 	]);
 }
 
-async function waitForCompleteVersionDirectory(versionDir: string, signal: AbortSignal): Promise<void> {
+async function waitForCompleteVersionDirectory(
+	versionDir: string,
+	executableName: string,
+	signal: AbortSignal,
+): Promise<void> {
 	const deadline = Date.now() + INSTALL_VISIBILITY_TIMEOUT_MS;
 	let lastError: unknown;
 	do {
 		if (signal.aborted) throw new CancellationError();
 		try {
-			await assertCompleteVersionDirectory(versionDir);
+			await assertCompleteVersionDirectory(versionDir, executableName);
 			return;
 		} catch (error) {
 			lastError = error;
@@ -265,19 +273,26 @@ async function waitForCompleteVersionDirectory(versionDir: string, signal: Abort
 	throw lastError;
 }
 
-export function isVersionedWindowsExecutable(executablePath: string, version: string): boolean {
+export function isVersionedWindowsExecutable(
+	executablePath: string,
+	version: string,
+	executableName = WINDOWS_EXECUTABLE_NAME,
+): boolean {
 	if (!isValidVersion(version)) return false;
 	const versionDir = win32.dirname(executablePath);
 	return (
-		win32.basename(executablePath).toLowerCase() === WINDOWS_EXECUTABLE_NAME.toLowerCase() &&
+		win32.basename(executablePath).toLowerCase() === executableName.toLowerCase() &&
 		win32.basename(versionDir) === version &&
 		win32.basename(win32.dirname(versionDir)).toLowerCase() === "versions"
 	);
 }
 
-export function resolveInnoUpdateStoreRoot(localAppData = process.env.LOCALAPPDATA): string {
+export function resolveInnoUpdateStoreRoot(
+	localAppData = process.env.LOCALAPPDATA,
+	directoryName = WINDOWS_STORE_DIRECTORY_NAME,
+): string {
 	if (!localAppData) throw new Error("LOCALAPPDATA is unavailable");
-	return win32.resolve(localAppData, "Vetta");
+	return win32.resolve(localAppData, directoryName);
 }
 
 export class InnoWindowsUpdateController {
@@ -307,8 +322,9 @@ export class InnoWindowsUpdateController {
 	): Promise<string[]> {
 		const selection = this.selection;
 		if (!selection) throw new Error("No Inno Setup Windows update selected");
+		const executableName = this.runtime.executableName;
 		const destinationDir = join(this.runtime.storeRoot, "versions", selection.version);
-		const executablePath = join(destinationDir, WINDOWS_EXECUTABLE_NAME);
+		const executablePath = join(destinationDir, executableName);
 		const report = (percent: number) =>
 			onProgress({
 				bytesPerSecond: 0,
@@ -319,7 +335,7 @@ export class InnoWindowsUpdateController {
 			});
 
 		try {
-			await assertCompleteVersionDirectory(destinationDir);
+			await assertCompleteVersionDirectory(destinationDir, executableName);
 			this.prepared = { version: selection.version, executablePath };
 			report(100);
 			return [executablePath];
@@ -332,7 +348,7 @@ export class InnoWindowsUpdateController {
 		console.info("[updater] preparing Windows version with Inno Setup", installerPath);
 		await this.installInstaller(installerPath, this.runtime.storeRoot, selection.version, report, signal);
 		if (signal.aborted) throw new CancellationError();
-		await waitForCompleteVersionDirectory(destinationDir, signal);
+		await waitForCompleteVersionDirectory(destinationDir, executableName, signal);
 		this.prepared = { version: selection.version, executablePath };
 		onProgress({
 			bytesPerSecond: 0,

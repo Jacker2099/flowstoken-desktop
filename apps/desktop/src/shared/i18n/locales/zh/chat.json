@@ -699,7 +699,8 @@
 			"processing": "处理中…",
 			"waiting": "等待模型响应",
 			"preparing": "正在准备请求",
-			"creatingSession": "正在创建会话"
+			"creatingSession": "正在创建会话",
+			"fallbackName": "Bestoo"
 		},
 		"duration": {
 			"lessThanSecond": "少于1秒",
@@ -960,7 +961,7 @@
 			"sendFeedback": "发送修改意见",
 			"sendFeedbackWithComments": "发送修改意见（{{count}}）",
 			"stepCommentPlaceholder": "这一步要怎么改…",
-			"subtitle": "批准后 Vetta 会按这份计划开始执行；在此之前不会改动任何内容。",
+			"subtitle": "批准后 FlowsToken 会按这份计划开始执行；在此之前不会改动任何内容。",
 			"title": "计划待你批准"
 		},
 		"switchFailed": "无法切换计划模式",
@@ -973,20 +974,16 @@
 		}
 	},
 	"goalMode": {
-		"dialog": {
-			"cancel": "取消",
+		"actions": {
 			"clear": "清除目标",
-			"createDescription": "Vetta 会持续迭代，直到目标完成、受阻或暂停。",
-			"manageDescription": "查看当前目标状态，或恢复和清除目标。",
-			"objectiveLabel": "目标",
-			"objectivePlaceholder": "描述一个具体、可验证的最终结果…",
-			"resume": "继续目标",
-			"start": "开始执行",
-			"statusLabel": "状态",
-			"title": "目标模式",
-			"usage": "已使用 {{used}} Token · 自动续跑 {{count}} 次"
+			"pause": "暂停目标",
+			"resume": "继续目标"
 		},
 		"operationFailed": "目标操作失败",
+		"summary": {
+			"groupLabel": "当前目标",
+			"usage": "{{tokens}} Token · {{seconds}} 秒 · 续跑 {{count}} 次"
+		},
 		"status": {
 			"active": "执行中",
 			"blocked": "受阻",

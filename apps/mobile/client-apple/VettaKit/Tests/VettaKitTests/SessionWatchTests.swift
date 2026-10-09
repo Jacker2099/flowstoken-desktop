@@ -72,9 +72,11 @@ import Testing
 @Suite struct SessionLinkTests {
 	@Test func roundTripsASessionIdAndIgnoresOtherLinks() throws {
 		let url = SessionLink.url("a b/c?d")
-		#expect(url.absoluteString.hasPrefix("vetta://session?id="))
+		#expect(url.absoluteString.hasPrefix("flowstoken://session?id="))
 		#expect(SessionLink.sessionId(url) == "a b/c?d")
-		#expect(SessionLink.sessionId(try #require(URL(string: "vetta://pair?v=2"))) == nil)
+		// 旧版本预约的通知里仍是 vetta://session，升级后照样能打开。
+		#expect(SessionLink.sessionId(try #require(URL(string: "vetta://session?id=a"))) == "a")
+		#expect(SessionLink.sessionId(try #require(URL(string: "flowstoken://pair?v=2"))) == nil)
 		#expect(SessionLink.sessionId(try #require(URL(string: "vetta://session"))) == nil)
 		#expect(SessionLink.sessionId(try #require(URL(string: "https://session?id=x"))) == nil)
 	}

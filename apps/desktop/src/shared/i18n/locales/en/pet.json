@@ -1,6 +1,6 @@
 {
 	"settings": {
-		"pageTitle": "Vetta Vivi",
+		"pageTitle": "FlowsToken Vivi",
 		"showPet": "Show Pet",
 		"showPetDesc": "When off, the pet window is hidden and stays hidden on next launch.",
 		"alwaysOnTop": "Always on Top",
@@ -111,7 +111,9 @@
 			"runningWithDescription": "{{description}}",
 			"completed": "Tool completed"
 		},
-		"retry": { "running": "Retrying ({{attempt}}/{{maxAttempts}})" },
+		"retry": {
+			"running": "Retrying ({{attempt}}/{{maxAttempts}})"
+		},
 		"background": {
 			"running": "Background task is running",
 			"completed": "Background task completed",

@@ -18,7 +18,7 @@ interface ActionCliResponse {
 	};
 }
 
-const HELP_TEXT = `Vetta action command line interface
+const HELP_TEXT = `FlowsToken action command line interface
 
 Usage:
   Vetta.exe action search [query] [--domain <domain>]
@@ -28,10 +28,10 @@ Usage:
   Vetta.exe action --help
 
 Description:
-  Operate the running Vetta Desktop app through its local action RPC.
+  Operate the running FlowsToken Desktop app through its local action RPC.
   The GUI must already be running. Do not guess action ids or parameters
   from memory; discover them at runtime.
-  Built-in actions operate Vetta Desktop itself; plugin-provided actions
+  Built-in actions operate FlowsToken Desktop itself; plugin-provided actions
   may own other resources, as declared in their usage. Developing a website,
   creating a React project, installing framework plugins, or implementing
   application cron jobs belongs to that project's tools, not App Actions.

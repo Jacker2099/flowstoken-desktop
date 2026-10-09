@@ -3,7 +3,7 @@ import Foundation
 import os
 import VettaKit
 
-private let log = Logger(subsystem: "com.openvetta.mobile", category: "activity")
+private let log = Logger(subsystem: "com.flowstoken.mobile", category: "activity")
 
 /// Keeps one Live Activity in step with the busy sessions. ActivityKit only
 /// starts one while the app is in front; after that the app updates it for as

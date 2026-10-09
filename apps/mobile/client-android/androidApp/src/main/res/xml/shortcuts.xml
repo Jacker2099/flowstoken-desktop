@@ -9,7 +9,7 @@
         <intent
             android:action="org.vetta.android.action.NEW_SESSION"
             android:targetClass="org.vetta.android.MainActivity"
-            android:targetPackage="org.vetta.android" />
+            android:targetPackage="com.flowstoken.mobile" />
     </shortcut>
     <shortcut
         android:shortcutId="task_board"
@@ -19,7 +19,7 @@
         <intent
             android:action="org.vetta.android.action.TASK_BOARD"
             android:targetClass="org.vetta.android.MainActivity"
-            android:targetPackage="org.vetta.android" />
+            android:targetPackage="com.flowstoken.mobile" />
     </shortcut>
     <shortcut
         android:shortcutId="remote_control"
@@ -29,6 +29,6 @@
         <intent
             android:action="org.vetta.android.action.REMOTE_CONTROL"
             android:targetClass="org.vetta.android.MainActivity"
-            android:targetPackage="org.vetta.android" />
+            android:targetPackage="com.flowstoken.mobile" />
     </shortcut>
 </shortcuts>

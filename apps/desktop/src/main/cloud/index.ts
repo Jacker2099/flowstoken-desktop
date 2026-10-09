@@ -19,7 +19,7 @@ import { requestVettaGateway } from "./gateway.js";
 
 export interface CloudMainHandle {
 	/**
-	 * 处理 OAuth 回调深链（vetta://oauth/callback）。
+	 * 处理 OAuth 回调深链（flowstoken://oauth/callback）。
 	 * 返回是否命中本模块的回调路径；未命中时宿主可继续交给其它处理器。
 	 */
 	handleProtocolUrl(parsed: URL): boolean;

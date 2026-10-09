@@ -4,7 +4,7 @@ import Foundation
 /// (English and Simplified Chinese) and follows the system language; every
 /// accessor here is only a key into that catalog.
 public enum L10n {
-	public static let appName = "Vetta"
+	public static let appName = "FlowsToken"
 
 	/// Where lookups resolve, and the locale that picks plural forms. Tests pin
 	/// one language with `pin(language:)`.
@@ -66,6 +66,7 @@ public enum L10n {
 		public static var unpairedScan: String { tr("home.unpairedScan") }
 		public static var search: String { tr("home.search") }
 		public static var taskBoard: String { tr("home.taskBoard") }
+		public static var connectComputer: String { tr("home.connectComputer") }
 		public static var tasks: String { tr("home.tasks") }
 		public static var pickProject: String { tr("home.pickProject") }
 		public static var allSessions: String { tr("home.allSessions") }
@@ -166,6 +167,7 @@ public enum L10n {
 	}
 
 	public enum Chat {
+		public static var assistantName: String { tr("chat.assistantName") }
 		public static var composerPlaceholder: String { tr("chat.composerPlaceholder") }
 		public static var thinking: String { tr("chat.thinking") }
 		public static var thinkingLive: String { tr("chat.thinkingLive") }

@@ -114,7 +114,9 @@ import {
 // RuntimeManager.applyEnv() 与 coding-agent 的 bash 执行。详见 fix-path.ts。
 fixPath();
 
-const PROTOCOL = "vetta";
+const PROTOCOL = "flowstoken";
+// 旧版与上游发出的 vetta:// 深链同样注册/识别，协议层不破坏兼容。
+const PROTOCOL_SCHEMES: readonly string[] = [PROTOCOL, "vetta"];
 // registerSchemesAsPrivileged 整个进程只能调用一次且须在 ready 前：
 // 所有自定义 scheme（插件、主题、应用资源、媒体流）的特权声明在此合并注册。
 protocol.registerSchemesAsPrivileged([
@@ -309,10 +311,12 @@ function attachMainWindowLifecycle(mainWindow: BrowserWindow): void {
 // Windows dev mode: must pass electron.exe path and app entry as args,
 // otherwise the URL gets interpreted as a module path.
 if (!isCliMode) {
-	if (!app.isPackaged && process.platform === "win32") {
-		app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [devMainEntryPath]);
-	} else {
-		app.setAsDefaultProtocolClient(PROTOCOL);
+	for (const scheme of PROTOCOL_SCHEMES) {
+		if (!app.isPackaged && process.platform === "win32") {
+			app.setAsDefaultProtocolClient(scheme, process.execPath, [devMainEntryPath]);
+		} else {
+			app.setAsDefaultProtocolClient(scheme);
+		}
 	}
 }
 
@@ -322,7 +326,7 @@ let cloudMain: CloudMainHandle | null = null;
 function handleProtocolUrl(rawUrl: string): void {
 	try {
 		const parsed = new URL(rawUrl);
-		// OAuth 回调（vetta://oauth/callback）由 cloud 模块处理；
+		// OAuth 回调（flowstoken://oauth/callback）由 cloud 模块处理；
 		// lite 构建没有 cloud 模块，深链直接忽略。
 		cloudMain?.handleProtocolUrl(parsed);
 	} catch {
@@ -363,7 +367,7 @@ if (!gotSingleLock) {
 	app.exit(0);
 } else {
 	app.on("second-instance", (_event, argv) => {
-		const protocolUrl = argv.find((arg) => arg.startsWith(`${PROTOCOL}://`));
+		const protocolUrl = argv.find((arg) => PROTOCOL_SCHEMES.some((scheme) => arg.startsWith(`${scheme}://`)));
 		if (protocolUrl) {
 			handleProtocolUrl(protocolUrl);
 		}
@@ -519,7 +523,7 @@ if (!gotSingleLock) {
 		if (!app.isPackaged) {
 			const appVersion = getAppVersion();
 			app.setAboutPanelOptions({
-				applicationName: "Vetta",
+				applicationName: "FlowsToken",
 				applicationVersion: appVersion,
 				version: "",
 			});

@@ -169,7 +169,7 @@ export function getSandboxDenyRoots(): string[] {
 	}
 	if (process.platform === "win32") {
 		const appData = process.env.APPDATA;
-		if (appData) roots.push(join(appData, "gcloud"), join(appData, "Vetta"));
+		if (appData) roots.push(join(appData, "gcloud"), join(appData, "Vetta"), join(appData, "FlowsToken"));
 	}
 	return Array.from(new Set(roots.map((root) => resolvePath(root))));
 }

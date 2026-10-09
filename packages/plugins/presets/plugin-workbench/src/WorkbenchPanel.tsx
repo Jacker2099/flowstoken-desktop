@@ -331,7 +331,7 @@ export function WorkbenchPanel() {
 			const saved = await getWorkbenchDialog().saveCopy(project.packagePath, {
 				defaultFileName,
 				title: t("panel.exportTitle"),
-				filters: [{ name: "Vetta Plugin Package", extensions: ["vettapkg"] }],
+				filters: [{ name: "FlowsToken Plugin Package", extensions: ["vettapkg"] }],
 			});
 			// null = user cancelled the save dialog; no error.
 			if (saved == null) return;

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getVettaHomePath } from "@vetta/action-rpc";
 import { app, autoUpdater as nativeAutoUpdater, powerMonitor } from "electron";
@@ -67,11 +67,19 @@ function configureE2eUpdateFeed(): void {
 
 configureE2eUpdateFeed();
 const currentVersion = getAppVersion();
+// Windows 可执行文件名与版本化存储根随产品名走（FlowsToken.exe → LOCALAPPDATA\FlowsToken），
+// 与 Inno 安装器的 {#AppProductName} 目录和 windows-launcher 的 appDataDirName 保持一致；
+// 写死 Vetta 会让版本化检测失败，静默更新退化成 electron-updater 拉起的交互式向导。
+const windowsExecutableName = basename(process.execPath);
+const windowsStoreDirectoryName = windowsExecutableName.replace(/\.exe$/i, "");
 const innoWindowsUpdate =
-	process.platform === "win32" && app.isPackaged && isVersionedWindowsExecutable(process.execPath, currentVersion)
+	process.platform === "win32" &&
+	app.isPackaged &&
+	isVersionedWindowsExecutable(process.execPath, currentVersion, windowsExecutableName)
 		? new InnoWindowsUpdateController({
 				currentVersion,
-				storeRoot: resolveInnoUpdateStoreRoot(),
+				storeRoot: resolveInnoUpdateStoreRoot(process.env.LOCALAPPDATA, windowsStoreDirectoryName),
+				executableName: windowsExecutableName,
 				relaunch: (executablePath) => {
 					app.relaunch({ execPath: executablePath, args: process.argv.slice(1) });
 				},

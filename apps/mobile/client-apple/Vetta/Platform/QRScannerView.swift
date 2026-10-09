@@ -44,7 +44,7 @@ struct QRScannerView: UIViewRepresentable {
 	final class PreviewView: UIView, AVCaptureMetadataOutputObjectsDelegate {
 		override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
 		private let session = AVCaptureSession()
-		private let queue = DispatchQueue(label: "com.openvetta.mobile.camera")
+		private let queue = DispatchQueue(label: "com.flowstoken.mobile.camera")
 		var onCode: ((String) -> Void)?
 
 		private var previewLayer: AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }

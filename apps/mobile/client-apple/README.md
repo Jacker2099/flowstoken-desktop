@@ -1,6 +1,6 @@
-# Vetta for iPhone（client-apple）
+# FlowsToken for iPhone（client-apple）
 
-Vetta 手机端的 iOS 原生客户端（Swift 6 + SwiftUI，iOS 26 起，Liquid Glass）。它通过 `@vetta/remote-control` 的协议 v2 与 Vetta Desktop 配对，在手机上镜像电脑正在处理的会话：查看进度、继续追问、回答电脑弹出的提问、中止任务。Android 端在 [`../client-android`](../client-android)。
+FlowsToken 手机端的 iOS 原生客户端（Swift 6 + SwiftUI，iOS 26 起，Liquid Glass）。它通过 `@vetta/remote-control` 的协议 v2 与 FlowsToken Desktop 配对，在手机上镜像电脑正在处理的会话：查看进度、继续追问、回答电脑弹出的提问、中止任务。Android 端在 [`../client-android`](../client-android)。
 
 原 Expo/React Native 客户端已移出仓库；本工程在功能上与它一一对应（配对、双通道连接、会话镜像、离线缓存、设置项），界面按原设计还原，但全部换成系统原生控件：导航栏、分段控件、开关、弹层、`glassEffect` 玻璃材质。深浅色跟随系统，不提供应用内切换。
 
@@ -27,7 +27,7 @@ Vetta 手机端的 iOS 原生客户端（Swift 6 + SwiftUI，iOS 26 起，Liquid
 ```bash
 cd apps/mobile/client-apple
 xcodegen generate
-open Vetta.xcodeproj
+open Vetta.xcodeproj  # 工程名沿用内部代号 Vetta
 ```
 
 真机运行需要自己的 Team（免费 Apple ID 即可本机签名）。签名写在本地、不进仓库：复制 `Config/Local.xcconfig.example` 为 `Config/Local.xcconfig`，填入 Team ID。不要在 Xcode 的 Signing & Capabilities 里直接选 Team，那会写进 `project.pbxproj`。
@@ -35,15 +35,20 @@ open Vetta.xcodeproj
 - iOS 首次连接电脑的局域网地址会弹「本地网络」权限，必须允许；`Info.plist` 已声明 `NSLocalNetworkUsageDescription` 与 `NSAllowsLocalNetworking`（局域网明文 `ws://`）。
 - 扫码需要相机权限；模拟器没有相机，可用下文的 `-VettaPairURI` 或手动输入 IP 配对。
 - `vetta://pair?...` 链接可直接唤起 App 完成配对。
+- 配对页也支持连接码与密码、自建中继地址；已连接时可从首页抽屉的「连接电脑」重新打开配对。电脑在状态事件中公布新中继地址后，手机会保存并重连，保留正在查看的聊天。
+- 远程桌面双指滑动在未放大时滚动电脑内容，放大后平移画面；捏合缩放。只读权限下不会向电脑发送滚动操作。
 
 ## 验证
 
 ```bash
 cd apps/mobile/client-apple
 (cd VettaKit && swift test --no-parallel)   # 单元测试：加密兼容、协议、连接、双通道、配对、转写、缓存、AppModel
+xcodebuild test -project Vetta.xcodeproj -scheme Vetta -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:VettaRTCTests CODE_SIGNING_ALLOWED=NO # UIKit 远程手势组件测试
 scripts/interop.sh                          # 与 apps/desktop 的真实 LAN 服务器和假中继对跑（需 bun install）
 scripts/ui-test.sh                          # 模拟器（默认 iPhone 17 Pro）上跑 UI 测试，深浅色各截一套图到 build/ui-shots
 ```
+
+若命令行 SwiftPM 只复制 `.xcstrings`，导致文案测试读到键名，先在 `VettaKit` 目录运行 `xcrun xcstringstool compile Sources/VettaKit/Resources/Localizable.xcstrings --output-directory "$(swift build --show-bin-path)/VettaKit_VettaKit.bundle"`，再重跑 `swift test --no-parallel`。这只编译测试构建目录中的资源，App 构建由 Xcode 自动处理。
 
 UI 测试只构建一次，再按外观各跑一遍。每个用例都是一部新手机、自己完成配对（夹具在 UI 测试里允许新手机顶替旧配对），彼此独立，按界面划分：工作列表、聊天与模型菜单、失败的一轮、新会话与附件及提问、设置。改哪块界面就只跑那块：`scripts/ui-test.sh --fast --only testChatMergesRepliesAndSwitchesModel`（逗号分隔可跑多个），只跑深色、不截图；一批界面改动完成时再完整跑一次深浅两套并看截图。
 
@@ -51,7 +56,7 @@ UI 测试只构建一次，再按外观各跑一遍。每个用例都是一部�
 
 ```bash
 bun scripts/interop-desktop.ts /tmp/vetta-interop.json
-xcrun simctl launch booted com.openvetta.mobile -VettaPairURI "$(jq -r .invite /tmp/vetta-interop.json)"
+xcrun simctl launch booted com.flowstoken.mobile -VettaPairURI "$(jq -r .invite /tmp/vetta-interop.json)"
 ```
 
 `-VettaEphemeralStorage` 让 App 使用内存存储（UI 测试用，每次启动都是全新安装的状态）。它同时关掉通知和 Live Activity，免得权限弹框挡住 UI 测试。

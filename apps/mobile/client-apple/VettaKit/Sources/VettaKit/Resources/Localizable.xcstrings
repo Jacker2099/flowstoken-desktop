@@ -41,13 +41,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Open Vetta to answer"
+            "value": "Open FlowsToken to answer"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "打开 Vetta 回答"
+            "value": "打开 FlowsToken 回答"
           }
         }
       }
@@ -104,13 +104,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Open Vetta for the latest"
+            "value": "Open FlowsToken for the latest"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "打开 Vetta 查看最新进度"
+            "value": "打开 FlowsToken 查看最新进度"
           }
         }
       }
@@ -213,6 +213,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "查看全部"
+          }
+        }
+      }
+    },
+    "chat.assistantName": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bestoo"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bestoo"
           }
         }
       }
@@ -456,13 +473,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Tell Vetta what to do, or hold to talk…"
+            "value": "Tell FlowsToken what to do, or hold to talk…"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "指示 Vetta 或按住说话…"
+            "value": "指示 FlowsToken 或按住说话…"
           }
         }
       }
@@ -524,13 +541,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Allow the microphone and speech recognition for Vetta in Settings to dictate."
+            "value": "Allow the microphone and speech recognition for FlowsToken in Settings to dictate."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "需要在「设置」中允许 Vetta 使用麦克风和语音识别才能听写。"
+            "value": "需要在「设置」中允许 FlowsToken 使用麦克风和语音识别才能听写。"
           }
         }
       }
@@ -915,13 +932,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Vetta needs your choice"
+            "value": "FlowsToken needs your choice"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Vetta 需要你的选择"
+            "value": "FlowsToken 需要你的选择"
           }
         }
       }
@@ -1660,7 +1677,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Update Vetta on your computer to view its files here."
+            "value": "Update FlowsToken on your computer to view its files here."
           }
         },
         "zh-Hans": {
@@ -1854,6 +1871,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "清除筛选"
+          }
+        }
+      }
+    },
+    "home.connectComputer": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect computer"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接电脑"
           }
         }
       }
@@ -2318,13 +2352,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Open Vetta Desktop on your computer and click “Connect Phone” in the top-right corner, then scan the code. You can also scan from Settings."
+            "value": "Open FlowsToken Desktop on your computer and click “Connect Phone” in the top-right corner, then scan the code. You can also scan from Settings."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "打开电脑上的 Vetta Desktop，点击右上角「手机扫码连接」后扫码配对；之后也可以在设置里重新扫码。"
+            "value": "打开电脑上的 FlowsToken Desktop，点击右上角「手机扫码连接」后扫码配对；之后也可以在设置里重新扫码。"
           }
         }
       }
@@ -2806,13 +2840,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This isn't a Vetta pairing code"
+            "value": "This isn't a FlowsToken pairing code"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "这不是 Vetta 的配对码"
+            "value": "这不是 FlowsToken 的配对码"
           }
         }
       }
@@ -2857,13 +2891,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "On your computer, open Vetta → Settings → Remote access. The 8-character code is next to the QR code. Works even when your phone is not next to the computer."
+            "value": "On your computer, open FlowsToken → Settings → Remote access. The 8-character code is next to the QR code. Works even when your phone is not next to the computer."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "在电脑上的 Vetta 打开「设置 → 远程连接」，二维码旁有 8 位连接码。手机不在电脑旁也能用。"
+            "value": "在电脑上的 FlowsToken 打开「设置 → 远程连接」，二维码旁有 8 位连接码。手机不在电脑旁也能用。"
           }
         }
       }
@@ -3078,13 +3112,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Looking for Vetta on your local network..."
+            "value": "Looking for FlowsToken on your local network..."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在监听局域网中的 Vetta 节点..."
+            "value": "正在监听局域网中的 FlowsToken 节点..."
           }
         }
       }
@@ -3197,13 +3231,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Open Vetta Desktop on your computer and click “Connect Phone” in the top-right corner to pair"
+            "value": "Open FlowsToken Desktop on your computer and click “Connect Phone” in the top-right corner to pair"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "打开电脑上的 Vetta Desktop，点击右上角「手机扫码连接」即可快速绑定"
+            "value": "打开电脑上的 FlowsToken Desktop，点击右上角「手机扫码连接」即可快速绑定"
           }
         }
       }
@@ -3282,13 +3316,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "On first connection, iPhone asks for Local Network access. Allow it; if you declined, turn it back on in Settings → Vetta."
+            "value": "On first connection, iPhone asks for Local Network access. Allow it; if you declined, turn it back on in Settings → FlowsToken."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "iPhone 首次连接会询问「本地网络」权限，请选择允许；拒绝后可到 设置 → Vetta 里重新打开。"
+            "value": "iPhone 首次连接会询问「本地网络」权限，请选择允许；拒绝后可到 设置 → FlowsToken 里重新打开。"
           }
         }
       }
@@ -3469,13 +3503,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Move a finger to move the pointer · tap to click · two-finger tap to right-click · hold to drag · two fingers zoom and move the picture"
+            "value": "Move a finger to move the pointer · tap to click · two-finger tap to right-click · hold to drag · two fingers scroll, pinch to zoom, then pan the enlarged picture"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "单指移动光标 · 轻点点击 · 双指轻点右键 · 按住拖动 · 双指缩放和移动画面"
+            "value": "单指移动光标 · 轻点点击 · 双指轻点右键 · 按住拖动 · 双指滚动，捏合缩放，放大后平移画面"
           }
         }
       }
@@ -3486,13 +3520,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "View only: taps and typing won’t reach the computer until Vetta is allowed in System Settings → Privacy & Security → Accessibility on the Mac."
+            "value": "View only: taps and typing won’t reach the computer until FlowsToken is allowed in System Settings → Privacy & Security → Accessibility on the Mac."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "只能看、不能操作：请在 Mac 的「系统设置 → 隐私与安全性 → 辅助功能」里允许 Vetta，手机上的点按和键盘才会生效。"
+            "value": "只能看、不能操作：请在 Mac 的「系统设置 → 隐私与安全性 → 辅助功能」里允许 FlowsToken，手机上的点按和键盘才会生效。"
           }
         }
       }
@@ -3588,13 +3622,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Turn on “Access away from this network” in Vetta on your computer to see its screen here."
+            "value": "Turn on “Access away from this network” in FlowsToken on your computer to see its screen here."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "请在电脑上的 Vetta「设置 → 远程连接」里打开「允许在外网访问」，才能在这里查看它的屏幕。"
+            "value": "请在电脑上的 FlowsToken「设置 → 远程连接」里打开「允许在外网访问」，才能在这里查看它的屏幕。"
           }
         }
       }
@@ -3605,13 +3639,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Remote control is off for this iPhone. Turn it on in Vetta on your computer: Settings → Remote access → this iPhone."
+            "value": "Remote control is off for this iPhone. Turn it on in FlowsToken on your computer: Settings → Remote access → this iPhone."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "这部 iPhone 的远程控制还没打开。请在电脑上的 Vetta「设置 → 远程连接」里，打开这部 iPhone 的「远程控制」。"
+            "value": "这部 iPhone 的远程控制还没打开。请在电脑上的 FlowsToken「设置 → 远程连接」里，打开这部 iPhone 的「远程控制」。"
           }
         }
       }
@@ -3741,13 +3775,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Your computer hasn’t let Vetta record its screen yet. On the Mac, open System Settings → Privacy & Security → Screen Recording, turn on Vetta, then restart Vetta."
+            "value": "Your computer hasn’t let FlowsToken record its screen yet. On the Mac, open System Settings → Privacy & Security → Screen Recording, turn on FlowsToken, then restart FlowsToken."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "电脑还没允许 Vetta 录制屏幕。请在 Mac 的「系统设置 → 隐私与安全性 → 屏幕录制」里打开 Vetta，然后重启 Vetta。"
+            "value": "电脑还没允许 FlowsToken 录制屏幕。请在 Mac 的「系统设置 → 隐私与安全性 → 屏幕录制」里打开 FlowsToken，然后重启 FlowsToken。"
           }
         }
       }
@@ -3792,13 +3826,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Update Vetta on your computer to see its screen from this iPhone."
+            "value": "Update FlowsToken on your computer to see its screen from this iPhone."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "请把电脑上的 Vetta 更新到最新版本，才能在 iPhone 上查看它的屏幕。"
+            "value": "请把电脑上的 FlowsToken 更新到最新版本，才能在 iPhone 上查看它的屏幕。"
           }
         }
       }
@@ -4178,13 +4212,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Direct"
+            "value": "Peer-to-peer (P2P)"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "直连"
+            "value": "P2P 直连"
           }
         }
       }
