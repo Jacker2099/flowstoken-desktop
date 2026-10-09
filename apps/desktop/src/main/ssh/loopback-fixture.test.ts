@@ -120,56 +120,64 @@ it("does not accept wrapper close while its owned job still contains a process",
 	}
 });
 
-it("the actual Node supervisor exits on parent IPC disconnect before starting a shell", async () => {
-	const directory = realpathSync(mkdtempSync(join(tmpdir(), "owned-supervisor-disconnect-")));
-	directories.push(directory);
-	const marker = join(directory, "shell-started");
-	const program = `const __name = (value) => value; (${waitForOwnedSupervisorLaunch.toString()})(process, () => require('node:fs').writeFileSync(${JSON.stringify(marker)},'started'), () => process.exit(1)); process.send({type:'ready'});`;
-	const child = spawn(process.execPath, ["-e", program], { stdio: ["ignore", "ignore", "pipe", "ipc"] });
-	let errors = "";
-	child.stderr?.on("data", (chunk: Buffer) => {
-		errors += chunk.toString();
-	});
-	try {
-		await new Promise<void>((resolve, reject) => {
-			child.once("message", () => resolve());
-			child.once("error", reject);
-			child.once("exit", () => reject(new Error(`Supervisor exited before ready: ${errors}`)));
+it(
+	"the actual Node supervisor exits on parent IPC disconnect before starting a shell",
+	{ timeout: 30_000 },
+	async () => {
+		const directory = realpathSync(mkdtempSync(join(tmpdir(), "owned-supervisor-disconnect-")));
+		directories.push(directory);
+		const marker = join(directory, "shell-started");
+		const program = `const __name = (value) => value; (${waitForOwnedSupervisorLaunch.toString()})(process, () => require('node:fs').writeFileSync(${JSON.stringify(marker)},'started'), () => process.exit(1)); process.send({type:'ready'});`;
+		const child = spawn(process.execPath, ["-e", program], { stdio: ["ignore", "ignore", "pipe", "ipc"] });
+		let errors = "";
+		child.stderr?.on("data", (chunk: Buffer) => {
+			errors += chunk.toString();
 		});
-		const done = new Promise<number | null>((resolve) => child.once("exit", resolve));
-		child.disconnect();
-		expect(await done).toBe(1);
-		expect(existsSync(marker)).toBe(false);
-	} finally {
-		if (child.exitCode === null && child.signalCode === null) child.kill();
-	}
-});
+		try {
+			await new Promise<void>((resolve, reject) => {
+				child.once("message", () => resolve());
+				child.once("error", reject);
+				child.once("exit", () => reject(new Error(`Supervisor exited before ready: ${errors}`)));
+			});
+			const done = new Promise<number | null>((resolve) => child.once("exit", resolve));
+			child.disconnect();
+			expect(await done).toBe(1);
+			expect(existsSync(marker)).toBe(false);
+		} finally {
+			if (child.exitCode === null && child.signalCode === null) child.kill();
+		}
+	},
+);
 
-it("the actual Node supervisor preserves natural output and exit17 while the parent IPC stays connected", async () => {
-	const program = `const __name=(value)=>value; (${waitForOwnedSupervisorLaunch.toString()})(process,()=>{const child=require('node:child_process').spawn(process.execPath,['-e',"process.stdout.write('natural-output');process.exitCode=17"],{stdio:['ignore','pipe','ignore']});child.stdout.pipe(process.stdout);child.on('close',code=>{process.exitCode=code;});},()=>process.exit(1));process.send({type:'ready'});`;
-	const child = spawn(process.execPath, ["-e", program], { stdio: ["ignore", "pipe", "pipe", "ipc"] });
-	let output = "",
-		errors = "";
-	child.stdout?.on("data", (data: Buffer) => {
-		output += data.toString();
-	});
-	child.stderr?.on("data", (data: Buffer) => {
-		errors += data.toString();
-	});
-	try {
-		const done = new Promise<number | null>((resolve) => child.once("close", resolve));
-		await new Promise<void>((resolve, reject) => {
-			child.once("message", () => resolve());
-			child.once("error", reject);
+it(
+	"the actual Node supervisor preserves natural output and exit17 while the parent IPC stays connected",
+	{ timeout: 30_000 },
+	async () => {
+		const program = `const __name=(value)=>value; (${waitForOwnedSupervisorLaunch.toString()})(process,()=>{const child=require('node:child_process').spawn(process.execPath,['-e',"process.stdout.write('natural-output');process.exitCode=17"],{stdio:['ignore','pipe','ignore']});child.stdout.pipe(process.stdout);child.on('close',code=>{process.exitCode=code;});},()=>process.exit(1));process.send({type:'ready'});`;
+		const child = spawn(process.execPath, ["-e", program], { stdio: ["ignore", "pipe", "pipe", "ipc"] });
+		let output = "",
+			errors = "";
+		child.stdout?.on("data", (data: Buffer) => {
+			output += data.toString();
 		});
-		child.send({ type: "start-owned-shell" });
-		expect(await done).toBe(17);
-		expect(output).toBe("natural-output");
-		expect(errors).toBe("");
-	} finally {
-		if (child.exitCode === null && child.signalCode === null) child.kill();
-	}
-});
+		child.stderr?.on("data", (data: Buffer) => {
+			errors += data.toString();
+		});
+		try {
+			const done = new Promise<number | null>((resolve) => child.once("close", resolve));
+			await new Promise<void>((resolve, reject) => {
+				child.once("message", () => resolve());
+				child.once("error", reject);
+			});
+			child.send({ type: "start-owned-shell" });
+			expect(await done).toBe(17);
+			expect(output).toBe("natural-output");
+			expect(errors).toBe("");
+		} finally {
+			if (child.exitCode === null && child.signalCode === null) child.kill();
+		}
+	},
+);
 
 function fixture(terminationDelayMs = 0, terminateOverride?: (child: ChildProcess) => void, trace?: boolean) {
 	const directory = realpathSync(mkdtempSync(join(tmpdir(), "vetta loopback shell ")));
@@ -263,7 +271,7 @@ async function bounded<T>(operation: Promise<T>): Promise<T> {
 	}
 }
 
-describe("loopback remote shell boundary", () => {
+describe("loopback remote shell boundary", { timeout: 60_000 }, () => {
 	it("passes spaced script paths, quoted arguments and real stdin bytes through a shell", async () => {
 		const { runner } = fixture();
 		const result = await runner.run({

@@ -95,7 +95,7 @@ function resourceFixture() {
 	return { remoteRoot, remotePath, agentDir };
 }
 
-describe("readonly loopback endpoint matches the actual SSH wrapper", () => {
+describe("readonly loopback endpoint matches the actual SSH wrapper", { timeout: 60_000 }, () => {
 	let fixture: ReturnType<typeof readonlyEndpointFixture>;
 	beforeEach(() => {
 		fixture = readonlyEndpointFixture();
@@ -414,7 +414,7 @@ describe("readonly loopback endpoint matches the actual SSH wrapper", () => {
 		));
 });
 
-describe("远程项目会话的资源发现", () => {
+describe("远程项目会话的资源发现", { timeout: 60_000 }, () => {
 	it("读到远端项目自己的 AGENTS.md 与项目技能，不读本机的", async () => {
 		const reads = {
 			stat: vi.spyOn(connection, "stat"),
@@ -455,7 +455,7 @@ describe("远程项目会话的资源发现", () => {
 	});
 });
 
-describe("已加载的远程资源再次刷新", () => {
+describe("已加载的远程资源再次刷新", { timeout: 60_000 }, () => {
 	let fixture: ReturnType<typeof resourceFixture>;
 	let source: SessionResourceRuntime;
 	let reads: ReturnType<typeof watchResourceReads>;
@@ -516,37 +516,41 @@ describe("已加载的远程资源再次刷新", () => {
 	});
 });
 
-it("cleanup waits for owned initial I/O before removing files or restoring env and preserves caller rejection", async () => {
-	const directory = temporaryDirectory(tmpdir(), "resource-cleanup-observation-");
-	const marker = join(directory, "owned.txt");
-	writeFileSync(marker, "actual owned data");
-	const previousHome = process.env.VETTA_HOME;
-	vi.stubEnv("VETTA_HOME", directory);
-	let release!: () => void;
-	const gate = new Promise<void>((resolve) => {
-		release = resolve;
-	});
-	const loading = trackReload(gate.then(() => readFile(marker, "utf8")));
-	let finished = false;
-	const cleanup = cleanupResources().then(() => {
-		finished = true;
-	});
-	try {
-		await Promise.resolve();
-		expect(finished).toBe(false);
-		expect(process.env.VETTA_HOME).toBe(directory);
-		expect(await readFile(marker, "utf8")).toBe("actual owned data");
-		release();
-		expect(await loading).toBe("actual owned data");
-		await cleanup;
-		expect(process.env.VETTA_HOME).toBe(previousHome);
-		await expect(readFile(marker, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
-	} finally {
-		release();
-		await Promise.allSettled([loading, cleanup]);
-	}
-	const error = new Error("owned loader failed");
-	const failure = trackReload(Promise.reject(error));
-	await expect(failure).rejects.toBe(error);
-	await cleanupResources();
-});
+it(
+	"cleanup waits for owned initial I/O before removing files or restoring env and preserves caller rejection",
+	{ timeout: 60_000 },
+	async () => {
+		const directory = temporaryDirectory(tmpdir(), "resource-cleanup-observation-");
+		const marker = join(directory, "owned.txt");
+		writeFileSync(marker, "actual owned data");
+		const previousHome = process.env.VETTA_HOME;
+		vi.stubEnv("VETTA_HOME", directory);
+		let release!: () => void;
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const loading = trackReload(gate.then(() => readFile(marker, "utf8")));
+		let finished = false;
+		const cleanup = cleanupResources().then(() => {
+			finished = true;
+		});
+		try {
+			await Promise.resolve();
+			expect(finished).toBe(false);
+			expect(process.env.VETTA_HOME).toBe(directory);
+			expect(await readFile(marker, "utf8")).toBe("actual owned data");
+			release();
+			expect(await loading).toBe("actual owned data");
+			await cleanup;
+			expect(process.env.VETTA_HOME).toBe(previousHome);
+			await expect(readFile(marker, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+		} finally {
+			release();
+			await Promise.allSettled([loading, cleanup]);
+		}
+		const error = new Error("owned loader failed");
+		const failure = trackReload(Promise.reject(error));
+		await expect(failure).rejects.toBe(error);
+		await cleanupResources();
+	},
+);

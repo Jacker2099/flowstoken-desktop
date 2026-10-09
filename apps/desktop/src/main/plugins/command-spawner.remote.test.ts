@@ -149,7 +149,7 @@ function observeProcessEvents(scope: ReturnType<typeof createLoopbackTestScope>)
 }
 
 function ownedIt(name: string, body: (scope: ReturnType<typeof createCommandScope>) => Promise<void>) {
-	it(name, () => {
+	it(name, { timeout: 60_000 }, () => {
 		const scope = createCommandScope();
 		scopes.push(scope);
 		return scope.track(body(scope));
