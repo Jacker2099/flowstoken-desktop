@@ -1,0 +1,181 @@
+name: mobile-release
+
+# 与桌面 release 配套：桌面流水线发布 GitHub Release 后本流程自动构建手机端产物。
+# Android 产出已签名 APK 并直接挂到同一个 Release；iOS archive 后上传 TestFlight
+# （需要 App Store Connect 里已存在 com.flowstoken.mobile 的应用记录）。
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "要挂载手机端产物的 Release tag（如 v0.7.1）"
+        required: true
+        type: string
+
+env:
+  RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+
+jobs:
+  android-apk:
+    name: Android release APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: apps/mobile/client-android
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Materialize upload keystore
+        env:
+          ANDROID_KEYSTORE_P12_BASE64: ${{ secrets.ANDROID_KEYSTORE_P12_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          echo "$ANDROID_KEYSTORE_P12_BASE64" | base64 -d > flowstoken-upload.p12
+          printf 'storeFile=flowstoken-upload.p12\nstoreType=PKCS12\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+            "$ANDROID_KEYSTORE_PASSWORD" "$ANDROID_KEY_ALIAS" "$ANDROID_KEY_PASSWORD" > keystore.properties
+          chmod 600 flowstoken-upload.p12 keystore.properties
+
+      - name: Assemble release APK
+        run: bash ./gradlew --no-daemon :androidApp:assembleRelease
+
+      - name: Attach APK to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          APK=$(ls androidApp/build/outputs/apk/release/*.apk | head -1)
+          OUT="FlowsToken-${RELEASE_TAG#v}.apk"
+          cp "$APK" "$OUT"
+          gh release upload "$RELEASE_TAG" "$OUT" --clobber
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: flows-token-android-apk
+          path: apps/mobile/client-android/FlowsToken-*.apk
+          if-no-files-found: error
+
+  ios-testflight:
+    name: iOS archive → TestFlight
+    runs-on: macos-26
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: apps/mobile/client-apple
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Set up xcodegen
+        run: brew install xcodegen
+
+      - name: Materialize signing config and ASC API key
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_API_KEY_P8_BASE64: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+        run: |
+          set -euo pipefail
+          printf 'DEVELOPMENT_TEAM = %s\n' "$APPLE_TEAM_ID" > Config/Local.xcconfig
+          echo "$APPLE_API_KEY_P8_BASE64" | base64 -d > "$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
+          chmod 600 "$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Archive
+        env:
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          set -o pipefail
+          xcodebuild archive \
+            -project Vetta.xcodeproj \
+            -scheme Vetta \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/FlowsToken.xcarchive" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8" \
+            -authenticationKeyID "$APPLE_API_KEY_ID" \
+            -authenticationKeyIssuerID "$APPLE_API_ISSUER" \
+            -quiet
+
+      - name: Write export options
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          printf '%s\n' \
+            '<?xml version="1.0" encoding="UTF-8"?>' \
+            '<plist version="1.0">' \
+            '<dict>' \
+            '<key>method</key><string>app-store-connect</string>' \
+            '<key>signingStyle</key><string>automatic</string>' \
+            "<key>teamID</key><string>${APPLE_TEAM_ID}</string>" \
+            '<key>uploadSymbols</key><true/>' \
+            '<key>manageAppVersionAndBuildNumber</key><false/>' \
+            '</dict>' \
+            '</plist>' > "$RUNNER_TEMP/ExportOptions.plist"
+
+      - name: Export IPA
+        env:
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          set -o pipefail
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/FlowsToken.xcarchive" \
+            -exportPath "$RUNNER_TEMP/ipa-export" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8" \
+            -authenticationKeyID "$APPLE_API_KEY_ID" \
+            -authenticationKeyIssuerID "$APPLE_API_ISSUER" \
+            -quiet
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: flowstoken-ios-ipa
+          path: ${{ runner.temp }}/ipa-export/
+          if-no-files-found: error
+
+      # ASC 应用记录（com.flowstoken.mobile）必须先在 App Store Connect 网页端建好，
+      # 否则本步会报找不到应用——这是 iOS 无法绕过的唯一手工步骤。
+      - name: Upload to TestFlight
+        env:
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          set -o pipefail
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/FlowsToken.xcarchive" \
+            -exportPath "$RUNNER_TEMP/ipa-upload" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8" \
+            -authenticationKeyID "$APPLE_API_KEY_ID" \
+            -authenticationKeyIssuerID "$APPLE_API_ISSUER" \
+            -destination upload \
+            -quiet

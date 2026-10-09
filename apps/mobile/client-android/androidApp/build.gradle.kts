@@ -29,7 +29,7 @@ android {
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         versionCode = 1
-        versionName = "1.0"
+        versionName = "0.7.1"
     }
     packaging {
         resources {
@@ -45,6 +45,7 @@ android {
     signingConfigs {
         create("release") {
             storeFile = releaseKeystoreProps.getProperty("storeFile")?.let { path -> rootProject.file(path) }
+            storeType = releaseKeystoreProps.getProperty("storeType")
             storePassword = releaseKeystoreProps.getProperty("storePassword")
             keyAlias = releaseKeystoreProps.getProperty("keyAlias")
             keyPassword = releaseKeystoreProps.getProperty("keyPassword")
