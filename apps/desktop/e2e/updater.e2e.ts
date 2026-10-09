@@ -117,13 +117,14 @@ async function runUpdaterCheck(): Promise<void> {
 }
 
 describe("Vetta Desktop packaged updater", () => {
-	(packaged ? it : it.skip)("checks the configured update feed through the settings UI", async function () {
-		this.timeout(SPEC_TIMEOUT_MS);
+	// `it` returns the mocha Test so the timeout is set without `this`, which also keeps
+	// the spec loadable by the host-access contract harness that stubs `it`.
+	(packaged ? it : it.skip)("checks the configured update feed through the settings UI", async () => {
 		try {
 			await runUpdaterCheck();
 		} catch (error) {
 			await dumpUpdaterE2eState("failure");
 			throw error;
 		}
-	});
+	})?.timeout?.(SPEC_TIMEOUT_MS);
 });
