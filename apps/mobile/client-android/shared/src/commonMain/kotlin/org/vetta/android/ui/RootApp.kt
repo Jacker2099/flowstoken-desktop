@@ -35,6 +35,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.IntOffset
 import androidx.lifecycle.Lifecycle
@@ -120,6 +121,9 @@ fun RootApp(
     /** Where a home screen shortcut or the quick settings tile asked to open. */
     launchTarget: LaunchTarget? = null,
     onLaunchTargetHandled: () -> Unit = {},
+    /** The `flowstoken://auth/callback` link the sign-in browser came back on. */
+    authCallback: String? = null,
+    onAuthCallbackHandled: () -> Unit = {},
 ) {
     val vm: AppViewModel = viewModel(factory = remember(container) { AppViewModelFactory(container) })
     val state by vm.state.collectAsState()
@@ -166,6 +170,13 @@ fun RootApp(
         }
     }
 
+    LaunchedEffect(authCallback) {
+        if (authCallback != null) {
+            work.finishDirectLogin(authCallback)
+            onAuthCallbackHandled()
+        }
+    }
+
     LaunchedEffect(openSession) {
         if (openSession != null) {
             vm.show(openSession)
@@ -177,7 +188,7 @@ fun RootApp(
         when (launchTarget) {
             null -> return@LaunchedEffect
             LaunchTarget.NewSession -> vm.startNewSession()
-            LaunchTarget.TaskBoard -> if (workState.paired) vm.openBoard() else vm.openPairing()
+            LaunchTarget.TaskBoard -> if (workState.paired || workState.directSignedIn) vm.openBoard() else vm.openPairing()
             // Without a paired computer there is no screen to show: pairing comes first.
             LaunchTarget.RemoteControl ->
                 when {
@@ -210,8 +221,9 @@ fun RootApp(
 
     VettaTheme(themeMode = state.themeMode) {
         BoxWithConstraints(Modifier.fillMaxSize().background(MaterialTheme.vettaExtra.pageBackground)) {
-            // After an unpairing the sessions stay readable, so Home keeps its place.
-            val hasSessions = workState.paired || workState.unlinked != null
+            // After an unpairing the sessions stay readable, so Home keeps its place;
+            // a signed-in account keeps its direct chats listed the same way.
+            val hasSessions = workState.paired || workState.unlinked != null || workState.directSignedIn
             val wide = maxWidth >= HomeBesideMinWidth && hasSessions
             LaunchedEffect(wide) { beside = wide }
             CompositionLocalProvider(LocalHomeBeside provides wide) {
@@ -276,19 +288,20 @@ fun RootApp(
     }
 }
 
-/** The root slot: one session, or New Session; until a desktop is paired, how to pair. */
+/** The root slot: one session, or New Session; until a desktop is paired or an account signs in, how to start. */
 @Composable
 private fun SlotContent(slot: Slot, workState: MirrorState, vm: AppViewModel, work: WorkViewModel) {
     val drafts by work.drafts.collectAsState()
+    val links = LocalUriHandler.current
     // A new slot starts fresh; the change happens at once, under the drawer as it slides away.
     key(slot) {
         when (slot) {
             is Slot.NewSession ->
-                if (!workState.paired) {
+                if (!workState.paired && !workState.directSignedIn) {
                     val unlinked = workState.unlinked
                     when {
                         unlinked != null -> UnlinkedView(workState.desktop?.desktopName.orEmpty(), unlinked, onPair = vm::openPairing, onOpenHome = vm::openDrawer)
-                        workState.ready -> UnpairedView(onPair = vm::openPairing)
+                        workState.ready -> UnpairedView(onPair = vm::openPairing, onSignIn = { links.openUri(work.beginDirectLogin()) })
                     }
                 } else {
                     val restored = remember { work.takeFailedStart() }
@@ -342,6 +355,7 @@ private fun SlotContent(slot: Slot, workState: MirrorState, vm: AppViewModel, wo
 @Composable
 private fun HomeStack(state: AppUiState, workState: MirrorState, vm: AppViewModel, work: WorkViewModel, viewerUrl: String?) {
     val filter by work.filter.collectAsState()
+    val links = LocalUriHandler.current
     AnimatedContent(
         targetState = state.homePath,
         contentKey = { path -> path.size to path.lastOrNull() },
@@ -407,6 +421,8 @@ private fun HomeStack(state: AppUiState, workState: MirrorState, vm: AppViewMode
                     onBackgroundLink = vm::setBackgroundLink,
                     onOpenRemote = viewerUrl?.let { vm::openRemote },
                     onOpenNotifications = { vm.push(HomePage.Notifications) },
+                    onSignIn = { links.openUri(work.beginDirectLogin()) },
+                    onSignOut = work::signOutDirect,
                 )
             HomePage.Notifications ->
                 NotificationSettingsScreen(

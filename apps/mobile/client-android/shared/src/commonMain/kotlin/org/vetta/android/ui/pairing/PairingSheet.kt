@@ -31,6 +31,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.Password
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material3.CircularProgressIndicator
@@ -63,6 +64,7 @@ import org.vetta.android.domain.remote.pairing.PairingPhase
 import org.vetta.android.domain.work.UnlinkReason
 import org.vetta.android.resources.Res
 import org.vetta.android.resources.cancel
+import org.vetta.android.resources.direct_sign_in
 import org.vetta.android.resources.pair_code_hint
 import org.vetta.android.resources.pair_connecting
 import org.vetta.android.resources.pair_invite
@@ -297,9 +299,9 @@ private fun ScanFrame(active: Boolean, onClick: () -> Unit, modifier: Modifier =
     }
 }
 
-/** Shown in place of New Session until a desktop is paired. */
+/** Shown in place of New Session until a desktop is paired or an account is signed in. */
 @Composable
-fun UnpairedView(onPair: () -> Unit, modifier: Modifier = Modifier) {
+fun UnpairedView(onPair: () -> Unit, modifier: Modifier = Modifier, onSignIn: (() -> Unit)? = null) {
     Column(
         modifier.fillMaxSize().padding(horizontal = 32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -327,6 +329,16 @@ fun UnpairedView(onPair: () -> Unit, modifier: Modifier = Modifier) {
             modifier = Modifier.padding(top = 28.dp),
             tag = "home.pair",
         )
+        // Signing in unlocks the desktop-free chats without pairing anything.
+        if (onSignIn != null) {
+            GlassCapsuleButton(
+                text = stringResource(Res.string.direct_sign_in),
+                icon = Icons.Filled.Person,
+                onClick = onSignIn,
+                modifier = Modifier.padding(top = 12.dp),
+                tag = "home.signIn",
+            )
+        }
     }
 }
 

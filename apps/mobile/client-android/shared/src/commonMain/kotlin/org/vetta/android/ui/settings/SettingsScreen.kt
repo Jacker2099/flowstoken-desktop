@@ -25,10 +25,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Laptop
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.outlined.DesktopWindows
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.QrCodeScanner
-import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -59,6 +60,13 @@ import org.vetta.android.domain.work.MirrorState
 import org.vetta.android.resources.Res
 import org.vetta.android.resources.appearance
 import org.vetta.android.resources.back
+import org.vetta.android.resources.direct_account
+import org.vetta.android.resources.direct_group_default
+import org.vetta.android.resources.direct_group_smart
+import org.vetta.android.resources.direct_group_vip
+import org.vetta.android.resources.direct_sign_in
+import org.vetta.android.resources.direct_sign_out
+import org.vetta.android.resources.direct_sign_out_hint
 import org.vetta.android.resources.latency
 import org.vetta.android.resources.link_latency
 import org.vetta.android.resources.remote_control
@@ -123,8 +131,13 @@ fun SettingsScreen(
     onOpenRemote: (() -> Unit)? = null,
     /** Opens the page choosing which session news becomes a notification. */
     onOpenNotifications: () -> Unit = {},
+    /** Starts the account sign-in for desktop-free chats; null hides that affordance. */
+    onSignIn: (() -> Unit)? = null,
+    /** Ends the account sign-in; this phone's direct chats go with it. */
+    onSignOut: () -> Unit = {},
 ) {
     var confirmUnpair by remember { mutableStateOf(false) }
+    var confirmSignOut by remember { mutableStateOf(false) }
     val preferences = state.preferences
     Column(
         Modifier
@@ -145,6 +158,45 @@ fun SettingsScreen(
         )
         Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(FormMetrics.SectionGap)) {
             LinkCard(state, preferences, onPreferences, onPair, onOpenRemote)
+
+            // The FlowsToken account: signed in, it chats without a computer.
+            if (onSignIn != null || state.direct != null) {
+                Section(header = stringResource(Res.string.direct_account)) {
+                    val account = state.direct
+                    if (account != null) {
+                        custom {
+                            Row(
+                                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                                Icon(Icons.Filled.Smartphone, contentDescription = null, tint = MaterialTheme.workColors.ink2, modifier = Modifier.size(22.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text(account.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(
+                                        directGroupLabel(account.group),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                        }
+                        button(
+                            stringResource(Res.string.direct_sign_out),
+                            onClick = { confirmSignOut = true },
+                            role = ButtonRole.Destructive,
+                            tag = "settings.signOut",
+                        )
+                    } else {
+                        button(
+                            stringResource(Res.string.direct_sign_in),
+                            onClick = onSignIn ?: {},
+                            icon = Icons.Filled.Person,
+                            tag = "settings.signIn",
+                        )
+                    }
+                }
+            }
 
             // Notifications need the permission first; turning it on asks for it.
             var denied by remember { mutableStateOf(false) }
@@ -218,7 +270,29 @@ fun SettingsScreen(
             onDismiss = { confirmUnpair = false },
         )
     }
+    if (confirmSignOut) {
+        VettaConfirmDialog(
+            title = stringResource(Res.string.direct_sign_out),
+            message = stringResource(Res.string.direct_sign_out_hint),
+            confirmLabel = stringResource(Res.string.direct_sign_out),
+            onConfirm = {
+                confirmSignOut = false
+                onSignOut()
+            },
+            onDismiss = { confirmSignOut = false },
+        )
+    }
 }
+
+/** The account group's localized label; an unknown group shows as the server named it. */
+@Composable
+private fun directGroupLabel(group: String): String =
+    when (group) {
+        "default" -> stringResource(Res.string.direct_group_default)
+        "smart" -> stringResource(Res.string.direct_group_smart)
+        "vip" -> stringResource(Res.string.direct_group_vip)
+        else -> group
+    }
 
 /**
  * Phone and computer as one picture. Details stay open. While the link is up, one dot

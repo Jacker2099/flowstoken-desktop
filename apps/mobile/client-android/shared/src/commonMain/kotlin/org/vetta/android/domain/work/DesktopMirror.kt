@@ -28,6 +28,21 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import org.vetta.android.data.remote.SessionCache
+import org.vetta.android.domain.direct.DirectAccount
+import org.vetta.android.domain.direct.DirectAuth
+import org.vetta.android.domain.direct.DirectChatClient
+import org.vetta.android.domain.direct.DirectFetch
+import org.vetta.android.domain.direct.DirectLineSource
+import org.vetta.android.domain.direct.applyDirectLocal
+import org.vetta.android.domain.direct.configureDirect
+import org.vetta.android.domain.direct.deleteDirectSession
+import org.vetta.android.domain.direct.isDirect
+import org.vetta.android.domain.direct.isDirectId
+import org.vetta.android.domain.direct.loadDirectModels
+import org.vetta.android.domain.direct.loadDirectState
+import org.vetta.android.domain.direct.mergeSessions
+import org.vetta.android.domain.direct.sendDirectPrompt
+import org.vetta.android.domain.direct.transcriptStoreKey
 import org.vetta.android.domain.remote.RemoteApi
 import org.vetta.android.domain.remote.RemoteFileEntry
 import org.vetta.android.domain.remote.RemoteFileInfo
@@ -138,9 +153,16 @@ data class MirrorState(
     val skillCatalogs: Map<String, SkillCatalog> = emptyMap(),
     /** The desktop's pointer shape while the screen is open; null draws a plain arrow. */
     val screenCursor: RemoteScreenCursor? = null,
+    /** The signed-in FlowsToken account, for direct chat without a desktop. */
+    val direct: DirectAccount? = null,
+    /** Models the account may chat with directly; fetched after sign-in. */
+    val directModels: List<RemoteModelOption> = emptyList(),
 ) {
     val online: Boolean
         get() = link.isUsable
+
+    val directSignedIn: Boolean
+        get() = direct != null
 
     val conversationCwd: String?
         get() = projects.firstOrNull { it.isConversation }?.cwd
@@ -189,6 +211,9 @@ class MirrorPlatform(
     val configurePairing: (PairingFlowOptions) -> PairingFlowOptions = { it },
     val logger: RemoteLogger = NoopRemoteLogger,
     val createP2pTransport: P2pRemoteTransportFactory? = null,
+    /** Direct-chat seams; tests replay canned HTTP/SSE instead of the network. */
+    val directFetch: DirectFetch? = null,
+    val directLines: DirectLineSource? = null,
 )
 
 /**
@@ -201,18 +226,28 @@ class MirrorPlatform(
  * locks, like the iOS main actor.
  */
 class DesktopMirror(
-    private val platform: MirrorPlatform,
-    private val scope: CoroutineScope,
+    internal val platform: MirrorPlatform,
+    internal val scope: CoroutineScope,
 ) {
     private val _state = MutableStateFlow(MirrorState())
     val state: StateFlow<MirrorState> = _state.asStateFlow()
 
     private val pairingStore = PairingStore(platform.settings, platform.secrets)
-    private val reducer = TranscriptReducer(platform.now)
+    internal val reducer = TranscriptReducer(platform.now)
     private var deviceId = ""
     private var link: DesktopLink? = null
     private var linkJobs = emptyList<Job>()
-    private var desktopKey: String? = null
+    internal var desktopKey: String? = null
+
+    /** Direct sign-in and chat; tokens stay in [DirectAuth], never in state. */
+    internal val directAuth = DirectAuth(platform.secrets, platform.directFetch ?: DirectAuth.ktorFetch)
+    internal val directChatClient = DirectChatClient(platform.directLines ?: DirectChatClient.ktorLines)
+
+    /** Direct-mode sessions; `state.sessions` always equals these plus the desktop's list. */
+    internal var directSessions: List<RemoteSessionSummary> = emptyList()
+
+    /** Streaming completions in flight, by direct session id. */
+    internal val directTasks = mutableMapOf<String, Job>()
 
     private val fileCache = FileContentCache()
 
@@ -222,7 +257,7 @@ class DesktopMirror(
     private val transcriptSaves = mutableMapOf<String, Job>()
     private var unsavedSequence: Pair<String, Long>? = null
     private var sequenceSave: Job? = null
-    private var active = true
+    internal var active = true
 
     /** The remote screen is open; the desktop captures only while it is and the app is in front. */
     private var screenOpen = false
@@ -236,7 +271,7 @@ class DesktopMirror(
     val currentLink: DesktopLink?
         get() = link
 
-    private inline fun mutate(block: (MirrorState) -> MirrorState) {
+    internal inline fun mutate(block: (MirrorState) -> MirrorState) {
         _state.update(block)
     }
 
@@ -248,7 +283,13 @@ class DesktopMirror(
         deviceId = platform.settings.getStringOrNull(DEVICE_ID_KEY)
             ?: "mobile-${RemoteCrypto.toBase64Url(RemoteCrypto.randomBytes(8))}".also { platform.settings[DEVICE_ID_KEY] = it }
         mutate { it.copy(preferences = decodePreferences(platform.settings.getStringOrNull(PREFERENCES_KEY))) }
+        // The account sign-in and its local sessions restore whether or not a desktop is paired.
+        loadDirectState()
         pairingStore.getCurrent()?.let(::attachLink) ?: restoreUnlinked()
+        if (directSessions.isNotEmpty()) {
+            mutate { it.copy(sessions = mergeSessions(it.sessions), sessionsLoaded = true) }
+        }
+        if (_state.value.direct != null) scope.launch { loadDirectModels() }
         mutate { it.copy(ready = true) }
     }
 
@@ -365,8 +406,8 @@ class DesktopMirror(
             it.copy(
                 desktop = saved.desktop,
                 unlinked = saved.reason,
-                sessions = cached,
-                sessionsLoaded = cached.isNotEmpty(),
+                sessions = mergeSessions(cached),
+                sessionsLoaded = cached.isNotEmpty() || directSessions.isNotEmpty(),
                 projects = loadList(PROJECTS_KEY_PREFIX + key, RemoteProjectSummary.serializer()),
             )
         }
@@ -408,8 +449,8 @@ class DesktopMirror(
                 paired = true,
                 unlinked = null,
                 desktop = record.stored,
-                sessions = cached,
-                sessionsLoaded = cached.isNotEmpty(),
+                sessions = mergeSessions(cached),
+                sessionsLoaded = cached.isNotEmpty() || directSessions.isNotEmpty(),
                 projects = loadList(PROJECTS_KEY_PREFIX + key, RemoteProjectSummary.serializer()),
                 models = emptyMap(),
                 newSessionModels = loadList(MODELS_KEY_PREFIX + key, RemoteModelOption.serializer()),
@@ -516,7 +557,7 @@ class DesktopMirror(
 
     private fun requireLink(): DesktopLink = link ?: throw LinkOfflineException()
 
-    private fun reportError(error: Throwable) {
+    internal fun reportError(error: Throwable) {
         if (error is CancellationException) throw error
         platform.logger.warn("desktop action failed", mapOf("error" to error::class.simpleName))
         mutate { it.copy(lastError = if (error is LinkOfflineException) MirrorError.NotConnected else MirrorError.Unknown) }
@@ -524,14 +565,14 @@ class DesktopMirror(
 
     // Events
 
-    private fun dispatch(sessionId: String, action: TranscriptAction) {
+    internal fun dispatch(sessionId: String, action: TranscriptAction) {
         val next = reducer.reduce(_state.value.transcript(sessionId), action)
         mutate { it.copy(transcripts = it.transcripts + (sessionId to next)) }
         scheduleTranscriptSave(sessionId, next)
     }
 
     private fun scheduleTranscriptSave(sessionId: String, transcript: TranscriptState) {
-        val key = desktopKey ?: return
+        val key = transcriptStoreKey(sessionId) ?: return
         if (transcript.stale || !transcript.loaded) return
         transcriptSaves[sessionId]?.cancel()
         transcriptSaves[sessionId] =
@@ -542,7 +583,7 @@ class DesktopMirror(
             }
     }
 
-    private fun patchSession(sessionId: String, patch: (RemoteSessionSummary) -> RemoteSessionSummary) {
+    internal fun patchSession(sessionId: String, patch: (RemoteSessionSummary) -> RemoteSessionSummary) {
         mutate { state -> state.copy(sessions = state.sessions.map { if (it.id == sessionId) patch(it) else it }) }
     }
 
@@ -705,13 +746,23 @@ class DesktopMirror(
      */
     suspend fun openSession(sessionId: String) {
         val fresh = freshSessions.remove(sessionId) && _state.value.transcripts[sessionId]?.stale == false
-        val key = desktopKey
         // Events for a chat never opened leave only a partial one: the cached copy is fuller.
-        if (_state.value.transcripts[sessionId]?.loaded != true && key != null) {
-            platform.cache.loadTranscript(key, sessionId)?.let { cached ->
-                val restored = TranscriptState.Empty.copy(items = cached, loaded = true, stale = true)
+        transcriptStoreKey(sessionId)?.let { key ->
+            if (_state.value.transcripts[sessionId]?.loaded != true) {
+                platform.cache.loadTranscript(key, sessionId)?.let { cached ->
+                    val restored = TranscriptState.Empty.copy(items = cached, loaded = true, stale = true)
+                    mutate { it.copy(transcripts = it.transcripts + (sessionId to restored)) }
+                }
+            }
+        }
+        // Direct sessions keep their own history; nothing on a desktop to ask.
+        if (isDirectId(sessionId)) {
+            if (_state.value.transcripts[sessionId] == null) {
+                val restored = TranscriptState.Empty.copy(loaded = true)
                 mutate { it.copy(transcripts = it.transcripts + (sessionId to restored)) }
             }
+            _state.value.transcripts[sessionId]?.let { if (it.stale) mutate { s -> s.copy(transcripts = s.transcripts + (sessionId to it.copy(stale = false))) } }
+            return
         }
         try {
             val current = requireLink()
@@ -797,6 +848,11 @@ class DesktopMirror(
     }
 
     suspend fun loadModels(sessionId: String) {
+        if (isDirectId(sessionId)) {
+            if (_state.value.directModels.isEmpty()) loadDirectModels()
+            mutate { it.copy(models = it.models + (sessionId to it.directModels)) }
+            return
+        }
         try {
             val options = RemoteApi.readModelOptions(requireLink().request(RemoteRequestMethod.ModelList, sessionId = sessionId))
             mutate { it.copy(models = it.models + (sessionId to options)) }
@@ -850,6 +906,11 @@ class DesktopMirror(
      * where it landed for the next New Session.
      */
     suspend fun configure(sessionId: String, modelKey: String? = null, thinkingLevel: String? = null): Boolean {
+        if (isDirectId(sessionId)) {
+            // The account has no thinking levels; the model is the only switch.
+            modelKey?.let { configureDirect(sessionId, it) }
+            return true
+        }
         if (modelKey == null && thinkingLevel == null) return false
         val payload =
             buildJsonObject {
@@ -883,6 +944,13 @@ class DesktopMirror(
     ): String? {
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return null
+        if (sessionId != null) {
+            val resolved = _state.value.resolve(sessionId)
+            if (isDirectId(resolved) || _state.value.session(resolved)?.isDirect == true) {
+                sendDirectPrompt(resolved, trimmed)
+                return resolved
+            }
+        }
         return try {
             if (sessionId == null) rememberModel(ModelChoice(modelKey, thinkingLevel))
             val target =
@@ -1018,6 +1086,11 @@ class DesktopMirror(
     }
 
     suspend fun abort(sessionId: String) {
+        if (isDirectId(sessionId)) {
+            directTasks[sessionId]?.cancel()
+            directTasks.remove(sessionId)
+            return
+        }
         try {
             requireLink().request(RemoteRequestMethod.SessionAbort, sessionId = sessionId)
         } catch (error: Throwable) {
@@ -1026,6 +1099,8 @@ class DesktopMirror(
     }
 
     suspend fun resync(sessionId: String) {
+        // Direct sessions are the source of truth locally; nothing to resync.
+        if (isDirectId(sessionId)) return
         dispatch(sessionId, TranscriptAction.Resync)
         openSession(sessionId)
         refreshSessions()
@@ -1035,6 +1110,7 @@ class DesktopMirror(
     suspend fun rename(sessionId: String, title: String): Boolean {
         val trimmed = title.trim()
         if (trimmed.isEmpty()) return false
+        if (isDirectId(sessionId)) return applyDirectLocal(sessionId) { it.copy(title = trimmed) }
         return try {
             val result = requireLink().request(RemoteRequestMethod.SessionRename, buildJsonObject { put("title", trimmed) }, sessionId)
             adopt((result as? JsonObject)?.get("session"))
@@ -1050,6 +1126,9 @@ class DesktopMirror(
      * moves at once; the desktop's pin time replaces the phone's when it answers.
      */
     suspend fun setPinned(sessionId: String, pinned: Boolean): Boolean {
+        if (isDirectId(sessionId)) {
+            return applyDirectLocal(sessionId) { it.copy(pinnedAt = if (pinned) platform.now() else null) }
+        }
         val before = _state.value.session(sessionId)?.pinnedAt
         patchSession(sessionId) { it.copy(pinnedAt = if (pinned) platform.now() else null) }
         return try {
@@ -1064,8 +1143,13 @@ class DesktopMirror(
     }
 
     /** Deletes the session on the desktop, and with it everything kept here. */
-    suspend fun deleteSession(sessionId: String): Boolean =
-        try {
+    suspend fun deleteSession(sessionId: String): Boolean {
+        // A direct session exists only here; the summary list and cache drop it locally.
+        if (isDirectId(sessionId)) {
+            deleteDirectSession(sessionId)
+            return true
+        }
+        return try {
             requireLink().request(RemoteRequestMethod.SessionDelete, sessionId = sessionId)
             mutate {
                 it.copy(
@@ -1075,12 +1159,13 @@ class DesktopMirror(
                 )
             }
             // Saving the list without it drops its cached transcript too.
-            desktopKey?.let { platform.cache.saveSessions(it, _state.value.sessions) }
+            desktopKey?.let { platform.cache.saveSessions(it, _state.value.sessions.filterNot { s -> s.isDirect }) }
             true
         } catch (error: Throwable) {
             reportError(error)
             false
         }
+    }
 
     /** Takes the title and pin from a summary the desktop just returned; the status stays as the live events left it. */
     private fun adopt(value: JsonElement?) {
@@ -1090,7 +1175,7 @@ class DesktopMirror(
     }
 
     private fun keepSessions(list: List<RemoteSessionSummary>) {
-        mutate { it.copy(sessions = list, sessionsLoaded = true) }
+        mutate { it.copy(sessions = mergeSessions(list), sessionsLoaded = true) }
         desktopKey?.let { platform.cache.saveSessions(it, list) }
     }
 

@@ -137,6 +137,8 @@ fun Composer(
     dictation: Dictation = rememberDictation(),
     /** The desktop's skills to reference (ADR-0137); null leaves them out. */
     skills: ComposerSkills? = null,
+    /** False on direct chats, which have no desktop to carry attachments to. */
+    attachments: Boolean = true,
 ) {
     val colors = MaterialTheme.workColors
     val scope = rememberCoroutineScope()
@@ -253,12 +255,14 @@ fun Composer(
                 verticalAlignment = Alignment.Bottom,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                IconButton(
-                    onClick = { sheet = true },
-                    enabled = enabled,
-                    modifier = Modifier.size(36.dp).testTag("composer.attach"),
-                ) {
-                    Icon(Icons.Filled.Add, contentDescription = stringResource(Res.string.chat_attach), modifier = Modifier.size(22.dp))
+                if (attachments) {
+                    IconButton(
+                        onClick = { sheet = true },
+                        enabled = enabled,
+                        modifier = Modifier.size(36.dp).testTag("composer.attach"),
+                    ) {
+                        Icon(Icons.Filled.Add, contentDescription = stringResource(Res.string.chat_attach), modifier = Modifier.size(22.dp))
+                    }
                 }
                 Box(Modifier.weight(1f).heightIn(min = 36.dp).padding(vertical = 8.dp), contentAlignment = Alignment.CenterStart) {
                     if (draft.text.isEmpty()) {

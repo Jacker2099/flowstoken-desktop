@@ -91,10 +91,10 @@ class AppViewModel(
         viewModelScope.launch {
             container.preferences.notifications.collect { prefs -> _state.update { it.copy(notifications = prefs) } }
         }
-        // Nothing left to show (never paired): back to the start. An unpairing keeps the
-        // sessions readable, so the screen the user is on stays.
+        // Nothing left to show (never paired, not signed in): back to the start. An
+        // unpairing keeps the sessions readable, so the screen the user is on stays.
         viewModelScope.launch {
-            container.mirror.state.map { it.paired || it.unlinked != null }.distinctUntilChanged().collect { shown -> if (!shown) reset() }
+            container.mirror.state.map { it.paired || it.unlinked != null || it.directSignedIn }.distinctUntilChanged().collect { shown -> if (!shown) reset() }
         }
         container.mirror.start()
     }

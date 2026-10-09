@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.QuestionMark
+import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Edit
@@ -63,6 +64,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
+import org.vetta.android.domain.direct.isDirect
 import org.vetta.android.domain.remote.RemoteSessionStatus
 import org.vetta.android.domain.remote.RemoteSessionSummary
 import org.vetta.android.domain.work.ProjectDigest
@@ -86,6 +88,7 @@ import org.vetta.android.resources.session_pinned
 import org.vetta.android.resources.session_rename
 import org.vetta.android.resources.session_rename_title
 import org.vetta.android.resources.session_unpin
+import org.vetta.android.resources.settings_link_phone
 import org.vetta.android.resources.work_group_done
 import org.vetta.android.resources.work_group_processing
 import org.vetta.android.resources.work_group_waiting
@@ -107,24 +110,25 @@ val ProjectIcon: ImageVector = Icons.Outlined.Folder
 
 /**
  * A session's project and when it last moved, on one line: the folder icon, the name,
- * then the time. A conversation has no project, so only the time shows.
+ * then the time. A conversation has no project, so only the time shows; a direct chat
+ * shows "this phone" under a phone icon, where a project would be.
  */
 @Composable
-fun SessionProjectLine(sessionId: String, project: String?, time: String?, color: Color) {
-    if (project == null && time == null) return
+fun SessionProjectLine(sessionId: String, project: String?, time: String?, color: Color, direct: Boolean = false) {
+    if (project == null && time == null && !direct) return
     Row(
         Modifier.testTag("session.$sessionId.meta"),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (project != null) {
+        if (project != null || direct) {
             Icon(
-                ProjectIcon,
+                if (direct) Icons.Filled.Smartphone else ProjectIcon,
                 contentDescription = null,
                 tint = color,
                 modifier = Modifier.size(12.dp).testTag("session.$sessionId.projectIcon"),
             )
             Text(
-                project,
+                project ?: stringResource(Res.string.settings_link_phone),
                 style = MaterialTheme.typography.labelMedium,
                 color = color,
                 maxLines = 1,
@@ -138,7 +142,7 @@ fun SessionProjectLine(sessionId: String, project: String?, time: String?, color
                 style = MaterialTheme.typography.labelMedium,
                 color = color,
                 maxLines = 1,
-                modifier = Modifier.padding(start = if (project != null) 8.dp else 0.dp).testTag("session.$sessionId.time"),
+                modifier = Modifier.padding(start = if (project != null || direct) 8.dp else 0.dp).testTag("session.$sessionId.time"),
             )
         }
     }
@@ -167,7 +171,9 @@ fun SessionCard(
     val colors = MaterialTheme.workColors
     var menu by remember { mutableStateOf(false) }
     val title = workSessionTitle(session.title)
-    val project = session.projectName.takeIf { showsProject && it.isNotBlank() && session.projectCwd != conversationCwd }
+    // Direct sessions are labeled "this phone", not by their sentinel project.
+    val direct = session.isDirect
+    val project = session.projectName.takeIf { showsProject && it.isNotBlank() && session.projectCwd != conversationCwd && !direct }
     val time = session.updatedAt.takeIf { it > 0 }?.let { relativeTimeLabel(it) }
     val status = statusLabel(session.status)
     val pinnedLabel = stringResource(Res.string.session_pinned)
@@ -228,7 +234,7 @@ fun SessionCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                SessionProjectLine(session.id, project, time, colors.ink2)
+                SessionProjectLine(session.id, project, time, colors.ink2, direct = direct)
             }
             StatusGlyph(session.status, modifier = Modifier.padding(top = 4.dp), size = 15.dp)
         }

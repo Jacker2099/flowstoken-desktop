@@ -120,6 +120,14 @@
     <plurals name="days_ago">
         <item quantity="other">%1$d天前</item>
     </plurals>
+    <string name="direct_account">账号</string>
+    <string name="direct_group_default">普通组</string>
+    <string name="direct_group_smart">智能 API 组</string>
+    <string name="direct_group_vip">官方组</string>
+    <string name="direct_sign_in">登录 FlowsToken</string>
+    <string name="direct_sign_out">退出登录</string>
+    <string name="direct_sign_out_confirm">退出此手机上的账号登录？</string>
+    <string name="direct_sign_out_hint">退出登录并删除手机上的直连会话，已连接电脑上的会话不受影响。</string>
     <string name="half_hour_ago">半小时前</string>
     <string name="home_all_sessions">全部会话</string>
     <string name="home_connect_computer">连接电脑</string>

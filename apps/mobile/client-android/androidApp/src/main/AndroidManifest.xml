@@ -34,6 +34,7 @@
         <activity
             android:exported="true"
             android:name=".MainActivity"
+            android:launchMode="singleTask"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
@@ -63,6 +64,18 @@
                 <data
                     android:host="PAIR"
                     android:scheme="VETTA" />
+            </intent-filter>
+            <!-- The account sign-in's way back from the browser: flowstoken://auth/callback. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data
+                    android:host="auth"
+                    android:pathPrefix="/callback"
+                    android:scheme="flowstoken" />
             </intent-filter>
             <!-- Text, pictures and files shared from other apps start a session. -->
             <intent-filter>

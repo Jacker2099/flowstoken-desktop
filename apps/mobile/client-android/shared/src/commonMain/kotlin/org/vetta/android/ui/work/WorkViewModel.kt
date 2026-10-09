@@ -7,6 +7,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import org.vetta.android.domain.direct.DirectChat
+import org.vetta.android.domain.direct.beginDirectLogin
+import org.vetta.android.domain.direct.finishDirectLogin
+import org.vetta.android.domain.direct.isDirect
+import org.vetta.android.domain.direct.loadDirectModels
+import org.vetta.android.domain.direct.signOutDirect
+import org.vetta.android.domain.direct.startDirectChat
 import org.vetta.android.domain.remote.RemoteFileInfo
 import org.vetta.android.domain.remote.RemoteQuestionAnswer
 import org.vetta.android.domain.remote.RemoteSessionState
@@ -107,6 +114,21 @@ class WorkViewModel(private val mirror: DesktopMirror) : ViewModel(), WorkAction
     /** Unpairs; what was being typed stays too, for when this computer is paired again. */
     fun unpair() = mirror.unpair()
 
+    // Direct sign-in: the account's own chats, no desktop needed.
+
+    /** The authorize-page URL to open in the browser; the callback deep link finishes it. */
+    fun beginDirectLogin(): String = mirror.beginDirectLogin()
+
+    /** Consumes the `flowstoken://auth/callback` deep link the browser came back on. */
+    fun finishDirectLogin(url: String) {
+        viewModelScope.launch { mirror.finishDirectLogin(url) }
+    }
+
+    /** Ends the account sign-in and drops this phone's direct chats; a paired computer stays. */
+    fun signOutDirect() {
+        viewModelScope.launch { mirror.signOutDirect() }
+    }
+
     private var failedStart: NewSessionStart? = null
 
     /** What New Session had when its start failed, once; it opens again with it. */
@@ -114,8 +136,12 @@ class WorkViewModel(private val mirror: DesktopMirror) : ViewModel(), WorkAction
 
     /** Readies New Session: the projects to start in and the models to start with. */
     suspend fun prepareNewSession() {
-        mirror.refreshProjects()
-        mirror.loadNewSessionModels()
+        if (mirror.state.value.paired) {
+            mirror.refreshProjects()
+            mirror.loadNewSessionModels()
+        } else if (mirror.state.value.direct != null) {
+            mirror.loadDirectModels()
+        }
     }
 
     /**
@@ -123,6 +149,12 @@ class WorkViewModel(private val mirror: DesktopMirror) : ViewModel(), WorkAction
      * behind it; `onFailure` runs when the prompt did not go out. Null when there is no text.
      */
     fun startSession(start: NewSessionStart, onFailure: () -> Unit): String? {
+        // Unpaired but signed in: the session runs against the account API, on this phone.
+        if (!mirror.state.value.paired && mirror.state.value.direct != null) {
+            val id = mirror.startDirectChat(start.draft.promptText, start.modelChoice.modelKey) ?: return null
+            setDraft(NEW_SESSION_DRAFT, PromptDraft())
+            return id
+        }
         val id =
             mirror.startSession(
                 text = start.draft.promptText,
@@ -210,8 +242,12 @@ class WorkViewModel(private val mirror: DesktopMirror) : ViewModel(), WorkAction
         _drafts.update { if (draft.text.isEmpty() && draft.attachments.isEmpty() && draft.skills.isEmpty()) it - sessionId else it + (sessionId to draft) }
     }
 
-    override fun files(sessionId: String): FileSource =
-        object : FileSource {
+    override fun files(sessionId: String): FileSource? {
+        // A direct session has no desktop to list files on.
+        if (sessionId.startsWith(DirectChat.ID_PREFIX) || mirror.state.value.session(mirror.state.value.resolve(sessionId))?.isDirect == true) {
+            return null
+        }
+        return object : FileSource {
             private val target: String
                 get() = mirror.state.value.resolve(sessionId)
 
@@ -221,6 +257,7 @@ class WorkViewModel(private val mirror: DesktopMirror) : ViewModel(), WorkAction
 
             override suspend fun read(info: RemoteFileInfo) = mirror.readFile(target, info)
         }
+    }
 
     override fun loadSkills(cwd: String?) {
         viewModelScope.launch { mirror.loadSkills(cwd) }

@@ -22,6 +22,8 @@ fun App(
     onOpenSessionHandled: () -> Unit = {},
     launchTarget: LaunchTarget? = null,
     onLaunchTargetHandled: () -> Unit = {},
+    authCallback: String? = null,
+    onAuthCallbackHandled: () -> Unit = {},
 ) {
     CompositionLocalProvider(LocalAppContainer provides container) {
         RootApp(
@@ -34,6 +36,8 @@ fun App(
             onOpenSessionHandled = onOpenSessionHandled,
             launchTarget = launchTarget,
             onLaunchTargetHandled = onLaunchTargetHandled,
+            authCallback = authCallback,
+            onAuthCallbackHandled = onAuthCallbackHandled,
         )
     }
 }

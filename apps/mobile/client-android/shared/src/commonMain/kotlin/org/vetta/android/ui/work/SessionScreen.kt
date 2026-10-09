@@ -53,6 +53,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
+import org.vetta.android.domain.direct.DirectChat
+import org.vetta.android.domain.direct.isDirect
 import org.vetta.android.domain.remote.RemoteModelOption
 import org.vetta.android.domain.remote.RemoteSessionState
 import org.vetta.android.domain.work.ChatBlock
@@ -97,6 +99,8 @@ fun SessionScreen(
 ) {
     // The desktop's id; a chat opened by New Session starts on a local one.
     val id = state.resolve(sessionId)
+    // A direct chat answers from the account API, so a desktop being away changes nothing for it.
+    val isDirect = state.session(id)?.isDirect == true || id.startsWith(DirectChat.ID_PREFIX)
     // The first prompt of a new session is still on its way to the desktop.
     val starting = state.isStarting(sessionId)
     val transcript = state.transcript(id)
@@ -234,7 +238,7 @@ fun SessionScreen(
             transitionSpec = { (fadeIn(VettaMotion.snappy()) togetherWith fadeOut(VettaMotion.snappy())).using(SizeTransform(clip = false)) },
             label = "composer or question",
         ) { question ->
-            if (state.unlinked != null) {
+            if (state.unlinked != null && !isDirect) {
                 // After an unpairing the chat stays readable; say why it cannot go on here.
                 UnlinkedBar(onPair)
             } else if (question != null) {
@@ -252,10 +256,11 @@ fun SessionScreen(
                         following = true
                         actions.send(sessionId, it)
                     },
-                    enabled = state.online && !starting,
+                    enabled = (state.online || isDirect) && !starting,
                     busy = active,
                     onStop = { if (!starting) actions.stop(id) },
-                    skills = state.session(id)?.projectCwd.let { cwd -> ComposerSkills(state.skillCatalog(cwd), { actions.loadSkills(cwd) }, state::skillName) },
+                    skills = if (isDirect) null else state.session(id)?.projectCwd.let { cwd -> ComposerSkills(state.skillCatalog(cwd), { actions.loadSkills(cwd) }, state::skillName) },
+                    attachments = !isDirect,
                 )
             }
         }
@@ -280,9 +285,13 @@ private fun ModelMenu(
     onChoose: (ModelChoice) -> Unit,
 ) {
     val sessionState = state.transcript(sessionId).sessionState
+    val isDirect = state.session(sessionId)?.isDirect == true || sessionId.startsWith(DirectChat.ID_PREFIX)
     // Every session reads the desktop's one registry: New Session's copy stands in until
-    // this chat's own list arrives, or when asking for it failed.
-    val options = state.models[sessionId]?.takeIf { it.isNotEmpty() } ?: state.newSessionModels
+    // this chat's own list arrives, or when asking for it failed. A direct chat's registry
+    // is the account's catalog, already in `models` once the chat opened.
+    val options =
+        state.models[sessionId]?.takeIf { it.isNotEmpty() }
+            ?: if (isDirect) state.directModels else state.newSessionModels
     val current = options.firstOrNull { it.key == sessionState.modelKey }
     var picking by remember { mutableStateOf(false) }
     // A session New Session is still starting is titled by its prompt.
@@ -292,9 +301,9 @@ private fun ModelMenu(
     ModelTitle(
         title = workSessionTitle(title),
         detail = modelDetail(sessionState, current, state.desktop?.desktopName),
-        online = state.online,
+        online = state.online || isDirect,
         picks = options.isNotEmpty(),
-        enabled = options.isNotEmpty() && !busy && state.online,
+        enabled = options.isNotEmpty() && !busy && (state.online || isDirect),
         onClick = { picking = true },
         modifier = Modifier.testTag("chat.modelMenu"),
     )

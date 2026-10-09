@@ -124,6 +124,14 @@
         <item quantity="one">%1$d day ago</item>
         <item quantity="other">%1$d days ago</item>
     </plurals>
+    <string name="direct_account">Account</string>
+    <string name="direct_group_default">Standard</string>
+    <string name="direct_group_smart">Smart API</string>
+    <string name="direct_group_vip">Official</string>
+    <string name="direct_sign_in">Sign in to FlowsToken</string>
+    <string name="direct_sign_out">Sign Out</string>
+    <string name="direct_sign_out_confirm">Sign out of this account on this phone?</string>
+    <string name="direct_sign_out_hint">Ends the sign-in and removes this phone’s direct chats; sessions on a paired computer stay.</string>
     <string name="half_hour_ago">Half an hour ago</string>
     <string name="home_all_sessions">All Sessions</string>
     <string name="home_connect_computer">Connect a Computer</string>

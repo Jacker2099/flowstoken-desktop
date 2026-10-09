@@ -21,6 +21,7 @@ import org.vetta.android.ui.work.readShare
 
 class MainActivity : ComponentActivity() {
     private var pendingPairingInvite by mutableStateOf<String?>(null)
+    private var pendingAuthCallback by mutableStateOf<String?>(null)
     private var pendingShare by mutableStateOf<IncomingShare?>(null)
     private var pendingSession by mutableStateOf<String?>(null)
     private var pendingLaunch by mutableStateOf<LaunchTarget?>(null)
@@ -29,6 +30,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         pendingPairingInvite = pairingInviteFrom(intent)
+        pendingAuthCallback = authCallbackFrom(intent)
         // A share is read once; a recreated activity must not add it to the draft again.
         if (savedInstanceState == null) takeShare(intent)
         pendingSession = intent.getStringExtra(SessionNotifier.EXTRA_SESSION_ID)
@@ -50,6 +52,8 @@ class MainActivity : ComponentActivity() {
                 },
                 launchTarget = pendingLaunch,
                 onLaunchTargetHandled = { pendingLaunch = null },
+                authCallback = pendingAuthCallback,
+                onAuthCallbackHandled = ::clearHandledAuthCallback,
             )
         }
     }
@@ -58,6 +62,7 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         pendingPairingInvite = pairingInviteFrom(intent)
+        pendingAuthCallback = authCallbackFrom(intent)
         takeShare(intent)
         intent.getStringExtra(SessionNotifier.EXTRA_SESSION_ID)?.let { pendingSession = it }
         LaunchTarget.fromAction(intent.action)?.let { pendingLaunch = it }
@@ -78,12 +83,27 @@ class MainActivity : ComponentActivity() {
             setIntent(Intent(intent).setData(null))
         }
     }
+
+    private fun clearHandledAuthCallback() {
+        pendingAuthCallback = null
+        if (authCallbackFrom(intent) != null) {
+            setIntent(Intent(intent).setData(null))
+        }
+    }
 }
 
 internal fun pairingInviteFrom(intent: Intent): String? {
     val data = intent.data ?: return null
     return data.toString().takeIf {
         data.scheme?.lowercase() in setOf("flowstoken", "vetta") && data.host.equals("pair", ignoreCase = true)
+    }
+}
+
+/** The `flowstoken://auth/callback?code=…&state=…` link the account sign-in returns on. */
+internal fun authCallbackFrom(intent: Intent): String? {
+    val data = intent.data ?: return null
+    return data.toString().takeIf {
+        data.scheme?.lowercase() == "flowstoken" && data.host.equals("auth", ignoreCase = true) && data.path.orEmpty().startsWith("/callback")
     }
 }
 

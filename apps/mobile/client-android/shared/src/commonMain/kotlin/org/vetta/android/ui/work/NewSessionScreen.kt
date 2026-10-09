@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.UnfoldMore
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material3.Icon
@@ -78,6 +79,7 @@ import org.vetta.android.resources.new_session_greeting
 import org.vetta.android.resources.new_session_location
 import org.vetta.android.resources.new_session_subtitle
 import org.vetta.android.resources.new_session_title
+import org.vetta.android.resources.settings_link_phone
 import org.vetta.android.resources.work_conversation
 import org.vetta.android.ui.board.BoardSummary
 import org.vetta.android.ui.design.GlassSurface
@@ -130,6 +132,8 @@ fun NewSessionScreen(
         thinkingLevel = kept.thinkingLevel
     }
     val offline = LinkIndicator.of(state.link) == LinkIndicator.Offline
+    // Unpaired but signed in: the welcome page talks to the account's chat API directly.
+    val direct = !state.paired && state.directSignedIn
     val overview = TaskBoard.overview(state.sessions, nowEpochMs())
     val glance = overview.glance()
     val keyboardUp = WindowInsets.isImeVisible
@@ -138,14 +142,14 @@ fun NewSessionScreen(
     val focus = LocalFocusManager.current
 
     LaunchedEffect(restored) { restored?.let { onDraftChange(it.draft) } }
-    LaunchedEffect(state.online) { if (state.online) onPrepare() }
+    LaunchedEffect(state.online, direct) { if (state.online || direct) onPrepare() }
 
     Box(Modifier.fillMaxSize().testTag("newSession")) {
         WelcomeBackdrop()
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
             Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 16.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 DrawerButton(onOpenHome)
-                ModelMenu(state, choice) { next ->
+                ModelMenu(state, choice, direct) { next ->
                     modelKey = next.modelKey
                     thinkingLevel = next.thinkingLevel
                 }
@@ -164,7 +168,12 @@ fun NewSessionScreen(
                     Spacer(Modifier.height(18.dp))
                 }
                 Greeting()
-                LocationChip(state, projectCwd, onRefreshProjects, Modifier.padding(top = 18.dp)) { projectCwd = it }
+                // A direct chat lives on this phone; there is no project to pick.
+                if (direct) {
+                    DirectChip(Modifier.padding(top = 18.dp))
+                } else {
+                    LocationChip(state, projectCwd, onRefreshProjects, Modifier.padding(top = 18.dp)) { projectCwd = it }
+                }
                 Spacer(Modifier.weight(1f))
                 // Typing is about the new session; the board steps aside for the keyboard.
                 AnimatedVisibility(
@@ -185,19 +194,20 @@ fun NewSessionScreen(
                 }
             }
             AnimatedContent(
-                state.online,
+                state.online || direct,
                 transitionSpec = { fadeIn(VettaMotion.snappy()) togetherWith fadeOut(VettaMotion.snappy()) },
                 contentAlignment = Alignment.BottomCenter,
                 label = "composer or link",
-            ) { online ->
-                if (online) {
+            ) { ready ->
+                if (ready) {
                     Composer(
                         draft = draft,
                         onDraftChange = onDraftChange,
                         placeholder = stringResource(Res.string.chat_composer_placeholder),
                         onSend = { sent -> onStart(NewSessionStart(sent, projectCwd, choice)) },
                         containerColor = Color.Transparent,
-                        skills = ComposerSkills(state.skillCatalog(projectCwd), { onLoadSkills(projectCwd) }, state::skillName),
+                        skills = if (direct) null else ComposerSkills(state.skillCatalog(projectCwd), { onLoadSkills(projectCwd) }, state::skillName),
+                        attachments = !direct,
                     )
                 } else {
                     Box(Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 12.dp), contentAlignment = Alignment.Center) {
@@ -225,8 +235,8 @@ private fun Greeting() {
 
 /** Where the chat keeps its model, so both pages switch it in the same place. */
 @Composable
-private fun ModelMenu(state: MirrorState, choice: ModelChoice, onChoose: (ModelChoice) -> Unit) {
-    val options = state.newSessionModels
+private fun ModelMenu(state: MirrorState, choice: ModelChoice, direct: Boolean = false, onChoose: (ModelChoice) -> Unit) {
+    val options = if (direct) state.directModels else state.newSessionModels
     var picking by remember { mutableStateOf(false) }
     val name = options.firstOrNull { it.key == choice.modelKey }?.name ?: stringResource(Res.string.new_session_default_model)
     val text = choice.thinkingLevel?.let { "$name · ${levelLabel(it)}" } ?: name
@@ -235,14 +245,30 @@ private fun ModelMenu(state: MirrorState, choice: ModelChoice, onChoose: (ModelC
     ModelTitle(
         title = stringResource(Res.string.new_session_title),
         detail = text,
-        online = state.online,
+        online = state.online || direct,
         picks = options.isNotEmpty(),
-        enabled = state.online || options.isNotEmpty(),
+        enabled = state.online || direct || options.isNotEmpty(),
         onClick = { picking = true },
         description = "$label: $text",
         modifier = Modifier.testTag("newSession.model"),
     )
     if (picking) ModelSheet(options, choice, onChoose, onDismiss = { picking = false }, offersDefault = true)
+}
+
+/** The chip standing where the project picker goes on a direct chat: "this phone". */
+@Composable
+private fun DirectChip(modifier: Modifier = Modifier) {
+    GlassSurface(modifier.height(40.dp), shape = CircleShape) {
+        Row(Modifier.padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Icon(Icons.Filled.Smartphone, contentDescription = null, modifier = Modifier.size(16.dp))
+            Text(
+                stringResource(Res.string.settings_link_phone),
+                style = MaterialTheme.typography.labelLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
 }
 
 /** A glass chip naming where the session will start; it opens the project sheet. */
