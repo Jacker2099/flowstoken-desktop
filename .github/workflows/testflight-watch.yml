@@ -60,7 +60,18 @@ jobs:
             const build = builds.data?.[0];
             if (!build) { console.log("no builds"); return; }
             const sub = await asc(`/v1/builds/${build.id}/betaAppReviewSubmission`);
-            const state = sub.data?.attributes?.betaReviewState || "UNKNOWN";
+            const state = sub.data?.attributes?.betaReviewState;
+            if (!state) {
+              // 上传后 ASC 处理有延迟，mobile-release 的即时提交可能命中旧 build 而跳过。
+              // 最新 build 只要从没提交过就在此补交，外部测试组才能收到；下轮再报状态。
+              const r = await fetch("https://api.appstoreconnect.apple.com/v1/betaAppReviewSubmissions", {
+                method: "POST",
+                headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+                body: JSON.stringify({ data: { type: "betaAppReviewSubmissions", relationships: { build: { data: { type: "builds", id: build.id } } } } }),
+              });
+              console.log(`build=${build.id} v=${build.attributes.version} no submission; submit status=${r.status}`);
+              return;
+            }
             console.log(`build=${build.id} v=${build.attributes.version} review=${state}`);
             if (state !== "APPROVED" && state !== "REJECTED") return;
             // 幂等：已报过这个 build 就不再推
