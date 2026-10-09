@@ -1,0 +1,82 @@
+name: testflight-watch
+
+# 每 30 分钟查一次最新 TestFlight build 的 beta 审核状态。
+# APPROVED（或 REJECTED）首次出现时发 Telegram 并把 build id 记进仓库变量，保证只报一次。
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write # 读写仓库 actions variables 作为幂等状态
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Materialize ASC key
+        env:
+          APPLE_API_KEY_P8_BASE64: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+        run: |
+          echo "$APPLE_API_KEY_P8_BASE64" | base64 -d > "$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
+          chmod 600 "$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
+
+      - name: Check review state → Telegram once
+        env:
+          ASC_KEY_PATH: ${{ runner.temp }}/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8
+          ASC_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER }}
+          APP_BUNDLE_ID: com.flowstoken.mobile
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TG_TOKEN: ${{ secrets.NOTARY_TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.NOTARY_TELEGRAM_CHAT_ID }}
+        run: |
+          set -euo pipefail
+          node - <<'EOF'
+          const { readFileSync } = require("node:fs");
+          const { createSign } = require("node:crypto");
+          const { ASC_KEY_PATH, ASC_KEY_ID, ASC_ISSUER_ID, APP_BUNDLE_ID, GH_TOKEN, TG_TOKEN, TG_CHAT } = process.env;
+          const repo = process.env.GITHUB_REPOSITORY;
+          const b64u = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
+          const now = Math.floor(Date.now() / 1000);
+          const unsigned = `${b64u({ alg: "ES256", kid: ASC_KEY_ID, typ: "JWT" })}.${b64u({ iss: ASC_ISSUER_ID, iat: now, exp: now + 1200, aud: "appstoreconnect-v1" })}`;
+          const key = readFileSync(ASC_KEY_PATH, "utf8");
+          const token = `${unsigned}.${createSign("sha256").update(unsigned).sign({ key, dsaEncoding: "ieee-p1363" }).toString("base64url")}`;
+          const asc = async (path) => (await fetch(`https://api.appstoreconnect.apple.com${path}`, { headers: { Authorization: `Bearer ${token}` } })).json();
+          const gh = async (path, method = "GET", body) => {
+            const r = await fetch(`https://api.github.com/repos/${repo}${path}`, {
+              method, headers: { Authorization: `Bearer ${GH_TOKEN}`, Accept: "application/vnd.github+json", "Content-Type": "application/json" },
+              body: body ? JSON.stringify(body) : undefined,
+            });
+            return { status: r.status, json: await r.json().catch(() => ({})) };
+          };
+          (async () => {
+            const apps = await asc(`/v1/apps?filter[bundleId]=${APP_BUNDLE_ID}`);
+            const appId = apps.data?.[0]?.id;
+            if (!appId) { console.log("app not found"); return; }
+            const builds = await asc(`/v1/builds?filter[app]=${appId}&sort=-uploadedDate&limit=1`);
+            const build = builds.data?.[0];
+            if (!build) { console.log("no builds"); return; }
+            const sub = await asc(`/v1/builds/${build.id}/betaAppReviewSubmission`);
+            const state = sub.data?.attributes?.betaReviewState || "UNKNOWN";
+            console.log(`build=${build.id} v=${build.attributes.version} review=${state}`);
+            if (state !== "APPROVED" && state !== "REJECTED") return;
+            // 幂等：已报过这个 build 就不再推
+            const v = await gh(`/actions/variables/TF_NOTIFIED_BUILD`);
+            if (v.status === 200 && v.json.value === build.id) { console.log("already notified"); return; }
+            const ok = state === "APPROVED";
+            const text = ok
+              ? `✅ FlowsToken iOS beta 审核通过（build ${build.attributes.version}）\n外部公开链接已生效：https://testflight.apple.com/join/Fae1Rapm\nAndroid 安装包在 GitHub Release v0.7.1 可直接下载。`
+              : `⚠️ FlowsToken iOS beta 审核被拒（build ${build.attributes.version}）\n需要去 App Store Connect 看拒绝原因。`;
+            await fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`, {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ chat_id: TG_CHAT, text, disable_web_page_preview: true }),
+            });
+            const body = { name: "TF_NOTIFIED_BUILD", value: build.id };
+            const wr = v.status === 200 ? await gh(`/actions/variables/TF_NOTIFIED_BUILD`, "PATCH", { value: build.id })
+                                      : await gh(`/actions/variables`, "POST", body);
+            console.log(`notified, variable write: ${wr.status}`);
+          })().catch((e) => { console.error(e); process.exit(1); });
+          EOF
