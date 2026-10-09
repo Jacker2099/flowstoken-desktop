@@ -126,7 +126,16 @@ export function stagedFiles(gitImpl = git) {
 }
 
 export function changedFiles(baseRef = "origin/dev", gitImpl = git) {
-	const mergeBase = gitImpl(["merge-base", "HEAD", baseRef]);
+	// Forks without a `dev` branch (and tag checkouts without remote branch
+	// refs) fall back to main, then to HEAD itself — an empty committed set
+	// still leaves working-tree files to check.
+	const candidates = [baseRef, "origin/main", "main", "HEAD"];
+	let mergeBase = "";
+	for (const candidate of candidates) {
+		mergeBase = gitImpl(["merge-base", "HEAD", candidate], { allowFail: true });
+		if (mergeBase) break;
+	}
+	if (!mergeBase) throw new Error(`git merge-base failed for all candidates: ${candidates.join(", ")}`);
 	const committed = gitImpl(["diff", "--name-only", "-z", `${mergeBase}...HEAD`]);
 	const workingTree = gitImpl(["diff", "--name-only", "-z", "HEAD"]);
 	const untracked = gitImpl(["ls-files", "--others", "--exclude-standard", "-z"]);
