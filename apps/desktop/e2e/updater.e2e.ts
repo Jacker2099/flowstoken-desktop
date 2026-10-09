@@ -3,7 +3,7 @@ import type {} from "@wdio/electron-service";
 import { installUpdaterAuthFixture, UPDATER_ACCOUNT_SNAPSHOT } from "./updater-auth-fixture.js";
 
 const packaged = process.env.VETTA_E2E_PACKAGED === "1";
-const UPDATE_TIMEOUT_MS = 60_000;
+const UPDATE_TIMEOUT_MS = 120_000;
 
 async function focusMainRenderer(): Promise<void> {
 	await browser.waitUntil(
@@ -54,13 +54,38 @@ describe("Vetta Desktop packaged updater", () => {
 		await browser.refresh();
 		await focusMainRenderer();
 		// Observe the normal account UI: raw window.vetta calls lack the renderer's private host token.
-		await browser.execute(() => {
-			window.location.hash = "/settings/flowstoken";
-		});
+		// Slow runners can race the renderer boot: keep pinning the route until the router owns it.
+		await browser.waitUntil(
+			async () => {
+				await browser.execute(() => {
+					window.location.hash = "/settings/flowstoken";
+				});
+				return (await browser.execute(() => window.location.hash)) === "#/settings/flowstoken";
+			},
+			{ timeout: UPDATE_TIMEOUT_MS, timeoutMsg: "Settings route did not stick before updater E2E" },
+		);
 		const fixtureName = UPDATER_ACCOUNT_SNAPSHOT.user?.displayName || UPDATER_ACCOUNT_SNAPSHOT.user?.username;
 		if (!fixtureName) throw new Error("Updater account fixture has no display name");
 		const accountStatus = await $(`p*=${fixtureName}`).getElement();
-		await accountStatus.waitForDisplayed({ timeout: UPDATE_TIMEOUT_MS });
+		try {
+			await accountStatus.waitForDisplayed({ timeout: UPDATE_TIMEOUT_MS });
+		} catch (error) {
+			const pageState = await browser.execute(() => ({
+				hash: window.location.hash,
+				title: document.title,
+				body: (document.body?.innerText ?? "").slice(0, 600),
+				hasAccountBridge:
+					typeof (window as { vetta?: { flowstoken?: { refresh?: unknown } } }).vetta?.flowstoken
+						?.refresh === "function",
+			}));
+			const windowUrls = await browser.electron.execute((electron) =>
+				electron.BrowserWindow.getAllWindows()
+					.filter((w) => !w.isDestroyed())
+					.map((w) => `${w.id}:${w.webContents.getURL()}`),
+			);
+			console.error(`[updater-e2e] account fixture missing ${JSON.stringify({ pageState, windowUrls })}`);
+			throw error;
+		}
 		expect(await accountStatus.getText()).toContain(fixtureName);
 		await browser.execute(() => {
 			window.location.hash = "/settings/general";
