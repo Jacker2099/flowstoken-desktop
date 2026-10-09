@@ -108,8 +108,9 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 45
     env:
-      RESOLVED_TAG: ${{ env.RELEASE_TAG || needs.prepare.outputs.tag }}
-      RESOLVED_REF: ${{ env.BUILD_REF || needs.prepare.outputs.tag }}
+      # job 级 env 块取不到 env 上下文：tag/ref 直接由事件与 prepare 输出推导。
+      RESOLVED_TAG: ${{ needs.prepare.outputs.tag || github.event.release.tag_name || inputs.tag }}
+      RESOLVED_REF: ${{ inputs.ref || needs.prepare.outputs.tag || github.event.release.tag_name }}
     defaults:
       run:
         working-directory: apps/mobile/client-apple
