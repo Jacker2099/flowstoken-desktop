@@ -142,7 +142,7 @@ describe("remote status queries and the credential boundary", () => {
 		const { manager, cryptography, records, config } = fixture();
 		cryptography.mode = "unavailable";
 		await manager.restore();
-		await expect(manager.createInvite()).rejects.toThrow("安全凭据存储");
+		await expect(manager.createInvite()).rejects.toThrow("remote credential storage unavailable");
 		expect(cryptography.isAvailable).toHaveBeenCalledTimes(1);
 		expect(records()).toEqual({});
 		expect(config().remoteControl?.devices).toEqual([]);
