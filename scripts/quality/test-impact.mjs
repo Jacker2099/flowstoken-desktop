@@ -65,6 +65,7 @@ const goalTests = {
 	],
 };
 const EXPLICIT_SOURCE_TESTS = new Map([
+	["apps/desktop/src/renderer/remote-desktop-host.ts", desktopTests("src/renderer/remote-desktop-host.test.ts")],
 	["packages/ssh-transport/src/remote-command.ts", sshFixtureTests],
 	["packages/ssh-transport/src/remote-command-signals.test.ts", sshFixtureTests],
 	["packages/ssh-transport/src/node-process-runner.test.ts", sshFixtureTests],
