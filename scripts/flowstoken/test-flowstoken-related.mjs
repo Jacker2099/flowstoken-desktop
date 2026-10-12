@@ -9,6 +9,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { buildableTestDependencies, runBun, TESTABLE_PACKAGES } from "../quality/lib.mjs";
+import { testPrerequisites } from "./workspace-test-prerequisites.mjs";
 
 const ref = process.argv[2];
 if (!ref) {
@@ -59,11 +60,13 @@ for (const [ws, files] of byWorkspace) {
 	// still fails all three attempts.
 	const excludes = known.filter((k) => k.file.startsWith(`${ws}/`)).flatMap((k) => ["--exclude", relative(ws, k.file)]);
 	for (const k of known.filter((k) => k.file.startsWith(`${ws}/`))) console.log(`[flowstoken-related] quarantined: ${k.file} (${k.reason})`);
-	const args = [runner, "related", "--run", "--passWithNoTests", "--testTimeout=30000", "--retry=2", ...excludes, ...files];
-	const result = spawnSync("bun", args, {
-		cwd: ws,
-		stdio: "inherit",
+	const testScript = JSON.parse(readFileSync(join(ws, "package.json"), "utf8")).scripts.test;
+	const prepared = testPrerequisites(testScript, ws).every((step) => {
+		console.log(`[flowstoken-related] ${ws}: prerequisite bun ${step.join(" ")}`);
+		return spawnSync("bun", step, { cwd: ws, stdio: "inherit" }).status === 0;
 	});
+	const args = [runner, "related", "--run", "--passWithNoTests", "--testTimeout=30000", "--retry=2", ...excludes, ...files];
+	const result = prepared ? spawnSync("bun", args, { cwd: ws, stdio: "inherit" }) : { status: 1 };
 	if (result.status !== 0) {
 		failed++;
 		console.error(`[flowstoken-related] ${ws} FAILED`);
