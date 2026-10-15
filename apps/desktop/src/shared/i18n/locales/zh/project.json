@@ -163,7 +163,7 @@
 		"editorPlaceholder": "在此编写 AGENTS.md 项目指令...",
 		"editorPlaceholderFile": "在此编写 {{file}} 项目指令与上下文...",
 		"agentsMdHint": "AGENTS.md 用于定义项目级别的 AI 指令，所有会话都会自动加载此文件。",
-		"claudeMdHint": "CLAUDE.md 同样会被 Vetta 加载；与 AGENTS.md 冲突时，以 AGENTS.md 为准。",
+		"claudeMdHint": "CLAUDE.md 同样会被 FlowsToken 加载；与 AGENTS.md 冲突时，以 AGENTS.md 为准。",
 		"contextMdHint": "CONTEXT.md 用于沉淀项目的核心背景、领域模型与长期上下文说明。",
 		"quickSave": "快速保存",
 		"context": { "title": "项目指令" },

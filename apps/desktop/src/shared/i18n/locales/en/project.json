@@ -163,7 +163,7 @@
 		"editorPlaceholder": "Write AGENTS.md project instructions here...",
 		"editorPlaceholderFile": "Write {{file}} project instructions here...",
 		"agentsMdHint": "AGENTS.md defines project-level AI instructions; every session loads this file automatically.",
-		"claudeMdHint": "Vetta also loads CLAUDE.md. If it conflicts with AGENTS.md, AGENTS.md takes priority.",
+		"claudeMdHint": "FlowsToken also loads CLAUDE.md. If it conflicts with AGENTS.md, AGENTS.md takes priority.",
 		"context": { "title": "Project instructions" },
 		"recentSessions": { "title": "Recent sessions", "empty": "No sessions in this project yet", "startFirst": "Start a session" },
 		"runtime": { "runningSessions": "{{count}} running sessions", "runningTasks": "{{count}} running automations" },
