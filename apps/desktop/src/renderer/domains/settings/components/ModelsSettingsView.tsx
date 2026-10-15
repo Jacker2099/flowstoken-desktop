@@ -35,7 +35,6 @@ export function ModelsSettingsView({
 		>
 			{model.config && (
 				<>
-					<ModelTransportSettingsSection model={transport} />
 					<div className="mb-4 rounded-xl border border-border bg-card px-4 py-3">
 						<div className="text-[14px] font-medium text-foreground">FlowsToken 一键接入</div>
 						<p className="mt-1 text-[12px] text-muted-foreground">
@@ -52,6 +51,7 @@ export function ModelsSettingsView({
 					</div>
 					<PresetProvidersSection config={model.config} saveConfig={model.saveConfig} />
 					<ModelsProvidersSection model={model} />
+					<ModelTransportSettingsSection model={transport} />
 				</>
 			)}
 		</SettingsPageShellView>
