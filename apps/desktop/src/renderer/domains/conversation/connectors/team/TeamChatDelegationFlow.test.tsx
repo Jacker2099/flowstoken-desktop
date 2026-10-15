@@ -531,11 +531,14 @@ describe("Team delegation message-to-UI flow", () => {
 
 		await waitFor(() => expect(screen.getByText(finalText)).toBeTruthy());
 		expect(assistantRows()).toHaveLength(1);
+		expect(screen.queryByText("委派架构设计")).toBeNull();
+		expect(screen.queryByTestId("team-member-reply-card")).toBeNull();
+		const completedSignature = visibleConversationSignature();
+		fireEvent.click(screen.getByRole("button", { name: /messageList\.assistantFoldTip\.work\.expand/ }));
 		expect(screen.getAllByText("委派架构设计")).toHaveLength(1);
 		expect(screen.getAllByTestId("team-member-reply-card")).toHaveLength(1);
 		expect(within(screen.getByTestId("team-member-reply-card")).getByText("已完成")).toBeTruthy();
 
-		const completedSignature = visibleConversationSignature();
 		const reopenedSnapshot: DesktopTeamSessionSnapshot = {
 			...finalSnapshot,
 			display: {
@@ -576,6 +579,7 @@ describe("Team delegation message-to-UI flow", () => {
 
 		expect(visibleConversationSignature()).toEqual(completedSignature);
 		expect(screen.queryByText("正在探索实现路径")).toBeNull();
+		fireEvent.click(screen.getByRole("button", { name: /messageList\.assistantFoldTip\.work\.expand/ }));
 		expect(screen.getAllByTestId("team-member-reply-card")).toHaveLength(1);
 	});
 

@@ -18,7 +18,7 @@ describe("default appearance", () => {
 	it("uses the light palette before React mounts even when the operating system is dark", () => {
 		applyInitialTheme();
 		expect(document.documentElement.dataset.mode).toBe("light");
-		expect(document.documentElement.style.getPropertyValue("--background")).toBe("rgb(255, 255, 255)");
+		expect(document.documentElement.style.getPropertyValue("--background")).toBe("#faf9f9");
 		expect(localStorage.getItem(MODE_STORAGE_KEY)).toBeNull();
 	});
 
