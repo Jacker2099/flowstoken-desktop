@@ -3,7 +3,8 @@
  *
  * 复现的问题（2026-10-26 实测，flash 级模型）：发方向是建完设计后的另一个工具，模型
  * 读 skill 时看不见它，建完就照着 vetd_create 的返回值开画，整份设计没有方向，机检也
- * 因此一条不报。现在落地页与 App 不带发牌参数就建不出来，建出来的设计已经带着候选。
+ * 因此一条不报。现在落地页不带发牌参数就建不出来，建出来的设计已经带着候选；App 建出来
+ * 就带着提案说明，设计里存下一份等提案的方向，没提案之前每帧都报。
  */
 import type {
 	PluginAgentToolHandler,
@@ -64,18 +65,42 @@ beforeEach(() => {
 });
 
 describe("vetd_create 发方向", () => {
-	it("手机 App：结果里带三个候选，设计里存下待选的方向", async () => {
-		const result = await create({ name: "emby-mobile", product: "mobile", kind: "community", brief: "self-hosted media library" });
+	it("手机 App：不要种类，结果里带提案说明与原料，设计里存下等提案的方向", async () => {
+		const result = await create({ name: "emby-mobile", product: "mobile", brief: "self-hosted media library" });
 		expect(result.ok).toBe(true);
-		const direction = result.direction as { mode: string; options: { id: string }[]; next: string };
+		const direction = result.direction as { mode: string; propose: string; ingredients: { palettes: string[] } };
 		expect(direction.mode).toBe("app");
-		expect(direction.options.length).toBeGreaterThanOrEqual(2);
-		expect(direction.next).toMatch(/vetd_direction.*"choose"/);
-		expect(result.note).toMatch(/^FIRST choose one of `direction\.options`/);
-		expect(savedDirection("emby-mobile")).toMatchObject({
-			mode: "app",
-			choice: null,
-			options: direction.options.map((option) => option.id),
+		expect(direction.propose).toMatch(/action "propose"/);
+		expect(direction.propose).toMatch(/nearest competitor/);
+		expect(direction.ingredients.palettes.length).toBeGreaterThan(0);
+		expect(result.note).toMatch(/^FIRST propose three directions/);
+		expect(savedDirection("emby-mobile")).toMatchObject({ mode: "app", choice: null, options: [], proposals: [] });
+	});
+
+	it("用户说清楚的基调存进设计", async () => {
+		const result = await create({
+			name: "emby-clear",
+			product: "mobile",
+			brief: "self-hosted media library",
+			intent: { mood: "像 Apple TV", colour: "深色", emphasis: "海报大图为主" },
+		});
+		expect(result.ok).toBe(true);
+		expect(savedDirection("emby-clear").intent).toMatchObject({
+			stated: { mood: "像 Apple TV", colour: "深色", emphasis: "海报大图为主" },
+			questions: [],
+		});
+	});
+
+	it("建之前已经问过用户的题：随 intent.preferences 存进设计", async () => {
+		const result = await create({
+			name: "coffee-app",
+			product: "mobile",
+			brief: "coffee ordering app",
+			intent: { preferences: [{ question: "这个咖啡 App 主要做什么？", answer: "顾客点单取餐" }] },
+		});
+		expect(result.ok).toBe(true);
+		expect(savedDirection("coffee-app").intent).toMatchObject({
+			stated: { preferences: [{ question: "这个咖啡 App 主要做什么？", answer: "顾客点单取餐" }] },
 		});
 	});
 
@@ -86,7 +111,7 @@ describe("vetd_create 发方向", () => {
 	});
 
 	it("点名的品牌保留配色，只发其余；项目里有风格包时配色字体都保留", async () => {
-		await create({ name: "brand", product: "desktop", kind: "analytics", brief: "x", keep: ["palette"] });
+		await create({ name: "brand", product: "desktop", brief: "x", keep: ["palette"] });
 		expect(savedDirection("brand").input.keep).toEqual(["palette"]);
 
 		directories.push(`${CWD}/design-resources/acme`);

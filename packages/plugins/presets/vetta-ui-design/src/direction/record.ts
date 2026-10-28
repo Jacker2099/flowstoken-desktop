@@ -3,26 +3,21 @@
  *
  * 存进设计包而不是插件存储：方向是这份设计的一部分，跟着设计走、进版本历史，以后的
  * 会话加新屏时 `show` 就能拿回同一份方向表，而不是重新发一副牌。文件里只记 id，不记
- * 内容——方向表按当前库现渲染，库更新后 id 不在了会明确提示重发。
+ * 内容——方向表按当前库现渲染，库更新后 id 不在了会明确提示重发。App 例外：方向是 agent
+ * 自己提的，没有库可查，三份提案原样存在 `proposals` 里。
  */
 import {
-	APP_KINDS,
 	ASSETS,
 	type AppChoice,
 	type AppInput,
 	type Asset,
-	appScreens,
 	type DealHistoryEntry,
 	type Dealer,
-	dealApp,
-	dealAppOptions,
 	dealHero,
 	dealPage,
 	dealPageOptions,
 	dealPalette,
-	dealScreen,
 	dealSection,
-	dealShell,
 	dealType,
 	defaultSections,
 	type KeepSlot,
@@ -35,7 +30,26 @@ import {
 	type PageTone,
 } from "./deal";
 import type { SourceIssue } from "../vetd/check-sources";
-import type { TasteLibrary } from "./library";
+import {
+	checkAnswers,
+	type Intent,
+	IntentError,
+	keepsBrandPalette,
+	mergePreferences,
+	type Preference,
+	type StatedIntent,
+	toneQuestions,
+} from "./intent";
+import {
+	type AppProposal,
+	DEVICES,
+	parseProposals,
+	ProposalError,
+	proposalHistory,
+	proposalLook,
+	proposalTells,
+	TYPE_CLASSES,
+} from "./proposal";
 
 export const DIRECTION_FILE = "direction.json";
 
@@ -47,12 +61,18 @@ export interface DirectionRecord {
 	input: PageInput | AppInput;
 	seed: number;
 	at: string;
-	/** 最近一次 deal 发出的候选 id，choose 只能从这里挑。 */
+	/** 最近一次 deal 发出（App：propose 提出）的候选 id，choose 只能从这里挑。 */
 	options: string[];
 	choice: PageChoice | AppChoice | null;
 	/** 这份方向放行的生成感规则（vetd/tells-probe.ts 的规则 id），choose / redraw 时算好存下。 */
 	allow: string[];
 	redraws: { slot: string; reason: string; at: string }[];
+	/** 用户给的设计基调、要问的题与回答（intent.ts）。 */
+	intent?: Intent;
+	/** App：agent 写下的平庸版本，三个方向都要避开它。 */
+	obvious?: string;
+	/** App：agent 提的三个方向（proposal.ts 校验过）。 */
+	proposals?: AppProposal[];
 }
 
 /** 截图机检要知道的那一点：按落地页还是 App 的阈值判，以及哪些规则被方向放行。 */
@@ -75,12 +95,27 @@ export const DIRECTION_NOT_CHOSEN_RULE = "direction-not-chosen";
 /** 发了牌却没选：作为整份设计的 issue 报给每一帧，直到选定为止。 */
 export function directionIssues(record: DirectionRecord | null): SourceIssue[] {
 	if (!record || record.choice) return [];
+	if (record.mode === "app" && record.options.length === 0) {
+		return [
+			{
+				file: DIRECTION_FILE,
+				line: null,
+				rule: DIRECTION_NOT_CHOSEN_RULE,
+				message:
+					'No direction was proposed for these app screens. Call vetd_direction with action "propose" and three directions of your own (its `deal` action reprints how), ask the user to pick when the tool says so, then choose one. Frames built before that sit on a palette and type nobody chose.',
+			},
+		];
+	}
 	return [
 		{
 			file: DIRECTION_FILE,
 			line: null,
 			rule: DIRECTION_NOT_CHOSEN_RULE,
-			message: `Directions were dealt for this design but none was chosen (${record.options.join(", ")}). Call vetd_direction with action "choose" and one id, then install its fonts and write its theme.css — frames built before that sit on a palette and type nobody chose.`,
+			message: `${
+				record.intent?.questions.length
+					? `The user has not been asked yet (${record.intent.questions.map((q) => q.id).join(", ")}): vetd_direction with action "show" lists the questions; ask them with ask_user_question, then choose with the answers.`
+					: `Directions were dealt for this design but none was chosen (${record.options.join(", ")}). Call vetd_direction with action "choose" and one id.`
+			} Then install its fonts and write its theme.css — frames built before that sit on a palette and type nobody chose.`,
 		},
 	];
 }
@@ -91,15 +126,20 @@ export function directionIssues(record: DirectionRecord | null): SourceIssue[] {
  */
 const BRAND_OWNED_TELLS = ["tell-gradient", "tell-gradient-text", "tell-shadow", "tell-glass", "tell-font-count", "tell-mono"];
 
-export function allowedTells(lib: TasteLibrary, record: Pick<DirectionRecord, "input" | "choice">): string[] {
+export function allowedTells(record: Pick<DirectionRecord, "input" | "choice" | "proposals">): string[] {
 	const allow = new Set<string>();
 	const { keep } = record.input;
 	if (keep.includes("palette") && keep.includes("type")) for (const rule of BRAND_OWNED_TELLS) allow.add(rule);
-	const choice = record.choice;
-	if (choice && "styleId" in choice && lib.app.styles.find((s) => s.id === choice.styleId)?.shadow) {
-		allow.add("tell-shadow");
-	}
+	const proposal = chosenProposal(record);
+	if (proposal) for (const rule of proposalTells(proposal)) allow.add(rule);
 	return [...allow];
+}
+
+/** App 选定的那一案；页面方向、未选定或旧版记录（选的是已退役的风格库）为 null。 */
+export function chosenProposal(record: Pick<DirectionRecord, "choice" | "proposals">): AppProposal | null {
+	const choice = record.choice;
+	if (!choice || !("proposalId" in choice)) return null;
+	return record.proposals?.find((proposal) => proposal.id === choice.proposalId) ?? null;
 }
 
 export class DirectionError extends Error {}
@@ -109,10 +149,8 @@ export class DirectionError extends Error {}
 export interface DealParams {
 	for?: unknown;
 	sector?: unknown;
-	kind?: unknown;
 	brief?: unknown;
 	tone?: unknown;
-	theme?: unknown;
 	sections?: unknown;
 	screens?: unknown;
 	have?: unknown;
@@ -155,26 +193,10 @@ export function pageInputFrom(params: DealParams): PageInput {
 	};
 }
 
-export function appInputFrom(params: DealParams, lib: TasteLibrary): AppInput {
-	const kind = oneOf(params.kind, APP_KINDS);
-	if (!kind) {
-		throw new DirectionError(
-			`Pass \`kind\`, the closest of: ${APP_KINDS.map((id) => `${id} (${lib.app.kinds[id]?.note ?? ""})`).join("; ")}.`,
-		);
-	}
-	const known = appScreens(lib);
-	const requested = strings(params.screens);
-	const unknownScreens = requested.filter((screen) => !known.includes(screen));
-	if (unknownScreens.length > 0) {
-		throw new DirectionError(`Unknown screen(s) ${unknownScreens.join(", ")}. One of: ${known.join(", ")}.`);
-	}
-	const theme = params.theme === undefined ? null : oneOf(params.theme, ["light", "dark"] as const);
-	if (params.theme !== undefined && !theme) throw new DirectionError("`theme` is light or dark.");
+export function appInputFrom(params: DealParams): AppInput {
 	return {
-		kind,
 		brief: typeof params.brief === "string" ? params.brief.trim() : "",
-		theme,
-		screens: requested.length > 0 ? requested : [...(lib.app.kinds[kind]?.screens ?? ["overview"])],
+		screens: strings(params.screens).slice(0, 20),
 		keep: keepSlots(params.keep),
 		avoid: [],
 	};
@@ -186,6 +208,8 @@ export interface DealtOption {
 	id: string;
 	name: string;
 	summary: string;
+	/** 一眼看得出长什么样的几个特征（明暗、颜色、字体、外壳）；有它风格题的选项才不是空谈。 */
+	look?: string;
 }
 
 const firstSentences = (text: string, count: number) =>
@@ -194,52 +218,164 @@ const firstSentences = (text: string, count: number) =>
 		.slice(0, count)
 		.join(" ");
 
-/** 发候选。不写 choice——在模型挑之前，设计里不该有一份「已定」的方向。 */
+/** 发候选（落地页）。不写 choice——在模型挑之前，设计里不该有一份「已定」的方向。 */
 export function startDeal(
 	dealer: Dealer,
-	mode: DirectionMode,
-	input: PageInput | AppInput,
+	input: PageInput,
 	seed: number,
 	now: string,
+	stated: StatedIntent = {},
 ): { record: DirectionRecord; options: DealtOption[] } {
-	const options: DealtOption[] =
-		mode === "page"
-			? dealPageOptions(dealer, input as PageInput).map((d) => ({
-					id: d.id,
-					name: d.name,
-					summary: `${firstSentences(d.idea, 2)} Composition: ${firstSentences(d.composition, 2)}${d.needsPictures ? " Needs many pictures." : ""}`,
-				}))
-			: dealAppOptions(dealer, input as AppInput).map((s) => ({
-					id: s.id,
-					name: `${s.name} (${s.theme})`,
-					summary: `${s.idea} The move: ${s.signature}`,
-				}));
+	const options: DealtOption[] = dealPageOptions(dealer, input).map((d) => ({
+		id: d.id,
+		name: d.name,
+		summary: `${firstSentences(d.idea, 2)} Composition: ${firstSentences(d.composition, 2)}${d.needsPictures ? " Needs many pictures." : ""}`,
+	}));
 	return {
 		record: {
 			version: 1,
-			mode,
+			mode: "page",
 			input,
 			seed,
 			at: now,
 			options: options.map((o) => o.id),
 			choice: null,
-			allow: allowedTells(dealer.lib, { input, choice: null }),
+			allow: allowedTells({ input, choice: null }),
 			redraws: [],
+			intent: { stated, questions: toneQuestions("page", stated, options), answers: null },
 		},
 		options,
 	};
 }
 
-export function choose(dealer: Dealer, record: DirectionRecord, id: string, now: string): DirectionRecord {
-	if (!record.options.includes(id)) {
+/**
+ * App 设计的起点：还没有任何方向，等 agent 提案。照样写进设计——截图机检凭它报
+ * `direction-not-chosen`，免得模型跳过提案直接在脚手架配色上开画。
+ */
+export function startProposal(input: AppInput, seed: number, now: string, stated: StatedIntent = {}): DirectionRecord {
+	return {
+		version: 1,
+		mode: "app",
+		input,
+		seed,
+		at: now,
+		options: [],
+		choice: null,
+		allow: allowedTells({ input, choice: null }),
+		redraws: [],
+		intent: { stated, questions: [], answers: null },
+		proposals: [],
+	};
+}
+
+const proposalOption = (proposal: AppProposal): DealtOption => ({
+	id: proposal.id,
+	name: `${proposal.name} (${proposal.theme})`,
+	summary: proposal.idea,
+	look: proposalLook(proposal),
+});
+
+/** 设计里已存的提案，按候选的形状给出（show 用）。 */
+export function proposalOptions(record: DirectionRecord): DealtOption[] {
+	return (record.proposals ?? []).map(proposalOption);
+}
+
+/**
+ * 收下 agent 的三个方向。已经选定过方向再提，就是换方向：要说明理由，记进 redraws，
+ * 并把选定清掉——新的三案里用户还没挑。
+ */
+export function propose(
+	record: DirectionRecord,
+	rawOptions: unknown,
+	rawObvious: unknown,
+	history: readonly DealHistoryEntry[],
+	now: string,
+	reason: string,
+): { record: DirectionRecord; options: DealtOption[] } {
+	if (record.mode !== "app") {
+		throw new DirectionError('Landing pages are dealt, not proposed: use action "deal" with `for: "page"`.');
+	}
+	if (record.choice && !reason.trim()) {
 		throw new DirectionError(
-			`\`${id}\` was not dealt for this design. Choose one of: ${record.options.join(", ")} — or deal again.`,
+			"A direction is already chosen for this design. To replace it, pass `reason` (what the user asked for, or why the chosen direction cannot carry the real content) with the new proposal.",
 		);
 	}
-	const choice =
-		record.mode === "page" ? dealPage(dealer, record.input as PageInput, id) : dealApp(dealer, record.input as AppInput, id);
+	const stated = record.intent?.stated ?? {};
+	let parsed: ReturnType<typeof parseProposals>;
+	try {
+		parsed = parseProposals(rawOptions, rawObvious, { keep: record.input.keep, stated, history });
+	} catch (error) {
+		if (error instanceof ProposalError) throw new DirectionError(error.message);
+		throw error;
+	}
+	const options = parsed.proposals.map(proposalOption);
+	return {
+		record: {
+			...record,
+			at: now,
+			options: options.map((o) => o.id),
+			choice: null,
+			allow: allowedTells({ input: record.input, choice: null }),
+			redraws: record.choice ? [...record.redraws, { slot: "direction", reason: reason.trim(), at: now }] : record.redraws,
+			intent: { stated, questions: toneQuestions("app", stated, options), answers: null },
+			obvious: parsed.obvious,
+			proposals: parsed.proposals,
+		},
+		options,
+	};
+}
+
+/**
+ * 选定方向。发牌时列出过要问用户的题，就必须带着回答来：选定之后再问已经晚了，
+ * 方向表、字体和配色都已经按没问过的那一版写进设计了。
+ */
+export function choose(
+	dealer: Dealer,
+	record: DirectionRecord,
+	id: string,
+	now: string,
+	answers?: unknown,
+	preferences?: readonly Preference[],
+): DirectionRecord {
+	if (record.mode === "app" && record.options.length === 0) {
+		throw new DirectionError('Nothing has been proposed for this design yet. Call action "propose" with three directions first.');
+	}
+	if (!record.options.includes(id)) {
+		throw new DirectionError(
+			`\`${id}\` was not ${record.mode === "app" ? "proposed" : "dealt"} for this design. Choose one of: ${record.options.join(", ")} — or ${record.mode === "app" ? "propose" : "deal"} again.`,
+		);
+	}
+	let intent = record.intent;
+	let input = record.input;
+	if (intent && intent.questions.length > 0) {
+		try {
+			intent = { ...intent, answers: checkAnswers(intent.questions, answers, id) };
+		} catch (error) {
+			if (error instanceof IntentError) throw new DirectionError(error.message);
+			throw error;
+		}
+		// 品牌色那一题改的是「调色板发不发」：用户不要品牌色就照常发，要就保留品牌的。
+		const keepBrand = keepsBrandPalette(intent.answers);
+		if (keepBrand !== null) {
+			const others = input.keep.filter((slot) => slot !== "palette");
+			input = { ...input, keep: keepBrand ? [...others, "palette"] : others } as typeof input;
+		}
+	}
+	const choice: PageChoice | AppChoice | null =
+		record.mode === "page" ? dealPage(dealer, input as PageInput, id) : { proposalId: id };
 	if (!choice) throw new DirectionError(`\`${id}\` is no longer in the library. Deal again.`);
-	return { ...record, choice, allow: allowedTells(dealer.lib, { input: record.input, choice }), at: now };
+	if (preferences && preferences.length > 0) {
+		const base: Intent = intent ?? { stated: {}, questions: [], answers: null };
+		intent = { ...base, stated: { ...base.stated, preferences: mergePreferences(base.stated.preferences, preferences) } };
+	}
+	return {
+		...record,
+		input,
+		choice,
+		allow: allowedTells({ input, choice, proposals: record.proposals }),
+		at: now,
+		...(intent ? { intent } : {}),
+	};
 }
 
 /** 记进跨设计的历史，只记 id。 */
@@ -256,11 +392,11 @@ export function historyEntry(record: DirectionRecord): DealHistoryEntry | null {
 			...(choice.paletteId ? { palette: choice.paletteId } : {}),
 		};
 	}
-	return { at: record.at, mode: "app", style: choice.styleId, shell: choice.shellId };
+	const proposal = chosenProposal(record);
+	return proposal ? { at: record.at, mode: "app", ...proposalHistory(proposal) } : null;
 }
 
 export const PAGE_SLOTS = ["direction", "hero", "type", "palette", "section:<role>"] as const;
-export const APP_SLOTS = ["style", "shell", "screen:<name>"] as const;
 
 /**
  * 重发一格。`direction`/`style` 回到候选阶段（排除当前这个）——换方向是换整副牌，
@@ -287,7 +423,7 @@ export function redraw(
 		const dir = dealer.lib.directions.find((d) => d.id === choice.directionId);
 		if (!dir) throw new DirectionError("The saved direction is no longer in the library. Deal again.");
 		if (slot === "direction") {
-			const next = startDeal(dealer, "page", { ...input, avoid: [...input.avoid, dir.id] }, record.seed, now);
+			const next = startDeal(dealer, { ...input, avoid: [...input.avoid, dir.id] }, record.seed, now, record.intent?.stated);
 			return { record: { ...next.record, redraws: log }, options: next.options };
 		}
 		const updated: PageChoice = { ...choice, sections: [...choice.sections] };
@@ -317,32 +453,10 @@ export function redraw(
 		return { record: { ...record, choice: updated, redraws: log, at: now }, options: null };
 	}
 
-	if (record.mode === "app" && "styleId" in choice) {
-		const input = record.input as AppInput;
-		if (slot === "style") {
-			const next = startDeal(dealer, "app", { ...input, avoid: [...input.avoid, choice.styleId] }, record.seed, now);
-			return { record: { ...next.record, redraws: log }, options: next.options };
-		}
-		const style = dealer.lib.app.styles.find((s) => s.id === choice.styleId);
-		if (!style) throw new DirectionError("The saved app style is no longer in the library. Deal again.");
-		const updated: AppChoice = { ...choice, screens: [...choice.screens] };
-		if (slot === "shell") updated.shellId = dealShell(dealer, style, [choice.shellId]).id;
-		else if (slot.startsWith("screen:")) {
-			const name = slot.slice("screen:".length);
-			const index = updated.screens.findIndex((s) => s.name === name);
-			if (index < 0) {
-				throw new DirectionError(`No ${name} screen on this sheet. Screens: ${updated.screens.map((s) => s.name).join(", ")}.`);
-			}
-			const current = updated.screens[index].patternId;
-			const dealt = dealScreen(dealer, name, input, current ? [current] : []);
-			if (dealt) updated.screens[index] = { name, patternId: dealt.id };
-		} else {
-			throw new DirectionError(`Unknown slot "${slot}". App slots: ${APP_SLOTS.join(", ")}.`);
-		}
-		return {
-			record: { ...record, choice: updated, allow: allowedTells(dealer.lib, { input, choice: updated }), redraws: log, at: now },
-			options: null,
-		};
+	if (record.mode === "app") {
+		throw new DirectionError(
+			'App directions are proposed, not dealt: to change the look, call action "propose" with three new directions and this `reason`.',
+		);
 	}
 	throw new DirectionError("direction.json is inconsistent (mode and choice disagree). Deal again.");
 }
@@ -369,14 +483,16 @@ export function parseDirectionRecord(text: string): DirectionRecord | null {
 	if (choice !== null) {
 		if (!isObj(choice)) return null;
 		const pageShape = typeof choice.directionId === "string" && Array.isArray(choice.sections);
-		const appShape = typeof choice.styleId === "string" && Array.isArray(choice.screens);
+		// 旧版 App 记录选的是已退役风格库里的一套（styleId），照旧读进来：那份设计的 theme.css
+		// 早已写好，不该因为库退役就天天报「没选方向」。
+		const appShape = typeof choice.proposalId === "string" || typeof choice.styleId === "string";
 		if (value.mode === "page" ? !pageShape : !appShape) return null;
 	}
 	const input = value.input;
 	const listOk =
 		value.mode === "page"
 			? typeof input.sector === "string" && Array.isArray(input.sections) && Array.isArray(input.have)
-			: typeof input.kind === "string" && Array.isArray(input.screens);
+			: Array.isArray(input.screens);
 	if (!listOk || !Array.isArray(input.keep) || !Array.isArray(input.avoid)) return null;
 	return {
 		version: 1,
@@ -385,8 +501,11 @@ export function parseDirectionRecord(text: string): DirectionRecord | null {
 		seed: value.seed,
 		at: typeof value.at === "string" ? value.at : "",
 		options: value.options.filter((id): id is string => typeof id === "string"),
-		choice: choice as PageChoice | AppChoice | null,
+		choice: legacyAppChoice(choice) ?? (choice as PageChoice | AppChoice | null),
 		allow: Array.isArray(value.allow) ? value.allow.filter((rule): rule is string => typeof rule === "string") : [],
+		...(parseIntent(value.intent) ? { intent: parseIntent(value.intent) as Intent } : {}),
+		...(typeof value.obvious === "string" ? { obvious: value.obvious } : {}),
+		...(value.mode === "app" ? { proposals: parseStoredProposals(value.proposals) } : {}),
 		redraws: Array.isArray(value.redraws)
 			? value.redraws.filter(
 					(entry): entry is DirectionRecord["redraws"][number] =>
@@ -394,6 +513,65 @@ export function parseDirectionRecord(text: string): DirectionRecord | null {
 				)
 			: [],
 	};
+}
+
+/** 退役风格库的选择换成一个找不到提案的 id：方向表据此说明，而不是当成没选。 */
+function legacyAppChoice(choice: unknown): AppChoice | null {
+	if (!isObj(choice) || typeof choice.styleId !== "string" || typeof choice.proposalId === "string") return null;
+	return { proposalId: `${LEGACY_PREFIX}${choice.styleId}` };
+}
+
+export const LEGACY_PREFIX = "legacy:";
+
+/**
+ * 存下的提案只做形状检查，不重跑校验：校验规则以后会变，已选定的方向不该因此失效。
+ * 缺关键字段的那一份丢掉。
+ */
+function parseStoredProposals(value: unknown): AppProposal[] {
+	if (!Array.isArray(value)) return [];
+	const out: AppProposal[] = [];
+	for (const item of value) {
+		if (!isObj(item) || typeof item.id !== "string" || typeof item.name !== "string") continue;
+		if (item.theme !== "light" && item.theme !== "dark") continue;
+		const colours = isObj(item.colours) && typeof item.colours.accent === "string" ? (item.colours as unknown as AppProposal["colours"]) : null;
+		const type =
+			isObj(item.type) && typeof item.type.display === "string" && typeof item.type.text === "string"
+				? {
+						display: item.type.display,
+						text: item.type.text,
+						class: TYPE_CLASSES.find((value) => value === (item.type as Record<string, unknown>).class) ?? "grotesk-tight",
+					}
+				: null;
+		out.push({
+			id: item.id,
+			name: item.name,
+			idea: typeof item.idea === "string" ? item.idea : "",
+			departs: typeof item.departs === "string" ? item.departs : "",
+			theme: item.theme,
+			colours: colours ? { ...colours, extra: isObj(colours.extra) ? colours.extra : {} } : null,
+			type,
+			layout: typeof item.layout === "string" ? item.layout : "",
+			radius: typeof item.radius === "number" ? item.radius : null,
+			devices: Array.isArray(item.devices)
+				? item.devices.filter(
+						(entry): entry is AppProposal["devices"][number] =>
+							isObj(entry) && DEVICES.includes(entry.device as never) && typeof entry.reason === "string",
+					)
+				: [],
+		});
+	}
+	return out;
+}
+
+/** 旧版 direction.json 没有 intent；结构不对也当没有，不因此作废整份方向。 */
+function parseIntent(value: unknown): Intent | null {
+	if (!isObj(value) || !isObj(value.stated) || !Array.isArray(value.questions)) return null;
+	const questions = value.questions.filter(
+		(question): question is Intent["questions"][number] =>
+			isObj(question) && typeof question.id === "string" && Array.isArray(question.options),
+	);
+	const answers = isObj(value.answers) ? (value.answers as Intent["answers"]) : null;
+	return { stated: value.stated as Intent["stated"], questions, answers };
 }
 
 export function serializeDirectionRecord(record: DirectionRecord): string {

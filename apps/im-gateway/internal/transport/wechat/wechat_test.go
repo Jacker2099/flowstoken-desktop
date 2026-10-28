@@ -254,42 +254,22 @@ func newBoundTransport(t *testing.T) (*Transport, *fakeILink, string) {
 	return tr, fake, statePath
 }
 
-type ownedTransportRun struct {
-	ctx    context.Context
-	cancel context.CancelFunc
-	done   chan struct{}
-	err    error
-}
-
-// The caller owns Start until it has returned, including the cursor write
-// after HandleInbound. Register after TempDir so cancellation and the join
-// finish before Go removes the state directory, even after an early Fatal.
-func startOwnedTransport(t *testing.T, tr *Transport, handler transport.MessageHandler) *ownedTransportRun {
+// startAsync runs tr.Start in the background and, at test cleanup, stops it and
+// waits for the poll loop to return. The loop persists its cursor into the
+// test's TempDir; a loop still writing there while the directory is removed
+// fails the test with "TempDir RemoveAll cleanup: directory not empty".
+// Registered after newBoundTransport's TempDir, so it runs before the removal.
+func startAsync(t *testing.T, tr *Transport, ctx context.Context, h transport.MessageHandler) {
 	t.Helper()
-	ctx, cancel := context.WithCancel(t.Context())
-	run := &ownedTransportRun{ctx: ctx, cancel: cancel, done: make(chan struct{})}
-	t.Cleanup(func() {
-		run.cancel()
-		if err := run.wait(t); err != nil && !errors.Is(err, context.Canceled) {
-			t.Errorf("Start returned during fixture cleanup: %v", err)
-		}
-	})
+	done := make(chan struct{})
 	go func() {
-		run.err = tr.Start(ctx, handler)
-		close(run.done)
+		defer close(done)
+		_ = tr.Start(ctx, h)
 	}()
-	return run
-}
-
-func (run *ownedTransportRun) wait(t *testing.T) error {
-	t.Helper()
-	select {
-	case <-run.done:
-		return run.err
-	case <-time.After(2 * time.Second):
-		t.Fatal("Start did not return before fixture cleanup")
-		return nil
-	}
+	t.Cleanup(func() {
+		_ = tr.Stop()
+		<-done
+	})
 }
 
 // =============================================================================
@@ -317,11 +297,17 @@ func TestTransport_StartDispatchesInboundAndCapturesContextToken(t *testing.T) {
 	})
 
 	h := newCaptureHandler()
-	run := startOwnedTransport(t, tr, h)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- tr.Start(ctx, h) }()
 
 	h.wait(t, 1)
-	run.cancel()
-	run.wait(t)
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Start did not return after cancel")
+	}
 
 	got := h.snapshot()
 	if len(got) != 1 {
@@ -371,7 +357,9 @@ func TestTransport_DropsNonTextAndEmptyFromUserID(t *testing.T) {
 	)
 
 	h := newCaptureHandler()
-	startOwnedTransport(t, tr, h)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	startAsync(t, tr, ctx, h)
 
 	h.wait(t, 1)
 	got := h.snapshot()
@@ -394,7 +382,9 @@ func TestTransport_VoiceWithSTTFallback(t *testing.T) {
 	})
 
 	h := newCaptureHandler()
-	startOwnedTransport(t, tr, h)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	startAsync(t, tr, ctx, h)
 
 	h.wait(t, 1)
 	if got := h.snapshot()[0].Text; got != "transcribed audio" {
@@ -420,7 +410,9 @@ func TestTransport_QuotedReplyFormatting(t *testing.T) {
 	})
 
 	h := newCaptureHandler()
-	startOwnedTransport(t, tr, h)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	startAsync(t, tr, ctx, h)
 
 	h.wait(t, 1)
 	got := h.snapshot()[0].Text
@@ -444,11 +436,13 @@ func TestTransport_SendMessageUsesContextTokenAndIncrementsQuota(t *testing.T) {
 	})
 
 	h := newCaptureHandler()
-	run := startOwnedTransport(t, tr, h)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	startAsync(t, tr, ctx, h)
 
 	h.wait(t, 1)
 
-	id, err := tr.SendMessage(run.ctx, "frank", transport.OutboundMessage{Text: "pong"})
+	id, err := tr.SendMessage(ctx, "frank", transport.OutboundMessage{Text: "pong"})
 	if err != nil {
 		t.Fatalf("SendMessage: %v", err)
 	}
@@ -555,23 +549,22 @@ func TestTransport_ShowTypingSendsIndicator(t *testing.T) {
 }
 
 func TestTransport_StopReturnsContextCancelled(t *testing.T) {
-	tr, fake, _ := newBoundTransport(t)
-	fake.queueUpdate(ilink.WeixinMessage{
-		FromUserID: "stop-peer",
-		ItemList: []ilink.MessageItem{{
-			Type:     ilink.MessageItemTypeText,
-			TextItem: &ilink.TextItem{Text: "started"},
-		}},
-	})
+	tr, _, _ := newBoundTransport(t)
 	h := newCaptureHandler()
-	run := startOwnedTransport(t, tr, h)
+	ctx := context.Background()
+	done := make(chan error, 1)
+	go func() { done <- tr.Start(ctx, h) }()
 
-	// A real delivered update proves Start is active before exercising Stop.
-	h.wait(t, 1)
+	time.Sleep(100 * time.Millisecond)
 	_ = tr.Stop()
 
-	if err := run.wait(t); err != nil && !errors.Is(err, context.Canceled) {
-		t.Errorf("Start returned %v, want context.Canceled or nil", err)
+	select {
+	case err := <-done:
+		if err != nil && !errors.Is(err, context.Canceled) {
+			t.Errorf("Start returned %v, want context.Canceled or nil", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Start did not exit after Stop")
 	}
 }
 
@@ -587,12 +580,14 @@ func TestTransport_CursorPersisted(t *testing.T) {
 	})
 
 	h := newCaptureHandler()
-	run := startOwnedTransport(t, tr, h)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	startAsync(t, tr, ctx, h)
 	h.wait(t, 1)
 
-	// Cancellation does not discard the admitted batch's post-dispatch save.
-	run.cancel()
-	run.wait(t)
+	// Wait one more loop iter so the post-dispatch cursor save lands.
+	time.Sleep(150 * time.Millisecond)
+	cancel()
 
 	// Reopen and confirm the cursor was persisted.
 	store, err := newStateStore(statePath)

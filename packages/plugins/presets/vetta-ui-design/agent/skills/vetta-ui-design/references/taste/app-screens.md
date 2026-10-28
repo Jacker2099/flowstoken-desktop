@@ -5,13 +5,20 @@ office, analytics, settings and billing, inboxes and queues, wallets, builders,
 the detail page of one object. A product page that shows its interface is a
 landing page; the interface fragments on it follow this file for their insides.
 
-Distilled from taste-skill v2's chapter on app screens (a study of 23 real
-product screens, measured from their pixels, and four blind test rounds; see
-`UPSTREAM.md`). Numbers are the study's; **house rule** marks what goes past it.
-The dealt app sheet (`vetd_direction`) fixes the style's tokens, type, shell and
-screen patterns; everything it does not fix comes from here.
+Numbers are from taste-skill v2's study of 23 real product screens (see
+`UPSTREAM.md`); **house rule** marks what goes past it. This file holds what
+every screen needs. The app sheet (`vetd_direction`) holds the direction you
+proposed — its idea, tokens, type and layout — and ends with the reference
+parts. Without a sheet, read the parts you need from `app/`:
+`shell`, `kpis`, `charts`, `tables`, `forms`, `values` (type and colour), `phone`.
 
 ## What separates real screens from generated ones
+
+The study behind these numbers was of work tools. A customer-facing app —
+ordering, media, banking, travel — keeps the discipline (honest data, one
+question per screen, colour with a job) but not the restraint: its content
+(pictures, food, music, places, money) leads, and colour and type may carry it
+at area scale when the direction says so.
 
 1. **Colour goes on data, not chrome.** The median screen has about 3% coloured
    pixels; 12 of 23 have no filled primary button at all.
@@ -28,14 +35,13 @@ correct screens lost to richer ones: the first screen was thin, the product had 
 name, restraint hid meaning, there was nothing to do. Quiet is the start, not the
 goal. **Give the product a face**:
 
-- one face from the sheet's list (a ground from the product's world, a figure
-  face with character, the brand hue on the main data element), visible on the
-  first screen;
+- the sheet's idea, visible on the first screen (a ground from the product's
+  world, a figure face with character, the brand hue on the main data element);
 - the product's mark and name at the top of the shell, and the scope (workspace,
   team, account) as a switcher or breadcrumb;
 - **one element only this product has**, built from its own things — an energy
   home's power flow, a bakery's sell-out strip, a leave planner's cover against
-  the minimum. The sheet lists the ones the brief names; otherwise invent one;
+  the minimum;
 - the one chart hue on the main data element — a screen whose only hue is a delta
   reads as a kit;
 - people as themselves (a stable initial and a pale tint of their own hue), and
@@ -74,25 +80,6 @@ goal. **Give the product a face**:
 Motion is feedback only: press, hover, focus, a menu opening. Nothing performs an
 entrance.
 
-## Shell
-
-| Shell | What it is |
-| --- | --- |
-| Open plane | Labelled sidebar on the page ground, nothing or one hairline between; no top bar |
-| Tinted frame, white sheet | Sidebar and top bar on one tint (#f6f6f6-#f9fbfc); the page on a white sheet inset 8px, radius ~16, 1px edge, no shadow |
-| Ruled T-frame | 210-240px sidebar and 64px top bar on one ground, divided by 1px rules (mostly dark) |
-| Icon rail | Unlabelled 50-60px rail, 16px icons; only for five destinations or fewer |
-| No sidebar | 46-48px top bar over a centred 1088-1208px column; reports and viewers |
-
-- **Never a dark or saturated sidebar on a light canvas** (0 of 17).
-- **Sidebar**: 224-240px; rows 32px on a 34px pitch; 16px outline icons; 14px
-  labels at 400. Active item: a neutral grey pill (#e9e9e9-#ededed, radius ~8)
-  on light, brightness alone on dark. Groups under 12-13px sentence-case grey
-  labels. Counts only on queues that need action, with a clear noun.
-- **Top bar** only when it holds something real (search, the switcher, the
-  object's name); 44-51px, or 64px with a rule.
-- **No floating button** unless it is the one primary action and covers nothing.
-
 ## Canvas and title
 
 - Fluid with 24-40px side padding, or a centred 1100-1250px column. Title 20-36px
@@ -114,96 +101,6 @@ entrance.
   near-black.
 - Date range at page level or per card, never both. Underline tabs on a full-width
   1px rule, a 2px indicator. Controls in a row share one height (32 or 36px).
-
-## KPIs and deltas
-
-- Default: **one container split by 1px dividers** into equal columns, or no KPI
-  row at all with each headline number in the card that explains it.
-- 3-4 per row, matching the columns. Values 24-30px at 400-600 in ink, labels
-  12-14px grey above them, units as a smaller grey suffix ("5 mins"). Nothing at
-  48px. Bold for money only.
-- **The answer figure leads**: 30-36px, at least 1.3× its siblings, and no other
-  figure on the screen is larger.
-- No icon, no sparkline, no tinted tile. A figure appears in one place.
-- Deltas are optional, 12-14px, the window in words ("vs prior 30 days"). **Colour
-  says good or bad, not up or down**: latency, cost and churn are better falling.
-  Zero or undefined change is grey; from zero write "+4 (new)".
-
-## Charts
-
-| Question | Form |
-| --- | --- |
-| Moving over time? | One straight line, no fill or a flat ~14% tint, no point markers |
-| How much per period? | Columns with square corners |
-| Who ranks? | A sorted horizontal bar list |
-| What share? | A thin ring (3-8px stroke) or a 100% bar, five parts at most |
-| How far to target / how much of the plan used? | A track at the true ratio, both ends labelled; an overrun past the end in the negative colour |
-| Who is away when? | People down the left, days across; each kind of booking its own mark |
-
-- **One question, one series**; switch metrics with a control instead of
-  overlaying lines. Plots 140-260px tall.
-- Gridlines horizontal only, 3-5, 1px, about #e5e5e5; no y-axis line; 4-6 round y
-  ticks above the maximum at 12px grey; 4-8 flat x labels on one even step. Never
-  without a scale.
-- One hue per chart, on the main data element; neutrals for the rest; one subject
-  keeps one hue across the screen; four hues per screen at most.
-- No legend for one series; otherwise dots with labels in the card header, every
-  swatch the mark it explains.
-- Annotate the event that matters (a 1px marker and a 12px label naming its
-  cause); reference lines 1px dashed with the label at the end. A forecast is
-  dashed after today.
-- A flat series with one event gets two-thirds width, not the whole row. Few
-  numbers: draw no chart. Draw simple charts with divs or inline SVG; install a
-  chart library only for real axes and many series.
-
-## Tables and lists
-
-- Rows 44-48px (single line), 56-72px (two lines with media; line 2 one size
-  smaller, grey, ~21px below). Overview lists show 2-5 rows and link out with
-  "View all" and the total — no pagination on an overview.
-- Header 12px grey sentence case, no fill band, at most one rule (the strongest
-  line in the table). No zebra; row rules 1px, 3-7% darker than the surface, or
-  none.
-- **Numbers right-aligned in tabular figures**, fixed decimals per metric,
-  separators, a sign on every change, no space after the currency sign. The
-  identity column gets the most width and is never the one truncated.
-- Only the identity and the key number in full ink; the rest grey. A missing value
-  is a grey dash; a real zero is printed. The sign lives in the text, not in red.
-- Status pills: pale tint with dark text of the same hue, 20px tall, 12px at 500,
-  `nowrap`. One status mark per row.
-- One row action at most (a kebab, or a ghost button in a fixed trailing column
-  when the row needs doing). Selected row in a list that drives a detail pane
-  takes the nav pill's fill.
-
-## Forms and settings
-
-- Label above the field, 14px/500, 8px gap; no placeholder as label. Inputs 38-40px,
-  white with a 1px #e5e7eb border even on a grey panel. Toggles 28×16; the on colour
-  semantic green or near-black, not the accent. Disabled controls stay legible and
-  say why.
-- Settings: each section a row — a ~450px label column (16/500 title, 14px grey
-  description) beside a ~700px panel (#fafafa, radius 16, padding 16, no border).
-  Sections split by a full-width rule with 32px around it. One view per area, one
-  save model per view, destructive actions last in the negative colour. Show what
-  the setting produces (the email as it will arrive) beside its control.
-- Buttons 32-36px; one filled primary, a white bordered secondary, text tertiary.
-
-## Type and colour
-
-- **One grotesk**; a second face only with one job (a mono for IDs or every
-  figure, a serif for one greeting). Title 18-32px, figures 16-40px. 4-6 sizes
-  (12/14/16/24 is a clean scale), three weights, tabular figures on every number
-  that is compared or updates. Sentence case; tracking 0.
-- **Light**: white cards on an off-white ground, or grey panels on white. Lines in
-  three steps: card edges ~#eaeaea, row rules ~#f2f2f2, control borders ~#d1d5db.
-  Text in two tiers at 4.5:1 or more (about #111 and #5f6368; #6b6b6b is the
-  lightest grey that holds). Status text green #247b50, not the lighter greens.
-- **Dark**: a true neutral ground (#000, #111), never navy or slate; surfaces a
-  lighter step with no border, or the ground with 1px lines; two text greys that
-  read apart (~#b4b4b4, #949494); status as a hue on a dark tint of itself.
-- A border or a shadow, never both. Radius is bimodal: tight 4-8px or soft
-  16-24px, chosen once, nested radii stepping down. Icons outline, 14-20px, grey,
-  one set; never in a saturated circle.
 
 ## Density
 
@@ -227,18 +124,6 @@ entrance.
   button.
 - Red is a signal, not a texture: one red mark per object at most.
 
-## The phone (house rule)
-
-- The sidebar folds into a 48px top bar with the screen's name and a menu that
-  opens a full-screen sheet, or a bottom bar of four or five destinations.
-- 16-20px margins, 44px touch targets, data at 14px, the title at 20-24px.
-- Filters collapse into one row of chips; the first list row starts in the top 60%
-  of the screen. KPIs become a 2-column grid with an even count. Charts full
-  width, 160-200px tall, 3-4 x labels.
-- Tables become two-line rows: identity and key number on line 1, the other fields
-  in 13px grey on line 2. Blocks that carry an action move up.
-- The frame is the screen: no drawn bezel, notch or home indicator.
-
 ## What app screens may do that pages may not
 
 | Allowed | Limit |
@@ -246,7 +131,7 @@ entrance.
 | 1px borders on cards, panels, tables, controls | About 1.1-1.3:1 against the ground; controls one step stronger |
 | Small labels above values | 12-14px sentence case at 4.5:1; meta 11-12px; nothing under 11px; at most one tracked uppercase label per screen |
 | Rows of identical cards | Peer objects only, 3-6 across, no orphan, no icon on top |
-| Monospace | IDs and code, or every figure as the style's decision |
+| Monospace | IDs and code, or every figure as the direction's decision |
 | Pills | Inside rows and beside a value, never above a heading |
 | Index numbers | Only as data: a rank, a node number |
 | Shadows | On what floats; a resting card at most a small blur under 8% black |
@@ -268,7 +153,7 @@ entrance.
 | Saturated status chips with white text | Pale tints with dark text of the same hue |
 | The accent on every button, tab and link | Near-black primary; the accent on data |
 | A top bar with search, a bell and an avatar, mostly empty | No top bar, or one that holds something real |
-| Geist or Inter on #f8f8f8, white 12px cards, no hue on the data | The face from the sheet and one element only this product has |
+| Geist or Inter on #f8f8f8, white 12px cards, no hue on the data | The sheet's type and one element only this product has |
 | An illustration and "No data yet" in an empty chart | The zero line and one sentence |
 
 A screen with every tell removed and nothing in their place is a tidy template.
