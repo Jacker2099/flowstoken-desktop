@@ -9,7 +9,6 @@ import type {
 	Skill,
 	SkillFrontmatter,
 	SkillProvenance,
-	SkillType,
 } from "./contracts.js";
 
 const MAX_NAME_LENGTH = 64;
@@ -97,22 +96,6 @@ function validateDescription(description: string | undefined): string[] {
 		: [];
 }
 
-async function readSceneTasks(
-	access: ResourceAccessPort,
-	baseDir: string,
-	signal?: AbortSignal,
-): Promise<readonly string[]> {
-	const tasksPath = access.paths.join(baseDir, "tasks.json");
-	try {
-		if ((await access.files.stat(tasksPath, { signal }))?.kind !== "file") return [];
-		const value: unknown = JSON.parse(await access.files.readText(tasksPath, { signal }));
-		return Array.isArray(value) && value.every((task) => typeof task === "string") ? [...value] : [];
-	} catch {
-		signal?.throwIfAborted();
-		return [];
-	}
-}
-
 async function loadSkillFromFile(
 	access: ResourceAccessPort,
 	filePath: string,
@@ -133,7 +116,6 @@ async function loadSkillFromFile(
 			diagnostics.push({ type: "warning", message, path: filePath });
 		}
 		if (!frontmatter.description || frontmatter.description.trim() === "") return { skill: null, diagnostics };
-		const type: SkillType = frontmatter.metadata?.type === "scene" ? "scene" : "skill";
 		return {
 			skill: {
 				name,
@@ -143,10 +125,8 @@ async function loadSkillFromFile(
 				baseDir,
 				source,
 				provenance: provenanceForSource(source),
-				type,
 				disableModelInvocation: frontmatter["disable-model-invocation"] === true,
 				content,
-				sceneTasks: await readSceneTasks(access, baseDir, signal),
 			},
 			diagnostics,
 		};
@@ -238,18 +218,6 @@ export function loadSkillsFromDir(options: LoadSkillsFromDirOptions): Promise<Lo
 	return loadSkillsFromDirInternal(options.resourceAccess, options.dir, options.source, true, options.signal);
 }
 
-async function loadScenesFromDir(
-	access: ResourceAccessPort,
-	dir: string,
-	signal?: AbortSignal,
-): Promise<LoadSkillsResult> {
-	const result = await loadSkillsFromDirInternal(access, dir, "scene", true, signal);
-	return {
-		skills: result.skills.map((skill) => ({ ...skill, source: "scene", type: "scene" as const })),
-		diagnostics: result.diagnostics,
-	};
-}
-
 function normalizePath(access: ResourceAccessPort, input: string): string {
 	const trimmed = input.trim();
 	if (trimmed === "~") return access.paths.homeDirectory();
@@ -268,8 +236,6 @@ export async function loadSkills(options: LoadSkillsOptions): Promise<LoadSkills
 	const cwd = access.paths.resolve(options.cwd);
 	const agentDir =
 		options.agentDir ?? access.paths.join(access.paths.homeDirectory(), PROJECT_CONFIG_DIRECTORY, "agent");
-	const sceneDir =
-		options.sceneDir ?? access.paths.join(access.paths.homeDirectory(), PROJECT_CONFIG_DIRECTORY, "scene");
 	const includeDefaults = options.includeDefaults ?? true;
 	const includeAgentSkills = options.includeAgentSkills ?? true;
 	const skillMap = new Map<string, Skill>();
@@ -311,7 +277,6 @@ export async function loadSkills(options: LoadSkillsOptions): Promise<LoadSkills
 	if (includeDefaults) {
 		await addSkills(await loadSkillsFromDirInternal(access, userSkillsDir, "user", true, options.signal));
 		await addSkills(await loadSkillsFromDirInternal(access, projectSkillsDir, "project", true, options.signal));
-		await addSkills(await loadScenesFromDir(access, sceneDir, options.signal));
 	}
 
 	const isUnderPath = (target: string, root: string): boolean => {

@@ -74,8 +74,7 @@ beforeEach(async () => {
 	const { getVettaHomePath } = await import("@vetta/action-rpc");
 	expect(getVettaHomePath()).toBe(fixture.home);
 	const { getSkillBaseDir } = await import("./skill-service.js");
-	expect(getSkillBaseDir("skill")).toBe(join(fixture.home, "skills"));
-	expect(getSkillBaseDir("scene")).toBe(join(fixture.home, "scene"));
+	expect(getSkillBaseDir()).toBe(join(fixture.home, "skills"));
 	expect(join(getVettaHomePath(), "tmp")).toBe(join(fixture.home, "tmp"));
 });
 
@@ -155,61 +154,58 @@ describe("real skill archive installation flows", () => {
 		},
 	);
 
-	it.each(["skill", "scene"] as const)(
-		"installs and updates a market %s while preserving overlay files",
-		async (type) => {
-			const { installSkillFromMarketArchive } = await import("./skill-market-install.js");
-			const initial = await archiveOf({ "SKILL.md": skillMarkdown("market-demo", "1.2.3", type) });
-			await expect(
-				installSkillFromMarketArchive("market-demo", type, initial, {
-					sha256: createHash("sha256").update(initial).digest("hex"),
-				}),
-			).resolves.toEqual({ name: "market-demo", type, version: "1.2.3", updated: false });
-			const destination = join(fixture.home, type === "scene" ? "scene" : "skills", "market-demo");
-			await writeFile(join(destination, "legacy.txt"), "keep-existing-overlay", "utf8");
-			const updated = await archiveOf({ "SKILL.md": skillMarkdown("market-demo", "2.3.4", type), "new.txt": "new" });
-			await expect(
-				installSkillFromMarketArchive("market-demo", type, updated, {
-					alias: "Demo",
-					marketDescription: "Public description",
-				}),
-			).resolves.toEqual({ name: "market-demo", type, version: "2.3.4", updated: true });
-			await expect(readFile(join(destination, "SKILL.md"), "utf8")).resolves.toContain("version: 2.3.4");
-			await expect(readFile(join(destination, "legacy.txt"), "utf8")).resolves.toBe("keep-existing-overlay");
-			await expect(readFile(join(destination, "new.txt"), "utf8")).resolves.toBe("new");
-			const state = await installedState();
-			expect(JSON.parse(state.manifest) as unknown).toMatchObject({
-				"market-demo": {
-					type,
-					source: "market",
-					version: "2.3.4",
-					enabled: true,
-					alias: "Demo",
-					marketDescription: "Public description",
-				},
-			});
-			expect(JSON.parse(state.ledger) as unknown).toMatchObject({
-				entries: { [`${type}:market-demo`]: { version: "2.3.4" } },
-			});
-			expect(fixture.events).toEqual([
-				{
-					type: "resource.lifecycle",
-					resourceKind: type,
-					operation: "installed",
-					resourceId: "market-demo",
-					source: "market",
-				},
-				{
-					type: "resource.lifecycle",
-					resourceKind: type,
-					operation: "updated",
-					resourceId: "market-demo",
-					source: "market",
-				},
-			]);
-			await expect(readdir(join(fixture.home, "tmp"))).resolves.toEqual([]);
-		},
-	);
+	it.each(["skill"] as const)("installs and updates a market %s while preserving overlay files", async (type) => {
+		const { installSkillFromMarketArchive } = await import("./skill-market-install.js");
+		const initial = await archiveOf({ "SKILL.md": skillMarkdown("market-demo", "1.2.3", type) });
+		await expect(
+			installSkillFromMarketArchive("market-demo", type, initial, {
+				sha256: createHash("sha256").update(initial).digest("hex"),
+			}),
+		).resolves.toEqual({ name: "market-demo", type, version: "1.2.3", updated: false });
+		const destination = join(fixture.home, "skills", "market-demo");
+		await writeFile(join(destination, "legacy.txt"), "keep-existing-overlay", "utf8");
+		const updated = await archiveOf({ "SKILL.md": skillMarkdown("market-demo", "2.3.4", type), "new.txt": "new" });
+		await expect(
+			installSkillFromMarketArchive("market-demo", type, updated, {
+				alias: "Demo",
+				marketDescription: "Public description",
+			}),
+		).resolves.toEqual({ name: "market-demo", type, version: "2.3.4", updated: true });
+		await expect(readFile(join(destination, "SKILL.md"), "utf8")).resolves.toContain("version: 2.3.4");
+		await expect(readFile(join(destination, "legacy.txt"), "utf8")).resolves.toBe("keep-existing-overlay");
+		await expect(readFile(join(destination, "new.txt"), "utf8")).resolves.toBe("new");
+		const state = await installedState();
+		expect(JSON.parse(state.manifest) as unknown).toMatchObject({
+			"market-demo": {
+				type,
+				source: "market",
+				version: "2.3.4",
+				enabled: true,
+				alias: "Demo",
+				marketDescription: "Public description",
+			},
+		});
+		expect(JSON.parse(state.ledger) as unknown).toMatchObject({
+			entries: { [`${type}:market-demo`]: { version: "2.3.4" } },
+		});
+		expect(fixture.events).toEqual([
+			{
+				type: "resource.lifecycle",
+				resourceKind: type,
+				operation: "installed",
+				resourceId: "market-demo",
+				source: "market",
+			},
+			{
+				type: "resource.lifecycle",
+				resourceKind: type,
+				operation: "updated",
+				resourceId: "market-demo",
+				source: "market",
+			},
+		]);
+		await expect(readdir(join(fixture.home, "tmp"))).resolves.toEqual([]);
+	});
 
 	it("does not publish partial members from a truncated market TGZ or change the prior manifest/events", async () => {
 		const { installSkillFromMarketArchive } = await import("./skill-market-install.js");
@@ -246,14 +242,14 @@ describe("real skill archive installation flows", () => {
 	});
 
 	it.each(["tgz", "zip"] as const)(
-		"imports a custom scene through the registered IPC using real %s, then rejects a duplicate",
+		"imports a custom skill archive through the registered IPC using real %s, then rejects a duplicate",
 		async (format) => {
 			const buffer = await archiveOf(
 				{ "package/SKILL.md": skillMarkdown("custom-scene", "3.4.5", "scene"), "package/data.txt": "custom-data" },
 				format,
 			);
-			await expect(importArchive(buffer)).resolves.toEqual({ name: "custom-scene", type: "scene" });
-			const destination = join(fixture.home, "scene", "custom-scene");
+			await expect(importArchive(buffer)).resolves.toEqual({ name: "custom-scene", type: "skill" });
+			const destination = join(fixture.home, "skills", "custom-scene");
 			await expect(readFile(join(destination, "SKILL.md"), "utf8")).resolves.toContain(
 				'description: "Contains: a colon"',
 			);
@@ -262,19 +258,19 @@ describe("real skill archive installation flows", () => {
 			expect(JSON.parse(prior.manifest) as unknown).toMatchObject({
 				"custom-scene": {
 					source: "custom",
-					type: "scene",
+					type: "skill",
 					version: "3.4.5",
 					enabled: true,
 					description: "Contains: a colon",
 				},
 			});
 			expect(JSON.parse(prior.ledger) as unknown).toMatchObject({
-				entries: { "scene:custom-scene": { version: "3.4.5" } },
+				entries: { "skill:custom-scene": { version: "3.4.5" } },
 			});
 			expect(fixture.events).toEqual([
 				{
 					type: "resource.lifecycle",
-					resourceKind: "scene",
+					resourceKind: "skill",
 					operation: "imported",
 					resourceId: "custom-scene",
 					source: "custom",
