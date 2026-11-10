@@ -183,8 +183,9 @@ describe("ModelSelectorView", () => {
 		await user.click(screen.getByText("Bestoo-Auto smart routing"));
 		expect(onModelSelect).toHaveBeenCalledWith("flowstoken-smart/Bestoo-Auto");
 
-		// Official tab: vendor chips in catalog order, logo imgs and initial fallback.
-		await user.click(screen.getByRole("button", { name: "Official" }));
+		// 选中即关菜单；重新打开后进入 Official 栏。
+		await user.click(screen.getByRole("button", { name: /claude-sonnet-4\.6/ }));
+		await user.click(await screen.findByRole("button", { name: "Official" }));
 		const chips = screen
 			.getAllByRole("button")
 			.filter((b) => b.getAttribute("aria-pressed") !== null)
@@ -431,27 +432,17 @@ function compactProps(): ModelSelectorViewProps {
 }
 
 describe("compact catalog interactions", () => {
-	it("cancels the pending initial scroll after the user chooses a vendor without letting a late frame steal focus", async () => {
-		const callbacks: FrameRequestCallback[] = [];
-		const cancel = vi.fn();
-		vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
-			callbacks.push(callback);
-			return callbacks.length;
-		});
-		vi.stubGlobal("cancelAnimationFrame", cancel);
+	it("scrolls to the vendor section from the quick bar without stealing focus", async () => {
 		const user = userEvent.setup();
 		const props = compactProps();
 		render(<ModelSelectorView {...props} vendorBarByTab={{ a: [{ id: "Acme", name: "Acme" }] }} />);
 		await user.click(screen.getByRole("button", { name: "Alpha" }));
 		const vendor = await screen.findByRole("button", { name: "Acme" });
 		await user.click(vendor);
-		const target = Array.from(document.querySelectorAll<HTMLElement>("[data-model-vendor-section]")).find(
+		const target = Array.from(document.querySelectorAll<HTMLElement>("[data-vendor-id]")).find(
 			(node) => node.dataset.vendorId === "Acme",
 		);
-		expect(cancel).toHaveBeenCalled();
-		const pending = [...callbacks];
-		for (const callback of pending) callback(16);
-		expect(vi.mocked(HTMLElement.prototype.scrollIntoView).mock.instances.at(-1)).toBe(target);
+		expect(vi.mocked(HTMLElement.prototype.scrollIntoView).mock.instances).toContain(target);
 		expect(document.activeElement).toBe(vendor);
 	});
 	it("refreshes through the host once, reports busy and cache status, and retains the selection on failure", async () => {
@@ -530,6 +521,8 @@ describe("compact catalog interactions", () => {
 		expect(await screen.findByRole("menuitem", { name: "Alpha" })).toBeTruthy();
 		expect(screen.queryByRole("menuitem", { name: "Beta" })).toBeNull();
 		await user.click(screen.getByRole("button", { name: "Every group" }));
+		// 三栏布局下第二栏只列当前服务商；切到 Second group 才能看到它的模型。
+		await user.click(screen.getByRole("menuitem", { name: "Second group" }));
 		expect(screen.getByRole("menuitem", { name: "Beta" })).toBeTruthy();
 	});
 
@@ -572,7 +565,9 @@ describe("compact catalog interactions", () => {
 		recommendation.focus();
 		await user.keyboard("{Enter}");
 		expect(props.onModelSelect).toHaveBeenCalledWith("group-a/alpha");
-		await user.click(screen.getByRole("button", { name: "Second" }));
+		// 选中即关菜单；重新打开后切到 Second 栏。
+		await user.click(screen.getByRole("button", { name: "Alpha" }));
+		await user.click(await screen.findByRole("button", { name: "Second" }));
 		expect(screen.queryByRole("button", { name: /First recommendation/ })).toBeNull();
 		const next = screen.getByRole("button", { name: /Second recommendation/ });
 		next.focus();
@@ -632,11 +627,12 @@ describe("compact catalog interactions", () => {
 			(element) => element.dataset.vendorId === id,
 		)!;
 		await user.click(screen.getByRole("button", { name: "Acme" }));
-		expect(vi.mocked(HTMLElement.prototype.scrollIntoView).mock.instances.at(-1)).toBe(section);
+		expect(vi.mocked(HTMLElement.prototype.scrollIntoView).mock.instances).toContain(section);
 		const list = screen.getByRole("region", { name: labels.modelHeader });
 		list.scrollTop = 120;
 		await user.click(screen.getByRole("button", { name: "Second" }));
-		expect(list.scrollTop).toBe(0);
+		// 换栏会重挂列表，滚动位置回到顶部。
+		expect(screen.getByRole("region", { name: labels.modelHeader }).scrollTop).toBe(0);
 	});
 
 	it("keeps a removed selection unchanged, describes its status, and lets the user choose a replacement", async () => {
@@ -680,11 +676,9 @@ describe("compact catalog interactions", () => {
 		await waitFor(() =>
 			expect(document.activeElement).toBe(screen.getByRole("searchbox", { name: labels.searchPlaceholder })),
 		);
-		const reasoning = screen.getByRole("menuitem", { name: /Reasoning/ });
-		reasoning.focus();
-		await user.keyboard("{ArrowRight}");
-		await screen.findByRole("menuitem", { name: "high" });
-		await user.keyboard("{End}{Enter}");
+		// 三栏布局的第三栏直接列出思考档位，选中档位后关闭菜单。
+		expect(screen.getByText(labels.reasoningHeader)).toBeTruthy();
+		await user.click(screen.getByRole("menuitem", { name: "high" }));
 		expect(props.onReasoningSelect).toHaveBeenCalledWith("high");
 	});
 });

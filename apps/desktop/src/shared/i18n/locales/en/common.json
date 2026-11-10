@@ -993,6 +993,33 @@
 		"catalogFallback": "Default offline catalog",
 		"catalogRefreshFailed": "Refresh failed; the previous catalog has been kept.",
 		"catalogSynced": "Website catalog",
+		"info": {
+			"button": "Model details",
+			"source": "Source",
+			"id": "Model ID",
+			"contextWindow": "Context window",
+			"maxOutput": "Max output",
+			"inputModes": "Input",
+			"reasoning": "Reasoning",
+			"reasoningSupported": "Supported",
+			"multiplier": "Pricing",
+			"modality": {
+				"text": "Text",
+				"image": "Image",
+				"audio": "Audio",
+				"video": "Video",
+				"pdf": "PDF"
+			}
+		},
+		"shortcutHint": "Toggle model menu",
+		"moreProviders": "{{count}} more providers",
+		"fewerProviders": "Show fewer providers",
+		"favorites": {
+			"tab": "Favorite models",
+			"empty": "No favorite models yet",
+			"add": "Add to favorites",
+			"remove": "Remove from favorites"
+		},
 		"placeholder": "Select model",
 		"searchPlaceholder": "Search models or providers",
 		"clearSearch": "Clear search",

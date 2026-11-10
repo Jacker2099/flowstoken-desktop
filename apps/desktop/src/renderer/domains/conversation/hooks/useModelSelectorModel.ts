@@ -3,6 +3,7 @@ import { resolveReasoning } from "@shared/components/ModelSelect/resolveReasonin
 import { type ModelOption, useModelOptions } from "@shared/components/ModelSelect/useModelOptions";
 import {
 	activeSessionAtom,
+	favoriteModelsAtom,
 	modelSupportsImagesAtom,
 	reasoningByModelAtom,
 	SELECTED_MODEL_STORAGE_KEY,
@@ -72,16 +73,6 @@ export function useModelSelectorModel({
 	const { options, grouped, defaultKey, iconFor, labelFor } = useModelOptions();
 	const picker = useFlowstokenPicker(options, grouped, selectedModel);
 	const optionByKey = useMemo(() => new Map(options.map((option) => [option.key, option])), [options]);
-	const providerGroups = useMemo(
-		() =>
-			[...grouped.entries()].map(([provider, models]) => ({
-				icon: iconFor(provider),
-				label: labelFor(provider),
-				models,
-				provider,
-			})),
-		[grouped, iconFor, labelFor],
-	);
 
 	const catalogOption = useMemo(
 		() => (selectedModel ? (modelOptionFromIndex(optionByKey, selectedModel) ?? null) : null),
@@ -172,15 +163,17 @@ export function useModelSelectorModel({
 	 * 计费倍率标的文案。视图只负责渲染，倍率口径与「免费」措辞留在宿主——
 	 * 插件复用同一个视图时不会连带继承宿主的计费文案。
 	 */
+	// 按 key 建一次索引：几百个模型时每行渲染都 options.find 会是 O(n²)。
+	const multiplierByKey = useMemo(() => new Map(options.map((option) => [option.key, option.multiplier])), [options]);
 	const multiplierLabelFor = useCallback(
 		(option: { key: string }): string | undefined => {
-			const multiplier = optionByKey.get(option.key)?.multiplier;
+			const multiplier = multiplierByKey.get(option.key);
 			if (!multiplier) return undefined;
 			return multiplier.input === 0 && multiplier.output === 0
 				? t("modelSelect.free")
 				: t("modelSelect.multiplier", { value: fmtMultiplier(multiplier.input) });
 		},
-		[optionByKey, t],
+		[multiplierByKey, t],
 	);
 
 	// 打开模型菜单时按 TTL 后台重校验目录，服务端增删模型无需重启即可看到。
@@ -203,37 +196,98 @@ export function useModelSelectorModel({
 		[selectedModel, reasoningByModel, setReasoningByModel, scope],
 	);
 
+	// 选中后菜单要保持打开、让用户接着在第三栏选思考强度的模型。
+	const reasoningModelKeys = useMemo(
+		() => new Set(options.filter((option) => resolveReasoning(option)).map((option) => option.key)),
+		[options],
+	);
+
+	const [favoriteKeyList, setFavoriteKeyList] = useAtom(favoriteModelsAtom);
+	const favoriteKeys = useMemo(() => new Set(favoriteKeyList), [favoriteKeyList]);
+	const toggleFavorite = useCallback(
+		(key: string) =>
+			setFavoriteKeyList((current) =>
+				current.includes(key) ? current.filter((item) => item !== key) : [...current, key],
+			),
+		[setFavoriteKeyList],
+	);
+	const favorites = useMemo<NonNullable<ModelSelectorViewProps["favorites"]>>(
+		() => ({
+			keys: favoriteKeys,
+			onToggle: toggleFavorite,
+			labels: {
+				tab: t("modelSelect.favorites.tab"),
+				empty: t("modelSelect.favorites.empty"),
+				add: t("modelSelect.favorites.add"),
+				remove: t("modelSelect.favorites.remove"),
+			},
+		}),
+		[favoriteKeys, toggleFavorite, t],
+	);
+
+	// 引用保持稳定：视图里的搜索过滤、行组件的 memo 都依赖它们不随无关 atom 变化而换新。
+	const groups = useMemo(
+		() =>
+			[...grouped.entries()].map(([provider, models]) => ({
+				icon: iconFor(provider),
+				label: labelFor(provider),
+				models,
+				provider,
+			})),
+		[grouped, iconFor, labelFor],
+	);
+	const labels = useMemo<ModelSelectorViewProps["labels"]>(
+		() => ({
+			clearSearch: t("modelSelect.clearSearch"),
+			multiplierLabel: multiplierLabelFor,
+			cloudOnly: t("modelSelect.cloudOnly"),
+			defaultBadge: t("modelSelect.defaultBadge"),
+			levelLabel,
+			moreProviders: (count) => t("modelSelect.moreProviders", { count }),
+			fewerProviders: t("modelSelect.fewerProviders"),
+			modelHeader: t("modelSelect.modelHeader"),
+			noResults: t("modelSelect.noResults"),
+			noResultsHint: t("modelSelect.noResultsHint"),
+			placeholder: t("modelSelect.placeholder"),
+			reasoningHeader: t("modelSelect.reasoningHeader"),
+			searchPlaceholder: t("modelSelect.searchPlaceholder"),
+			visionBadge: t("modelSelect.visionBadge"),
+			newBadge: t("modelSelect.newBadge"),
+			unavailableBadge: t("modelSelect.unavailableBadge"),
+			unavailableHint: t("modelSelect.unavailableHint"),
+			syncCatalog: t("modelSelect.syncCatalog"),
+			cached: t("modelSelect.catalogCached"),
+			fallback: t("modelSelect.catalogFallback"),
+			refreshFailed: t("modelSelect.catalogRefreshFailed"),
+			allVendors: t("modelSelect.allVendors"),
+			recommendationSelected: t("modelSelect.recommendationSelected"),
+			recommendationAction: t("modelSelect.recommendationAction"),
+			info: {
+				button: t("modelSelect.info.button"),
+				source: t("modelSelect.info.source"),
+				id: t("modelSelect.info.id"),
+				contextWindow: t("modelSelect.info.contextWindow"),
+				maxOutput: t("modelSelect.info.maxOutput"),
+				inputModes: t("modelSelect.info.inputModes"),
+				reasoning: t("modelSelect.info.reasoning"),
+				reasoningSupported: t("modelSelect.info.reasoningSupported"),
+				multiplier: t("modelSelect.info.multiplier"),
+				modality: (modality: string) => t(`modelSelect.info.modality.${modality}`, { defaultValue: modality }),
+			},
+		}),
+		[t, multiplierLabelFor, levelLabel],
+	);
+
 	return {
 		// 已有选中 key 时即使 options 还在加载也展示触发器，避免空白/占位闪烁。
 		empty: options.length === 0 && !selectedModel,
 		viewProps: {
 			currentLevel,
 			defaultKey: defaultKey ? (modelOptionFromIndex(optionByKey, defaultKey)?.key ?? defaultKey) : undefined,
-			groups: providerGroups,
-			labels: {
-				clearSearch: t("modelSelect.clearSearch"),
-				recommendationAction: t("modelSelect.recommendationAction"),
-				recommendationSelected: t("modelSelect.recommendationSelected"),
-				multiplierLabel: multiplierLabelFor,
-				cloudOnly: t("modelSelect.cloudOnly"),
-				defaultBadge: t("modelSelect.defaultBadge"),
-				newBadge: t("modelSelect.newBadge"),
-				allVendors: t("modelSelect.allVendors"),
-				levelLabel,
-				modelHeader: t("modelSelect.modelHeader"),
-				noResults: t("modelSelect.noResults"),
-				noResultsHint: t("modelSelect.noResultsHint"),
-				placeholder: t("modelSelect.placeholder"),
-				reasoningHeader: t("modelSelect.reasoningHeader"),
-				searchPlaceholder: t("modelSelect.searchPlaceholder"),
-				visionBadge: t("modelSelect.visionBadge"),
-				unavailableBadge: t("modelSelect.unavailableBadge"),
-				unavailableHint: t("modelSelect.unavailableHint"),
-				syncCatalog: t("modelSelect.syncCatalog"),
-				cached: t("modelSelect.catalogCached"),
-				fallback: t("modelSelect.catalogFallback"),
-				refreshFailed: t("modelSelect.catalogRefreshFailed"),
-			},
+			groups,
+			labels,
+			favorites,
+			reasoningModelKeys,
 			menuLevels,
 			onModelSelect: handleModelSelect,
 			onOpenChange: handleOpenChange,

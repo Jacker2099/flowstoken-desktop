@@ -149,6 +149,8 @@ export function ModelSelect({
 				fallback: t("modelSelect.catalogFallback"),
 				refreshFailed: t("modelSelect.catalogRefreshFailed"),
 				multiplierLabel,
+				moreProviders: (count: number) => t("modelSelect.moreProviders", { count }),
+				fewerProviders: t("modelSelect.fewerProviders"),
 			}}
 			onModelSelect={onChange}
 			onReasoningSelect={(level) => reasoning?.onChange(level)}

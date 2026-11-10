@@ -812,6 +812,29 @@
 		"saving": "Saving",
 		"imageGeneration": {
 			"auto": "Automatic",
+			"custom": {
+				"add": "Add service",
+				"apiKey": "API key",
+				"apiKeyKeepHint": "Saved — leave blank to keep it",
+				"baseUrl": "Base URL",
+				"cancel": "Cancel",
+				"delete": "Delete",
+				"description": "Add OpenAI-compatible image services (/images/generations and /images/edits). They appear in the lists above once saved. The API key is stored encrypted on this device and is only sent to the Base URL you enter.",
+				"edit": "Edit",
+				"errors": {
+					"apiKey": "Enter the API key.",
+					"baseUrl": "Base URL must start with http:// or https://.",
+					"capability": "Select at least one of text-to-image or image-to-image.",
+					"required": "Name, Base URL and model name are required.",
+					"saveFailed": "Could not save: {{message}}"
+				},
+				"model": "Model name",
+				"name": "Name",
+				"save": "Save",
+				"supportsImageToImage": "Supports image-to-image",
+				"supportsTextToImage": "Supports text-to-image",
+				"title": "Custom image services"
+			},
 			"description": "Choose the default model Agent uses to generate or edit images; Automatic follows available services.",
 			"imageToImage": "Image-to-image model",
 			"loading": "Loading image generation services…",
@@ -2336,5 +2359,15 @@
 	"providerRenameConflict": "A provider with this name already exists. Choose another name.",
 	"providerRenameFailed": "Could not finish saving the provider. Refresh the settings and try again.",
 	"tabFlowstoken": "FlowsToken Account",
-	"section_flowstoken-account": "FlowsToken Account"
+	"section_flowstoken-account": "FlowsToken Account",
+	"section_appearance-ui-zoom": "Interface Size",
+	"uiZoomHint": "Adjust how large the interface appears.",
+	"uiZoomReset": "Reset",
+	"uiZoomSliderLabel": "Interface size",
+	"editBaseUrl": "Change port",
+	"baseUrlPlaceholder": "Port",
+	"baseUrlInvalid": "The port must be an integer between 1 and 65535",
+	"toggleProvider": "Enable or disable {{provider}}",
+	"shortcutOpenModelSelectorLabel": "Open model menu",
+	"shortcutOpenModelSelectorDesc": "Pop up the model menu in the input box to pick model, reasoning and sandbox access; press again to close"
 }

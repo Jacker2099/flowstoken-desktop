@@ -29,6 +29,8 @@ export interface PresetProviderInfo {
 	api: string;
 	baseUrl: string;
 	icon: string;
+	/** 预填的密钥(本机代理类服务商),用户直接点启用即可。 */
+	defaultApiKey?: string;
 	/** 公共目录里该家的模型(免 key 可见)。填 key 后由账号实际可用的 /models 结果取代。 */
 	catalogModels: ModelDefinition[];
 }
@@ -65,6 +67,7 @@ export async function listPresetProviders(): Promise<PresetProvidersResult> {
 			api: def.api,
 			baseUrl: def.baseUrl,
 			icon: def.icon,
+			...(def.defaultApiKey ? { defaultApiKey: def.defaultApiKey } : {}),
 			catalogModels: catalogModelsFor(catalog, def),
 		})),
 	};
@@ -176,11 +179,25 @@ function isSnapshot(catalog: ModelsDevCatalog | null): boolean {
  *
  * apiKey 缺省时读 models.json 里已保存的 key(手动刷新场景)。
  */
-export async function refreshPresetModels(providerId: string, apiKey?: string): Promise<PresetModelsResult> {
-	const def = getPresetProvider(providerId);
-	if (!def) return { models: [], error: { code: "unknown-provider", params: { provider: providerId } } };
+export async function refreshPresetModels(
+	providerId: string,
+	apiKey?: string,
+	baseUrl?: string,
+): Promise<PresetModelsResult> {
+	const preset = getPresetProvider(providerId);
+	if (!preset) return { models: [], error: { code: "unknown-provider", params: { provider: providerId } } };
 
 	let key = apiKey?.trim();
+	let url = baseUrl?.trim();
+	if (!key || key === MASKED_MODEL_API_KEY || !url) {
+		const saved = (await getDesktopModelSettingsService().getMetadataConfig()).providers[providerId];
+		if (!key || key === MASKED_MODEL_API_KEY) {
+			key = saved?.apiKey && saved.apiKey !== MASKED_MODEL_API_KEY ? saved.apiKey.trim() : undefined;
+		}
+		// 用户改过地址（如 Magpie 换端口）时以已保存的为准，否则回到内置默认。
+		url = url || saved?.baseUrl?.trim();
+	}
+	const def = url ? { ...preset, baseUrl: url } : preset;
 	if (!key || key === MASKED_MODEL_API_KEY) {
 		key = (await getDesktopModelSettingsService().getProviderApiKey(providerId))?.trim();
 	}
@@ -211,6 +228,8 @@ function adoptedPresetIds(config: ModelsConfig): string[] {
 	return Object.entries(config.providers)
 		.filter(([id, provider]) => {
 			if (provider.source !== "template") return false;
+			if (provider.disabled) return false;
+			if (!provider.apiKey?.trim()) return false;
 			return Boolean(getPresetProvider(provider.templateId ?? id));
 		})
 		.map(([id]) => id);
@@ -231,7 +250,9 @@ export async function syncAdoptedPresets(): Promise<void> {
 	const results = await Promise.all(
 		ids.map(async (id) => {
 			const templateId = config.providers[id]?.templateId ?? id;
-			const def = getPresetProvider(templateId);
+			const preset = getPresetProvider(templateId);
+			const savedBaseUrl = config.providers[id]?.baseUrl?.trim();
+			const def = preset && savedBaseUrl ? { ...preset, baseUrl: savedBaseUrl } : preset;
 			const key = (await service.getCachedProviderApiKey(id))?.trim();
 			// Startup/background work must not unlock a personal keychain or send the renderer's mask.
 			if (!def || !key || key === MASKED_MODEL_API_KEY) return { id, result: undefined };

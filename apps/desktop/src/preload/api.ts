@@ -48,6 +48,7 @@ import type { DesktopTelemetryApi } from "./api-types/telemetry.js";
 import type { DesktopTerminalApi } from "./api-types/terminal.js";
 import type { DesktopThemeApi } from "./api-types/theme.js";
 import type { DesktopThemesApi } from "./api-types/themes.js";
+import type { DesktopUiZoomApi } from "./api-types/ui-zoom.js";
 import type { DesktopUpdaterApi } from "./api-types/updater.js";
 import type { DesktopWebhookApi } from "./api-types/webhook.js";
 import type { DesktopFsApi } from "./fs-types.js";
@@ -87,6 +88,7 @@ export type * from "./api-types/telemetry.js";
 export type * from "./api-types/terminal.js";
 export type * from "./api-types/theme.js";
 export type * from "./api-types/themes.js";
+export type * from "./api-types/ui-zoom.js";
 export type * from "./api-types/updater.js";
 export type * from "./api-types/webhook.js";
 
@@ -111,6 +113,7 @@ export interface DesktopApi {
 	themes: DesktopThemesApi;
 	telemetry: DesktopTelemetryApi;
 	i18n: DesktopI18nApi;
+	uiZoom: DesktopUiZoomApi;
 	fs: DesktopFsApi;
 	skills: DesktopSkillsApi;
 	config: DesktopConfigApi;
