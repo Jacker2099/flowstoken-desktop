@@ -206,6 +206,7 @@ export const SelectTrigger = ui.SelectTrigger;
 export const SelectValue = ui.SelectValue;
 export const Slider = ui.Slider;
 export const Spin = ui.Spin;
+export const StepSlider = ui.StepSlider;
 export const Switch = ui.Switch;
 export const cn = ui.cn;
 `);

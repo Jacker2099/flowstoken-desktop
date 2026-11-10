@@ -13,6 +13,7 @@ const PROVIDER_SYMBOLS = [
 	"grok",
 	"qwen",
 	"kimi",
+	"magpie",
 	"minimax",
 	"nvidia",
 	"ollama",
