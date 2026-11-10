@@ -1000,7 +1000,7 @@
 		"noResultsHint": "Try another model name, ID, or provider",
 		"unset": "Not set",
 		"defaultBadge": "Default",
-		"visionBadge": "vision",
+"visionBadge": "Supports image input",
 		"newBadge": "NEW",
 		"allVendors": "All vendors",
 		"cloudOnly": "Cloud",

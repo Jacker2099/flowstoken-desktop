@@ -173,6 +173,23 @@ function normalizeSearchValue(value: string): string {
 	return value.trim().toLocaleLowerCase();
 }
 
+export function ModelVisionIcon({
+	label,
+	className,
+}: {
+	readonly label?: string;
+	readonly className?: string;
+}): JSX.Element {
+	return (
+		<span
+			role="img"
+			aria-label={label}
+			title={label}
+			className={cn("icon-[solar--gallery-linear] size-3 shrink-0 text-primary", className)}
+		/>
+	);
+}
+
 export function ModelSelectorView({
 	selectedModel,
 	selectedUnavailable = false,

@@ -64,6 +64,7 @@ describe("Historical session fork contract", () => {
 				allReferencesResolved: true,
 				branchSummaryFromId: "legacy-custom-hidden",
 				eventCount: 4,
+				operationCount: 2,
 				operationTypes: ["custom.append:vetta.assistant_turn_timing", "active_leaf.set"],
 				parentEntryId: forkEntryId,
 				reason: "fork",
