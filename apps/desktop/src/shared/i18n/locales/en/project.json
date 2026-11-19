@@ -201,16 +201,54 @@
 		"editorPlaceholderFile": "Write {{file}} project instructions here...",
 		"agentsMdHint": "AGENTS.md defines project-level AI instructions; every session loads this file automatically.",
 		"claudeMdHint": "FlowsToken also loads CLAUDE.md. If it conflicts with AGENTS.md, AGENTS.md takes priority.",
-		"context": { "title": "Project instructions" },
-		"automations": { "title": "Automations", "viewAll": "View all", "disabled": "Paused", "neverRun": "Never run" },
-		"recentSessions": { "title": "Recent sessions", "empty": "No sessions in this project yet", "startFirst": "Start a session" },
-		"runtime": { "runningSessions": "{{count}} running sessions", "runningTasks": "{{count}} running automations" },
+		"contextMdHint": "CONTEXT.md captures the project's core background, domain model, and long-term context.",
+		"quickSave": "Quick save",
+		"context": {
+			"title": "Project instructions"
+		},
 		"previewMode": "Preview",
 		"editMode": "Edit",
 		"emptyFileTitle": "No {{file}} yet",
 		"emptyFileHint": "Switch to edit mode to create and save instructions.",
 		"startEditing": "Start writing",
-		"quickSave": "Quick save"
+		"automations": {
+			"title": "Automations",
+			"viewAll": "View all",
+			"disabled": "Paused",
+			"neverRun": "Never run"
+		},
+		"recentSessions": {
+			"title": "Recent sessions",
+			"empty": "No sessions in this project yet",
+			"startFirst": "Start a session",
+			"pinned": "Pinned",
+			"pin": "Pin session",
+			"unpin": "Unpin",
+			"running": "Running",
+			"scheduled": "Scheduled",
+			"showMore": "Show all (+{{count}})",
+			"showLess": "Show less"
+		},
+		"runtime": {
+			"title": "Runtime & ports",
+			"openPanel": "Activity panel",
+			"openPorts": "Port manager",
+			"runningSessions": "{{count}} running sessions",
+			"runningTasks": "{{count}} running automations",
+			"activePorts": "{{count}} listening ports",
+			"idleTitle": "No background tasks or listening ports",
+			"idleHint": "Dev servers, background commands, and remote port forwards started in sessions appear here in real time.",
+			"stopTask": "Stop task",
+			"previewPort": "Preview",
+			"openExternalPort": "Open in browser",
+			"portForwarded": "Forwarded → localhost:{{port}}",
+			"portLocal": "localhost:{{port}}"
+		},
+		"schedule": {
+			"manage": "Manage automations",
+			"emptyTitle": "No scheduled or automated tasks yet",
+			"emptyHint": "Configure scheduled checks, build checks, or periodic AI tasks for this project."
+		}
 	},
 	"exportDialog": {
 		"title": "Export project",

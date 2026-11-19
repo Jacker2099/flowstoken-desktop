@@ -191,7 +191,8 @@
 			"change": "Change",
 			"defaultTag": "Default",
 			"unset": "Not set"
-		}
+		},
+		"qrAlt": "FlowsToken mobile pairing QR code"
 	},
 	"general": "General",
 	"appearance": {
