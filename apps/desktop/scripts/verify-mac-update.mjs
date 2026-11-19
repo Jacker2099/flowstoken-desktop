@@ -107,6 +107,30 @@ async function findTopLevelApp(extractDir) {
 	return join(extractDir, appEntries[0].name);
 }
 
+// stapler 在票据没嵌进 app 时会实时查 Apple CloudKit，托管 runner 偶尔断网
+// （Error 68 / NSURLErrorDomain -1005）。公证早已通过，只重试网络类失败；
+// 签名或票据本身有问题的失败原样抛出，不拖慢也不掩盖。
+const TRANSIENT_NETWORK_PATTERN =
+	/NSURLErrorDomain|network connection|CloudKit|timed out|Internet connection/i;
+
+export async function retryTransientNetwork(
+	run,
+	{ attempts = 4, delayMs = 15_000, sleep = (ms) => new Promise((done) => setTimeout(done, ms)) } = {},
+) {
+	for (let attempt = 1; ; attempt += 1) {
+		try {
+			return await run();
+		} catch (error) {
+			const output = `${error?.stdout ?? ""}${error?.stderr ?? ""}${error?.message ?? ""}`;
+			if (attempt >= attempts || !TRANSIENT_NETWORK_PATTERN.test(output)) throw error;
+			console.warn(
+				`[verify-mac-update] network error, retrying (${attempt}/${attempts - 1}) in ${(delayMs * attempt) / 1000}s`,
+			);
+			await sleep(delayMs * attempt);
+		}
+	}
+}
+
 async function readPlistValue(infoPlistPath, key, runCommand) {
 	const { stdout } = await runCommand("/usr/libexec/PlistBuddy", [
 		"-c",
@@ -140,8 +164,8 @@ async function verifySignedZip(zipPath, expectedVersion, expectedBundleIdentifie
 			);
 		}
 		await runCommand("codesign", ["--verify", "--deep", "--strict", "--verbose=2", appPath]);
-		await runCommand("spctl", ["-a", "-vvv", "-t", "exec", appPath]);
-		await runCommand("xcrun", ["stapler", "validate", appPath]);
+		await retryTransientNetwork(() => runCommand("spctl", ["-a", "-vvv", "-t", "exec", appPath]));
+		await retryTransientNetwork(() => runCommand("xcrun", ["stapler", "validate", appPath]));
 	} finally {
 		await rm(extractDir, { recursive: true, force: true });
 	}

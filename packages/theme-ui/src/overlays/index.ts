@@ -25,6 +25,18 @@ export type {
 	RouteErrorPageViewProps,
 } from "./RouteErrorPageView";
 export { RouteErrorPageView } from "./RouteErrorPageView";
+export type { SplashOptionRowProps } from "./SplashOptionRow";
+export { SplashOptionRow } from "./SplashOptionRow";
+export type { SplashPanelProps } from "./SplashPanel";
+export { SplashPanel } from "./SplashPanel";
+export type { SplashInputHeaderProps, SplashTitleHeaderProps } from "./SplashParts";
+export {
+	SplashFooter,
+	SplashInputHeader,
+	SplashNotice,
+	SplashStep,
+	SplashTitleHeader,
+} from "./SplashParts";
 export type {
 	ToasterItemView,
 	ToasterVariant,
@@ -38,7 +50,8 @@ export type {
 } from "./UpdateCheckerView";
 export { UpdateCheckerAction, UpdateCheckerDetail, UpdateCheckerView } from "./UpdateCheckerView";
 export type {
-	UpdateRestartDialogViewLabels,
+	UpdateRestartDialogAction,
+	UpdateRestartDialogStatus,
 	UpdateRestartDialogViewProps,
 } from "./UpdateRestartDialogView";
 export { UpdateRestartDialogView } from "./UpdateRestartDialogView";

@@ -1,4 +1,6 @@
 import { ThemeSurface } from "@vetta-org/theme-ui/appearance/ThemeSurface";
+import { ButtonGroup, ButtonGroupItem } from "@vetta-org/ui/button-group";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@vetta-org/ui/dropdown-menu";
 import { ContextRingView } from "@vetta-org/theme-ui/chat/ContextRingView";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useState } from "react";
@@ -18,6 +20,9 @@ const MAX_HEIGHT = "min(320px, 40vh)";
 /** 揭幕：从上往下裁开。内容不动，因此描边、圆角与卡片接缝全程都在终态位置上。 */
 const REVEAL_CLIPPED = { clipPath: "inset(100% 0 0 0)" };
 const REVEAL_SHOWN = { clipPath: "inset(0% 0 0 0)" };
+
+/** 窄输入区（容器宽度，非视口）下命令条最多平铺的动作数；超出的收进「更多」下拉。 */
+const NARROW_INLINE_ACTIONS = 2;
 
 /**
  * InputBar 的「展开」形态：命令区。
@@ -47,6 +52,9 @@ export function CommandPanelView({
 	onSelectConnector,
 }: CommandPanelProps): JSX.Element {
 	const filtering = filter.length > 0;
+	// 恰好 3 个时平铺也放得下；多于 3 个才把第 3 个起折进「更多」。
+	const hasOverflow = actions.length > NARROW_INLINE_ACTIONS + 1;
+	const overflowActions = hasOverflow ? actions.slice(NARROW_INLINE_ACTIONS) : [];
 	const reduceMotion = useReducedMotion();
 	const transition = reduceMotion ? { duration: 0 } : PANEL_REVEAL_TRANSITION;
 	// 揭幕完成前列表只出可视区那几行、渐隐 mask 也先不挂：动画期间少一份重绘。
@@ -69,14 +77,16 @@ export function CommandPanelView({
 					// 只在面板存在期间挂着：动画开始前就得就位才有用，收起时整块一起卸载。
 					style={{ willChange: "clip-path" }}
 					className={[
-						// -inset-x-px：定位父级是卡片的内容盒（已被卡片 1px 描边内缩），
-						// 不外扩这 1px 的话本区描边会比卡片描边窄一圈，接缝处看着像台阶。
+						// -inset-x-[--hairline]：定位父级是卡片的内容盒（已被卡片描边内缩），
+						// 不外扩一个描边宽的话本区描边会比卡片描边窄一圈，接缝处看着像台阶。
+						// 用 --hairline 而不是写死 1px：页面放大到非整数倍时描边会取整到整数设备像素，
+						// 写死的 1px 会和它差零点几个像素，接缝处错开一格（见 shared/lib/hairline.ts）。
 						// bottom 压过 100% 那 1px：底下正对着卡片的上描边（展开态置成透明，见
 						// InputBarView），那 1px 不被盖住时会在接缝上留一条贯穿全宽的细线，
 						// 两块面看着是被切开的。命令区自己的底边无描边，压下去正好补平。
 						// 不写描边色：缺省吃 base 层的 `* { border-border }`，聚焦态由 className
 						// 传 `border-primary/20` 覆盖，和输入卡片一起亮，否则接缝上下两截颜色不一样。
-						"absolute -inset-x-px bottom-[calc(100%-1px)] z-10 overflow-hidden rounded-t-[20px] border border-b-0 bg-input-bar-bg transition-[border-color] duration-200",
+						"absolute -inset-x-[var(--hairline,1px)] bottom-[calc(100%-var(--hairline,1px))] z-10 overflow-hidden rounded-t-[20px] border border-b-0 bg-input-bar-bg transition-[border-color] duration-200",
 						className,
 					]
 						.filter(Boolean)
@@ -143,26 +153,54 @@ export function CommandPanelView({
 						</FadingScrollArea>
 
 						{actions.length > 0 && (
-							<div className="no-scrollbar flex shrink-0 flex-nowrap items-center gap-0.5 overflow-x-auto px-3 pb-1 pt-1">
-								{actions.map((action) => (
-									<button
-										key={action.id}
-										type="button"
-										onClick={action.onToggle}
-										title={action.label}
-										className={[
-											"flex shrink-0 items-center gap-1.5 rounded-lg px-2 py-0.5 text-[12px] font-medium transition-colors",
-											action.active
-												? "bg-primary/10 text-primary"
-												: "text-muted-foreground hover:bg-foreground/5 hover:text-foreground",
-										].join(" ")}
-									>
-										{action.icon ? (
-											<span className="flex h-3.5 w-3.5 items-center justify-center">{action.icon}</span>
-										) : null}
-										{action.label}
-									</button>
-								))}
+							<div className="no-scrollbar flex shrink-0 items-center overflow-x-auto px-3 pb-2 pt-1">
+								<ButtonGroup blur={false} shape="square">
+									{actions.map((action, index) => (
+										<ButtonGroupItem
+											key={action.id}
+											active={action.active}
+											onClick={action.onToggle}
+											title={action.label}
+											// 超过 3 个时，窄容器只平铺前两个，其余由「更多」承接。
+											className={
+												hasOverflow && index >= NARROW_INLINE_ACTIONS ? "hidden @[32rem]:inline-flex" : undefined
+											}
+											icon={
+												action.icon ? (
+													<span className="flex h-4 w-4 items-center justify-center">{action.icon}</span>
+												) : undefined
+											}
+											label={action.label}
+										/>
+									))}
+									{hasOverflow ? (
+										<DropdownMenu>
+											<DropdownMenuTrigger asChild>
+												<ButtonGroupItem
+													className="@[32rem]:hidden"
+													active={overflowActions.some((action) => action.active)}
+													title={labels.moreActions}
+													aria-label={labels.moreActions}
+													icon={<span className="icon-[solar--menu-dots-bold] h-4 w-4" />}
+												/>
+											</DropdownMenuTrigger>
+											{/* keep-open：菜单挂在面板之外，否则点菜单项会被当成面板外点击而收起命令区。 */}
+											<DropdownMenuContent align="end" side="top" data-command-panel-keep-open="true">
+												{overflowActions.map((action) => (
+													<DropdownMenuItem key={action.id} onSelect={action.onToggle}>
+														{action.icon ? (
+															<span className="flex h-4 w-4 shrink-0 items-center justify-center">{action.icon}</span>
+														) : null}
+														<span className="min-w-0 flex-1 truncate">{action.label}</span>
+														{action.active ? (
+															<span className="icon-[solar--check-circle-bold] h-4 w-4 shrink-0 text-primary" />
+														) : null}
+													</DropdownMenuItem>
+												))}
+											</DropdownMenuContent>
+										</DropdownMenu>
+									) : null}
+								</ButtonGroup>
 							</div>
 						)}
 					</div>

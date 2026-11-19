@@ -650,6 +650,22 @@ stageSystemPluginsFromArchives(join(buildStageDir, "system-plugins"), "prepare-p
 stageSystemThemesFromArchives(join(buildStageDir, "system-themes"), "prepare-pack");
 stageSystemSkills(join(buildStageDir, "system-skills"), "prepare-pack");
 
+// =============================================================================
+// 当前版本发布说明（extraResources）
+// =============================================================================
+//
+// 「查看当前版本功能」离线读取 Resources/release-notes/v<版本>.md，内容与 GitHub Release
+// 正文一致。缺文件（如 QA 覆盖版本号）只告警：对话框会显示「暂无版本介绍」，不阻断打包。
+const stagedReleaseNotesDir = join(buildStageDir, "release-notes");
+rmSync(stagedReleaseNotesDir, { recursive: true, force: true });
+mkdirSync(stagedReleaseNotesDir, { recursive: true });
+const releaseNoteSource = join(projectRoot, "..", "..", ".github", "release-notes", `v${appVersion}.md`);
+if (existsSync(releaseNoteSource)) {
+	cpSync(releaseNoteSource, join(stagedReleaseNotesDir, `v${appVersion}.md`));
+} else {
+	console.warn(`[prepare-pack] release note not found, skipping: ${releaseNoteSource}`);
+}
+
 function resolveExtraResources() {
 	const extraResources = [
 		{
@@ -695,6 +711,11 @@ function resolveExtraResources() {
 		{
 			from: "system-themes",
 			to: "system-themes",
+			filter: ["**/*"],
+		},
+		{
+			from: "release-notes",
+			to: "release-notes",
 			filter: ["**/*"],
 		},
 		{
@@ -755,7 +776,9 @@ const builderConfig = {
 	mac: {
 		target: ["dmg", "zip"],
 		category: "public.app-category.productivity",
-		icon: "build/icon.icns",
+		// .icon 是 Icon Composer 产物：打包时 actool 编出 Assets.car，由系统绘制 macOS 26 的玻璃高光与遮罩，
+		// 同时生成 icns 给旧系统兜底。需要 Xcode 26+。
+		icon: "build/icon.icon",
 		// 签名/公证开关由 resolveMacSigning() 按环境变量决定（见
 		// docs/deploy/apple-code-signing.md）：凭据齐全 → Developer ID 签名 +
 		// hardened runtime + 公证；一个都不设 → 维持未签名产物，配套 DMG 里的

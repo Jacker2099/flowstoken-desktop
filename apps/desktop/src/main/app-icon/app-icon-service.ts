@@ -1,0 +1,74 @@
+// 应用图标：id 持久化在 desktop-config.appIconId。设置页经 setAppIconId 进来，
+// 启动时 applyAppIcon 套用一次。运行时只能换 Dock / 窗口图标；Finder 里的 .app 文件图标
+// 与安装包图标由打包决定，这里改不了。
+
+import { join } from "node:path";
+import { app, BrowserWindow, type NativeImage, nativeImage } from "electron";
+import { APP_ICON_DEFAULT, type AppIconId, normalizeAppIconId } from "../../shared/app-icon.js";
+import { readConfigSync, updateDesktopConfig } from "../config/desktop-config-store.js";
+
+export const APP_ICON_CHANGED_CHANNEL = "vetta:app-icon:changed";
+
+const buildDir = app.isPackaged ? join(process.resourcesPath, "build") : join(process.cwd(), "build");
+
+let currentId: AppIconId | undefined;
+/** 本进程是否用 setIcon 覆盖过 Dock 图标。 */
+let dockIconOverridden = false;
+
+export function getAppIconId(): AppIconId {
+	currentId ??= normalizeAppIconId(readConfigSync().appIconId);
+	return currentId;
+}
+
+/** 出厂图标走打包默认，返回 undefined 表示「用默认」。 */
+function appIconImage(id: AppIconId): NativeImage | undefined {
+	if (id === APP_ICON_DEFAULT) return undefined;
+	// Dock、Windows 任务栏与 Linux 窗口图标都不会给 setIcon 的图片加遮罩：
+	// macOS 用自带 824 超椭圆与边距的 -mac 版本，其余平台用自带圆角的 -round 版本。
+	const suffix = process.platform === "darwin" ? "-mac" : "-round";
+	const image = nativeImage.createFromPath(join(buildDir, "app-icons", `${id}${suffix}.png`));
+	return image.isEmpty() ? undefined : image;
+}
+
+/** 非 macOS 的窗口图标：创建窗口时用，选了非默认图标才覆盖。 */
+export function getWindowIconOverride(): NativeImage | undefined {
+	return process.platform === "darwin" ? undefined : appIconImage(getAppIconId());
+}
+
+/** 把当前图标套到 Dock（macOS）与所有已开窗口（Windows / Linux）。 */
+export function applyAppIcon(): void {
+	const id = getAppIconId();
+	const image = appIconImage(id);
+	if (process.platform === "darwin") {
+		if (image) {
+			dockIconOverridden = true;
+			app.dock?.setIcon(image);
+		} else if (!app.isPackaged) {
+			// 开发态没有我们的 .app 包，Dock 只能手动给图。
+			app.dock?.setIcon(nativeImage.createFromPath(join(buildDir, "icon-dock.png")));
+		} else if (dockIconOverridden) {
+			// 出厂图标由系统按 Assets.car 绘制（Liquid Glass 高光、遮罩随系统版本走），不能自己 setIcon。
+			// 从自定义切回时清掉覆盖，Dock 恢复为包内图标。
+			dockIconOverridden = false;
+			app.dock?.setIcon(nativeImage.createEmpty());
+		}
+		return;
+	}
+	const fallback = nativeImage.createFromPath(join(buildDir, process.platform === "win32" ? "icon.ico" : "icon.png"));
+	for (const win of BrowserWindow.getAllWindows()) {
+		if (!win.isDestroyed()) win.setIcon(image ?? fallback);
+	}
+}
+
+/** 设置图标：立即生效、广播给所有窗口，再落盘。返回实际生效的 id。 */
+export async function setAppIconId(value: unknown): Promise<AppIconId> {
+	const next = normalizeAppIconId(value);
+	if (next === getAppIconId()) return next;
+	currentId = next;
+	applyAppIcon();
+	for (const win of BrowserWindow.getAllWindows()) {
+		if (!win.isDestroyed()) win.webContents.send(APP_ICON_CHANGED_CHANNEL, next);
+	}
+	await updateDesktopConfig((config) => ({ ...config, appIconId: next }));
+	return next;
+}

@@ -10,12 +10,14 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Button } from "@vetta-org/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@vetta-org/ui/popover";
-import { cn } from "@vetta-org/ui/utils";
+import { cn, FROSTED_SURFACE_CLASS } from "@vetta-org/ui/utils";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@vetta-org/ui/dropdown-menu";
 import { ThemeSurface } from "../appearance/ThemeSurface";
 import { MultiplierTag } from "../shared/MultiplierTag";
 import { getProviderIcon, ProviderIcon } from "../shared/provider-icon";
-import { ModelSelectorTrigger } from "./ModelSelectorTrigger";
+import { ModelSelectorTrigger, type ModelSelectorTriggerVariant } from "./ModelSelectorTrigger";
+
+export type { ModelSelectorTriggerVariant } from "./ModelSelectorTrigger";
 
 /**
  * 模型选择器的视图层：三栏布局——供应商（含「收藏」）｜模型列表（可搜索）｜所选模型的推理档位，
@@ -202,6 +204,8 @@ export interface ModelSelectorViewProps {
 	triggerBadge?: ModelSelectorTriggerBadge;
 	ariaLabel?: string;
 	disabled?: boolean;
+	/** 触发器形态：输入栏胶囊（默认）或表单选择框。 */
+	triggerVariant?: ModelSelectorTriggerVariant;
 	/** 可选的空值项，例如“不固定模型”或“跟随会话默认”。 */
 	emptyOption?: {
 		readonly label: string;
@@ -235,6 +239,8 @@ export interface ModelSelectorViewProps {
 	onCatalogRefresh?: () => Promise<void>;
 	/** 目录来源提示（缓存/兜底），只影响刷新按钮的悬浮说明。 */
 	catalogStatus?: "network" | "cache" | "fallback";
+	/** 搜索框右侧的刷新按钮：重拉服务商的模型列表。不传就不显示。 */
+	refresh?: { onRefresh: () => void; refreshing: boolean; label: string };
 }
 
 const MODEL_ITEM_SELECTOR = "[data-model-key]";
@@ -295,6 +301,7 @@ export function ModelSelectorView({
 	triggerBadge,
 	ariaLabel,
 	disabled = false,
+	triggerVariant = "inline",
 	emptyOption,
 	className,
 	classNames,
@@ -308,6 +315,7 @@ export function ModelSelectorView({
 	onOpenChange,
 	onCatalogRefresh,
 	catalogStatus,
+	refresh,
 }: ModelSelectorViewProps): JSX.Element {
 	const [openState, setOpenState] = useState(false);
 	// 宿主可以传 open 来控制（例如快捷键唤起）；不传就由视图自己管。
@@ -379,10 +387,13 @@ export function ModelSelectorView({
 		});
 	}, [catalogGroups, favoriteKeys]);
 
+	// 常用的模型都在收藏里：当前模型已收藏就直接落在「收藏」栏，方便在常用集合里切换；没收藏则回到它的供应商栏。
 	const defaultTab =
-		selectedOption && catalogGroups.some((group) => group.provider === selectedOption.provider)
-			? selectedOption.provider
-			: (catalogGroups[0]?.provider ?? FAVORITES_TAB);
+		selectedOption && favoriteKeys?.has(selectedOption.key)
+			? FAVORITES_TAB
+			: selectedOption && catalogGroups.some((group) => group.provider === selectedOption.provider)
+				? selectedOption.provider
+				: (catalogGroups[0]?.provider ?? FAVORITES_TAB);
 	const requestedTab = tabOverride ?? defaultTab;
 	const activeTab =
 		requestedTab === FAVORITES_TAB
@@ -672,6 +683,7 @@ export function ModelSelectorView({
 					ref={triggerRef}
 					aria-label={ariaLabel}
 					disabled={disabled}
+					variant={triggerVariant}
 					label={triggerLabel}
 					icon={
 						selectedOption ? groups.find((group) => group.provider === selectedOption.provider)?.icon : undefined
@@ -690,10 +702,8 @@ export function ModelSelectorView({
 				// 三栏后菜单较宽，贴着窗口右缘放会被推到边上；留出边距让它整体往左收。
 				collisionPadding={16}
 				className={cn(
-					// 毛玻璃：半透明的主题底色 + 背景模糊，真正透出面板背后的内容（只留柔和的轮廓）。
-					// 底色仍用主题的 background 变量，搜索行等没有自己底色的子元素因此和面板融成一块；
-					// 不要再叠自绘的描边/高光去"假装"玻璃。
-					"w-auto min-w-[180px] max-w-[calc(100vw-2rem)] overflow-visible bg-background/40 p-0 backdrop-blur-2xl backdrop-saturate-150",
+					FROSTED_SURFACE_CLASS,
+					"w-auto min-w-[180px] max-w-[calc(100vw-2rem)] overflow-visible p-0",
 					classNames?.content,
 				)}
 			>
@@ -793,8 +803,8 @@ export function ModelSelectorView({
 								</div>
 							)}
 							<div className="flex w-64 min-w-0 shrink flex-col p-1">
-								<div className="shrink-0 p-0.5">
-									<div className="relative" onKeyDown={handleSearchKeyDown}>
+								<div className="flex shrink-0 items-center gap-0.5 p-0.5">
+									<div className="relative min-w-0 flex-1" onKeyDown={handleSearchKeyDown}>
 										<span
 											aria-hidden="true"
 											className="icon-[solar--magnifer-linear] pointer-events-none absolute left-2 top-1/2 size-3 -translate-y-1/2 text-muted-foreground"
@@ -852,6 +862,21 @@ export function ModelSelectorView({
 											<output className="sr-only">{labels.refreshFailed}</output>
 										) : null}
 									</div>
+									{refresh && (
+										<button
+											type="button"
+											onClick={refresh.onRefresh}
+											disabled={refresh.refreshing}
+											aria-label={refresh.label}
+											title={refresh.label}
+											className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-60"
+										>
+											<span
+												aria-hidden="true"
+												className={cn("icon-[solar--refresh-linear] size-3.5", refresh.refreshing && "animate-spin")}
+											/>
+										</button>
+									)}
 								</div>
 								{activeHighlight && !searching && (
 									<div className="shrink-0 px-0.5 pb-1">

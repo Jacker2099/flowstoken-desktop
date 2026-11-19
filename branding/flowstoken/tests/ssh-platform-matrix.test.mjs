@@ -10,7 +10,7 @@ import {
 const portable = [
 	"askpass.test.ts", "directory-listing.test.ts", "node-process-runner.test.ts", "project-uri.test.ts",
 	"remote-command.test.ts", "remote-listeners.test.ts", "remote-pty.test.ts", "ssh-config-aliases.test.ts",
-	"ssh-connection.test.ts",
+	"ssh-connection.test.ts", "ssh-host.test.ts",
 ].sort();
 const native = [
 	"helper.e2e.test.ts", "remote-command-signals.test.ts", "remote-command.posix.test.ts",

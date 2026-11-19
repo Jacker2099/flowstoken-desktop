@@ -10,7 +10,7 @@ const directory = "packages/ssh-transport/src";
 export const PORTABLE_SSH_SUITES = Object.freeze([
 	"askpass.test.ts", "directory-listing.test.ts", "node-process-runner.test.ts", "project-uri.test.ts",
 	"remote-command.test.ts", "remote-listeners.test.ts", "remote-pty.test.ts", "ssh-config-aliases.test.ts",
-	"ssh-connection.test.ts",
+	"ssh-connection.test.ts", "ssh-host.test.ts",
 ]);
 
 // Real remote endpoint semantics require native POSIX ps, signals, permissions, PTY and a POSIX Go helper.

@@ -4,6 +4,24 @@ All notable changes to `@vetta-org/plugin-sdk` are documented in this file.
 
 ## [Unreleased]
 
+## [0.3.13] — 2026-11-13
+
+- `ctx.command` 新增 `appIcon(appName)`（macOS）：返回已安装应用的图标（PNG data URL），没装返回 `null`，用于在菜单里展示应用自己的图标并灰掉没装的应用。需要 `agent.command.run`，只在标准应用目录里查找，应用名不能带路径分隔符。旧宿主没有该方法，调用前请判断是否存在。
+
+- 新增会话页顶栏贡献点 `ctx.ui.registerHeaderAction({ id, order?, useAction })` 与权限 `ui.slot.header-action`，要求 Plugin API `^2.9.0`。它是**声明式**的：`useAction` 是一个 hook，返回 `{ title, icon, badge?, active?, disabled?, onClick | menuItems | popover }`（或 `null` 表示不适用），由宿主把它渲染成顶栏统一按钮组里的一格，插件不能自定义样式，按钮上也没有文字（名称走悬浮提示）。顶栏最多显示 7 格（内置与插件共用），其余进入「收纳」；用户可在收纳托盘里拖动调整哪些上栏、顺序如何，布局按 `${插件 id}:${贡献 id}` 记在本机，新装插件的动作只会占空位、不会挤走已有布局。新增类型 `PluginHeaderActionState` / `PluginHeaderActionMenuItem` / `PluginHeaderActionPopoverProps`；`menuItems` ≤ 20 项、`title` ≤ 40 字等限制见 `docs/plugin/ui-slots.md`。旧宿主没有该方法，调用会得到 `undefined`，需要兼容旧宿主的插件请把 `pluginApiVersion` 写成 `^2.9.0`。
+
+- 文档：补全宿主 UI 组件速查。`@vetta-org/ui` 新增 `ButtonGroup` / `ButtonGroupItem`（玻璃胶囊按钮组，支持图标、文字、角标与选中态，`shape` 可选胶囊或方形），`Button` 的 `field` 变体（设置页同款操作按钮）；`@vetta-org/theme-ui/plugin-ui` 新增 `MotionSelect`（设置页下拉）与 `SettingSection` / `SettingRow` / `SettingHeading`（设置分组卡片与设置项行）。这些组件随宿主发布，需要 Desktop 0.5.79+，旧宿主上缺少对应导出，请在文档里的最低版本之上使用；SDK 自身接口没有变化。
+
+## [0.3.12] — 2026-11-12
+
+- 新增 `ModelPicker` 组件：宿主渲染的模型选择器，与会话输入栏右下角、知识库设置等处是同一个组件、同一份模型清单（含登录后的云端目录、收藏、推理档位与主题定制）。插件只传受控的 `value` / `onChange`，可选 `reasoning`、`emptyOption`、`defaultModelKey`、`autoSelectDefault`、`variant`、`menuClassName`（选择器放在层级更高的浮层里时抬高菜单）。不需要权限，也不需要 `hostThemeUi`；此前插件只能自己调 `official.models.list()` / `ctx.ai.listModels()` 再拼 `ModelSelectorView` 或原生 `<select>`，字段不全且不会随宿主目录更新。需要 Desktop 0.5.76+，`PluginHostBridge` 相应新增 `ModelPicker`。
+
+## [0.3.11] — 2026-11-11
+
+- `official.mcp` 的 `type` 新增 `"sse"`（旧式 HTTP+SSE 传输），列表、详情与 `upsert` 数据都可用，用于只提供 SSE 端点的服务器；能用 Streamable HTTP（`"http"`）时仍应首选它。仅官方插件可用，插件清单里的 MCP 声明不受影响，`pluginApiVersion` 不变。
+
+- `official.mcp` 的各个方法新增可选的 `target`（`{ scope?: "global" | "project"; cwd? }`）：`scope: "project"` 配合项目根 `cwd` 读写 `<cwd>/.vetta/mcp.json`，省略时仍只操作全局，既有调用不受影响。列表与详情新增 `scope`、`readOnly`（来自项目根 `.mcp.json`、Vetta 不会改写的条目）。此前 Agent 只能把 MCP 装进全局，没法按「只在这个仓库里用」安装。该 API 仅官方插件可用，不涉及清单字段，`pluginApiVersion` 不变。
+
 - `PluginModelDefinition.input` 可声明 `text` / `image`。Desktop 模型写入合同同步保留该字段，修复网关已声明图像输入但模型注册后仍退回纯文本的问题；省略时仍采用宿主默认，旧宿主可能清除该字段。
 
 - 底部面板实例新增 `useBottomPanel().openTerminal({ command, cwd?, label? })` 与 `revealInstance(instanceId)`，配套权限 `terminal.run`，要求 Plugin API `^2.8.0`。脚本运行器一类插件此前只能用 `command.spawn` 轮询 64KB 的输出尾巴：没有伪终端、不能输入、没有颜色，也不支持远程项目。现在由宿主开内置终端、把命令敲进用户的 shell，交互、分屏、关闭确认与远程终端都直接复用；命令只在终端首次启动时敲一次，重开会话不会重跑。

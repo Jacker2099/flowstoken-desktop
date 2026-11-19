@@ -108,6 +108,19 @@ vi.mock("../src/interaction/InteractionView", () => ({ InteractionView: () => nu
 import { CanvasTab } from "../src/canvas/CanvasTab";
 import { setPendingDesignPath, takePendingDesignPath } from "../src/canvas/design-runtime";
 
+// happy-dom 不向 vitest 全局暴露 localStorage；画布按 cwd 记住选中路径，这里补一个内存实现。
+const memoryStorage = new Map<string, string>();
+vi.stubGlobal("localStorage", {
+	get length() {
+		return memoryStorage.size;
+	},
+	clear: () => memoryStorage.clear(),
+	getItem: (key: string) => memoryStorage.get(key) ?? null,
+	setItem: (key: string, value: string) => void memoryStorage.set(key, String(value)),
+	removeItem: (key: string) => void memoryStorage.delete(key),
+	key: (index: number) => [...memoryStorage.keys()][index] ?? null,
+});
+
 let root: Root;
 let host: HTMLDivElement;
 let mounted: boolean;

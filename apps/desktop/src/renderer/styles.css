@@ -21,7 +21,7 @@
  * 图标规则会连同内联的 SVG 一起进入插件的 dist/style.css，宿主激活插件时加载它，
  * class 自然存在。这条路对第三方插件同样成立，而本清单只能覆盖仓库内的插件。
  * 下面几条是尚未迁移的旧插件，迁走一个就删一行。 */
-@source inline("icon-[solar--ruler-pen-linear]");
+@source inline("icon-[solar--palette-2-linear]");
 @source inline("icon-[solar--archive-minimalistic-outline]");
 @source inline("icon-[solar--smartphone-2-linear]");
 @source inline("icon-[solar--video-frame-play-horizontal-linear]");
@@ -49,7 +49,7 @@
 	--secondary-foreground: rgb(220, 224, 234);
 	--muted: rgb(30, 30, 32);
 	--muted-foreground: rgb(138, 144, 160);
-	--accent: rgb(41, 41, 43);
+	--accent: rgb(40, 44, 62);
 	--accent-foreground: rgb(220, 224, 234);
 	--destructive: rgb(255, 91, 91);
 	--destructive-foreground: rgb(0, 0, 0);
@@ -141,7 +141,7 @@
 	--secondary-foreground: rgb(0, 0, 0);
 	--muted: rgb(242, 242, 242);
 	--muted-foreground: rgb(82, 82, 82);
-	--accent: rgb(235, 235, 235);
+	--accent: rgb(226, 232, 248);
 	--accent-foreground: rgb(0, 0, 0);
 	--destructive: rgb(229, 75, 79);
 	--destructive-foreground: rgb(255, 255, 255);
@@ -290,8 +290,7 @@
 	-webkit-font-smoothing: antialiased;
 	-moz-osx-font-smoothing: grayscale;
 
-	/* 默认使用系统原生光标。仅当 html.custom-cursor（白鼬样式）时覆盖为内置素材，
-	   入口见「外观设置 → 鼠标指针」。 */
+	/* 一律使用系统原生光标。 */
 	--cursor-default: default;
 	--cursor-click: pointer;
 	--cursor-help: help;
@@ -305,25 +304,6 @@
 	--cursor-vertical-resize: ns-resize;
 	--cursor-diagonal-resize: nwse-resize;
 	--cursor-diagonal-resize-flipped: nesw-resize;
-}
-
-html.custom-cursor {
-	--cursor-default: url("/cursors/default.png") 3 3, default;
-	--cursor-click: url("/cursors/click.png") 3 3, pointer;
-	--cursor-help: url("/cursors/help.png") 3 2, help;
-	--cursor-hover: url("/cursors/hover.png") 3 3, pointer;
-	--cursor-horizontal-resize: url("/cursors/horizontal_resize.png") 15 13,
-		ew-resize;
-	--cursor-loading: url("/cursors/loading.png") 14 15, wait;
-	--cursor-move: url("/cursors/move.png") 15 14, move;
-	--cursor-not-allowed: url("/cursors/not_allowed.png") 15 15, not-allowed;
-	--cursor-pointer: url("/cursors/pointer.png") 3 2, pointer;
-	--cursor-text: url("/cursors/text.png") 13 15, text;
-	--cursor-vertical-resize: url("/cursors/vertical_resize.png") 12 15, ns-resize;
-	--cursor-diagonal-resize: url("/cursors/diagonal_resize.png") 14 15,
-		nwse-resize;
-	--cursor-diagonal-resize-flipped: url("/cursors/diagonal_resize_flipped.png")
-		12 15, nesw-resize;
 }
 
 * {
@@ -501,37 +481,30 @@ textarea:disabled,
 	z-index: 1;
 }
 
-/* 侧边栏样式「经典」：抵消 AppFrame 的 p-2，让常驻侧边栏贴住窗口左/上/下边，
-   并去掉圆角与四周边框，只保留右侧一条分隔线。窄屏 overlay 侧边栏不受影响。
-   取值见 shared/theme/sidebar-style.ts。 */
-:root[data-sidebar-style="classic"] .sidebar-dock {
+/* 侧边栏：抵消 AppFrame 的 p-2，让常驻侧边栏贴住窗口左/上/下边，
+   并去掉圆角与四周边框，只保留右侧一条分隔线。窄屏 overlay 侧边栏不受影响。 */
+:root .sidebar-dock {
 	margin: -0.5rem 0 -0.5rem -0.5rem;
 }
 
 /* 收起态：左栏仍是流内的 0 宽盒子（子树不随收起卸载，见 SidebarDock），贴边用的 -8px
    会把主内容多拉 8px 到窗口外，所以跟着宽度一起过渡回 0。 */
-:root[data-sidebar-style="classic"] .sidebar-dock[inert] {
+:root .sidebar-dock[inert] {
 	margin-left: 0;
 }
 
-:root[data-sidebar-style="classic"] .sidebar-dock .sidebar-surface {
+:root .sidebar-dock .sidebar-surface {
 	border-radius: 0;
 	border-width: 0;
 	border-right-width: 1px;
 }
 
-/* 顶栏内容与 macOS 红绿灯对齐。h-11 自身居中：悬浮时顶栏占 8~52、中线 30 偏下；
-   经典下从 y=0 起算、中线 22 偏上。两边各补一侧内边距把中线挪到实测位置
-   （悬浮 28、经典 29）。padding 记在 h-11 元素自身（border-box，总高不变），
-   drag-region 仍覆盖整条顶栏。数值是照实机目测调的，要挪就改这两个。 */
+/* 侧边栏顶栏内容与主页头对齐。h-11 自身居中：顶栏从 y=0 起算、中线 22 偏上，
+   补顶部内边距把图标中线挪到与主页头一致的 28（含 relative top-[-2px]）。
+   padding 记在 h-11 元素自身（border-box，总高不变），drag-region 仍覆盖整条顶栏。
+   红绿灯位置不依赖这里的数字：renderer 会实测 [data-titlebar-anchor] 的中线并上报主进程。 */
 :root[data-platform="mac"] .sidebar-dock .sidebar-top-bar {
-	padding-bottom: 0.25rem;
-}
-
-:root[data-platform="mac"][data-sidebar-style="classic"]
-	.sidebar-dock
-	.sidebar-top-bar {
-	padding-top: 0.875rem;
+	padding-top: 1rem;
 	padding-bottom: 0;
 }
 
@@ -539,7 +512,7 @@ textarea:disabled,
    放行的做法是整帧 + 侧边栏都不上底色，再由主内容区自己补回不透明底色：
    ::before 向上/右/下各溢出 8px 盖住 AppFrame 的 p-2 留白，所以布局与非 mac 完全一致，
    只有侧边栏那一条透出桌面。 */
-:root[data-platform="mac"][data-sidebar-style="classic"] .app-frame {
+:root[data-platform="mac"] .app-frame {
 	background-color: transparent;
 }
 
@@ -551,7 +524,7 @@ textarea:disabled,
    底色的明暗关系当场反转，看着就像那半边的选中背景没了。所以在侧边栏子树内把
    --accent 换成半透明叠加色——始终是「在当前合成底色上再压 10% 前景色」，背后黑白
    都成立。导航指示条、项目行/会话行选中与 hover:bg-accent/50 一起生效。 */
-:root[data-platform="mac"][data-sidebar-style="classic"]
+:root[data-platform="mac"]
 	.sidebar-dock
 	.sidebar-surface {
 	background-color: color-mix(
@@ -564,22 +537,47 @@ textarea:disabled,
 }
 
 /* 浅色的 --background 是纯白，同样的浓度压得比深色狠得多，透明感几乎没了，所以单独调淡。 */
-:root[data-platform="mac"][data-sidebar-style="classic"][data-mode="light"]
+:root[data-platform="mac"][data-mode="light"]
 	.sidebar-dock
 	.sidebar-surface {
 	--sidebar-vibrancy-tint: 35%;
 }
 
-/* 明暗切换期间先遮住原生 vibrancy（它由主进程翻转，动不了也不进 View Transition 快照，
-   否则会比页面动画早一步瞬变）；属性移除后按上面的 240ms 淡回半透明。 */
-:root[data-platform="mac"][data-sidebar-style="classic"][data-theme-transition]
+/* 有弹出层蒙层（.overlay-backdrop，见 @vetta-org/ui 的 OVERLAY_BACKDROP_CLASS）时把侧边栏换成实色。
+   侧边栏半透明是为了透出原生毛玻璃，但 backdrop-filter 模糊出的结果同样半透明，
+   盖不住底下仍然清晰的文字，会出现「主内容糊了、侧边栏字还是清楚的」。换成实色后蒙层
+   才能把整块都模糊掉。进入时不过渡（蒙层自己在淡入）；退出时按上面的 240ms 淡回半透明。 */
+:root[data-platform="mac"]:has(.overlay-backdrop)
 	.sidebar-dock
 	.sidebar-surface {
 	background-color: var(--background);
 	transition: none;
 }
 
-:root[data-platform="mac"][data-sidebar-style="classic"] .app-main-frame::before {
+/* 弹出层蒙层（OVERLAY_BACKDROP_CLASS 的 .overlay-backdrop）：模糊背景 + 磨砂底色。
+   曾叠过一层 SVG 像素化滤镜，但它要在 GPU 上对整屏背景逐帧重算，蒙层下背景在动
+   （流式输出、加载动画）时开销明显，且只是装饰，已去掉。
+   选择器带 :root 是为了压过 Tailwind 的 backdrop-blur 工具类（保留它作为没有本样式时的兜底）。 */
+:root .overlay-backdrop {
+	backdrop-filter: blur(10px);
+	/* 磨砂的浅色而不是灰压暗：灰蒙蒙的底色是「脏」的主要来源。 */
+	background-color: rgb(255 255 255 / 0.2);
+}
+
+:root[data-mode="dark"] .overlay-backdrop {
+	background-color: rgb(0 0 0 / 0.18);
+}
+
+/* 明暗切换期间先遮住原生 vibrancy（它由主进程翻转，动不了也不进 View Transition 快照，
+   否则会比页面动画早一步瞬变）；属性移除后按上面的 240ms 淡回半透明。 */
+:root[data-platform="mac"][data-theme-transition]
+	.sidebar-dock
+	.sidebar-surface {
+	background-color: var(--background);
+	transition: none;
+}
+
+:root[data-platform="mac"] .app-main-frame::before {
 	content: "";
 	position: absolute;
 	inset: -0.5rem;
@@ -590,7 +588,7 @@ textarea:disabled,
 /* 侧边栏在位时，左边那 8px 已经被它自己盖住，::before 不能再往左伸——否则会压住毛玻璃右缘。
    收起（或窄屏浮层态）时左栏节点仍在，但带 inert，此规则不命中，::before 就按上面的 inset
    一路铺到窗口左边，不会留下透出桌面的空白条。 */
-:root[data-platform="mac"][data-sidebar-style="classic"]
+:root[data-platform="mac"]
 	.sidebar-dock:not([inert])
 	~ .app-main-frame::before {
 	left: 0;
@@ -606,6 +604,11 @@ textarea:disabled,
 	margin-left: 0;
 }
 
+/* 沉浸内容帧已经抵消了窗口留白，背景无需再次出血；否则底部多出 8px 滚动范围。 */
+:root[data-platform="mac"] .app-main-frame[data-header-overlay]::before {
+	inset: 0;
+}
+
 /* 出血只给内容，不给页头：页头里给 macOS 红绿灯留的 78px 和 h-11 的垂直居中，
    都是按「主内容帧带 AppFrame p-2 偏移」算的，跟着上面那条负 margin 一起外移后，
    展开侧边栏按钮就比红绿灯偏左偏上（侧边栏收起时尤其明显）。这里把这 8px 在页头层补回来，
@@ -615,6 +618,13 @@ textarea:disabled,
 }
 .sidebar-dock:not([inert]) ~ .app-main-frame[data-header-overlay] > .main-content-header {
 	padding-left: 0;
+}
+
+/* 常规页头下，仅展开的新会话停靠栏抵消 AppFrame 右侧和底部的 p-2。 */
+.app-main-frame:not([data-header-overlay]) .new-session-layout > [data-activity-panel-dock="open"] {
+	height: auto;
+	margin-right: -0.5rem;
+	margin-bottom: -0.5rem;
 }
 
 .project-list-containment {
@@ -645,6 +655,120 @@ textarea:focus-visible,
 textarea:focus {
 	outline: none;
 	box-shadow: none;
+}
+
+/* Outgoing messages and the Appearance preview share the same visual primitive. */
+:root[data-user-bubble-shape="chat"] [data-message-visual="outgoingbubble"] {
+	position: relative;
+	margin-bottom: 7px;
+	border-radius: 1.25rem;
+}
+
+:root[data-user-bubble-shape="chat"] [data-message-visual="outgoingbubble"]::after {
+	position: absolute;
+	right: max(12px, 6%);
+	bottom: -7px;
+	width: 18px;
+	height: 12px;
+	background-color: inherit;
+	clip-path: path("M0 0H18C13 3 12 6 14.5 9.5C15.6 11.2 14.6 12 13 11.5C7.5 10 6 5 0 5Z");
+	pointer-events: none;
+	content: "";
+}
+
+:root[data-user-bubble-color]:not([data-user-bubble-color="default"]) [data-message-visual="outgoingbubble"] {
+	background-color: var(--user-bubble-bg);
+	color: var(--user-bubble-fg);
+	/* Pending messages retain their ring without washing out the custom colors. */
+	opacity: 1;
+}
+
+/* Rich Markdown panels have their own theme backgrounds and contrast. */
+:root[data-user-bubble-color]:not([data-user-bubble-color="default"])
+	[data-message-visual="outgoingbubble"] :where([data-md-table-frame], [data-md-code-frame]) {
+	color: var(--foreground);
+}
+
+:root[data-user-bubble-color]:not([data-user-bubble-color="default"])
+	[data-message-visual="outgoingbubble"] .markdown-body
+	:where(.text-foreground, blockquote):not(:where([data-md-table-frame] *, [data-md-code-frame] *)) {
+	color: var(--user-bubble-fg);
+}
+
+:root[data-user-bubble-color]:not([data-user-bubble-color="default"])
+	[data-message-visual="outgoingbubble"] .markdown-body
+	:where(.text-primary, .text-chart-2):not(:where([data-md-table-frame] *, [data-md-code-frame] *)) {
+	--primary: var(--user-bubble-fg);
+	--chart-2: var(--user-bubble-fg);
+}
+
+:root[data-user-bubble-color]:not([data-user-bubble-color="default"])
+	[data-message-visual="outgoingbubble"] .markdown-body
+	:where(a, button).text-primary:hover:not(:where([data-md-table-frame] *, [data-md-code-frame] *)) {
+	/* A softer hover tint preserves white text contrast on the blue bubble. */
+	background-color: color-mix(in srgb, var(--user-bubble-fg) 15%, var(--user-bubble-bg));
+}
+
+:root[data-user-bubble-color]:not([data-user-bubble-color="default"])
+	[data-message-visual="outgoingbubble"] .markdown-body
+	ol > li:not(:where([data-md-table-frame] *, [data-md-code-frame] *))::marker {
+	color: var(--user-bubble-fg);
+}
+
+:root[data-user-bubble-color]:not([data-user-bubble-color="default"])
+	[data-message-visual="outgoingbubble"] .markdown-body
+	code.bg-muted:not(:where([data-md-table-frame] *, [data-md-code-frame] *)) {
+	background-color: color-mix(in srgb, var(--user-bubble-fg) 12%, var(--user-bubble-bg));
+}
+
+:root[data-user-bubble-color]:not([data-user-bubble-color="default"])
+	[data-message-visual="outgoingbubble"] [data-user-message-expand-fade] {
+	--secondary: var(--user-bubble-bg);
+}
+
+/* Use resolved theme surfaces so nested panels do not stack multiple translucent layers. */
+:root:is([data-user-bubble-shape="chat"], [data-user-bubble-color]:not([data-user-bubble-color="default"]))
+	[data-message-visual="outgoingbubble"] {
+	--bubble-surface: var(--user-bubble-bg, var(--secondary));
+	--bubble-panel-background: color-mix(in srgb, var(--background) 88%, var(--bubble-surface));
+	--bubble-panel-muted: color-mix(in srgb, var(--muted) 88%, var(--bubble-surface));
+}
+
+:root:is([data-user-bubble-shape="chat"], [data-user-bubble-color]:not([data-user-bubble-color="default"]))
+	[data-message-visual="outgoingbubble"] :where([data-md-table-frame], [data-md-code-frame]) {
+	--background: var(--bubble-panel-background);
+	--muted: var(--bubble-panel-muted);
+}
+
+:root:is([data-user-bubble-shape="chat"], [data-user-bubble-color]:not([data-user-bubble-color="default"]))
+	[data-message-visual="outgoingbubble"] [data-user-message-expand-fade] button {
+	--expand-foreground: var(--user-bubble-fg, var(--foreground));
+	background-color: color-mix(in srgb, var(--expand-foreground) 8%, var(--bubble-surface));
+	border-color: color-mix(in srgb, var(--expand-foreground) 28%, transparent);
+	color: var(--expand-foreground);
+}
+
+:root:is([data-user-bubble-shape="chat"], [data-user-bubble-color]:not([data-user-bubble-color="default"]))
+	[data-message-visual="outgoingbubble"] [data-user-message-expand-fade] button:is(:hover, :focus-visible) {
+	background-color: color-mix(in srgb, var(--expand-foreground) 15%, var(--bubble-surface));
+	border-color: color-mix(in srgb, var(--expand-foreground) 55%, transparent);
+}
+
+/* Use the prose foreground for decorative lines drawn directly on a styled bubble. */
+:root:is([data-user-bubble-shape="chat"], [data-user-bubble-color]:not([data-user-bubble-color="default"]))
+	[data-message-visual="outgoingbubble"] .markdown-body
+	:where(hr, blockquote, .md-bullet-list):not(:where([data-md-table-frame] *, [data-md-code-frame] *)) {
+	--md-bullet-line: color-mix(in srgb, var(--user-bubble-fg, var(--foreground)) 40%, transparent);
+	border-color: var(--md-bullet-line);
+}
+
+/* Match the editor font weights while letting Markdown emphasis remain explicit. */
+:root[data-user-bubble-weight="medium"] [data-message-visual="outgoingbubble"] {
+	font-weight: 500;
+}
+
+:root[data-user-bubble-weight="semibold"] [data-message-visual="outgoingbubble"] {
+	font-weight: 600;
 }
 
 /* Markdown body: readable text should use text-selection cursor. */
@@ -697,6 +821,7 @@ textarea:focus {
 
 /* Markdown unordered list: tree connector (matches NewSession guiding words) */
 .md-bullet-list {
+	--md-bullet-line: color-mix(in srgb, var(--muted-foreground) 30%, transparent);
 	list-style: none;
 	padding-left: 0.625rem; /* pl-2.5 */
 }
@@ -722,7 +847,7 @@ textarea:focus {
 	top: 0;
 	bottom: 0;
 	width: 0;
-	border-left: 1px solid color-mix(in srgb, var(--muted-foreground) 30%, transparent);
+	border-left: 1px solid var(--md-bullet-line);
 }
 /* Non-last: horizontal branch at first-line height */
 .md-bullet-list > li:not(:last-child)::after {
@@ -731,7 +856,7 @@ textarea:focus {
 	left: 0;
 	top: 0.95rem;
 	width: 12px;
-	border-top: 1px solid color-mix(in srgb, var(--muted-foreground) 30%, transparent);
+	border-top: 1px solid var(--md-bullet-line);
 }
 /* Last: L-shaped corner */
 .md-bullet-list > li:last-child::before {
@@ -741,8 +866,8 @@ textarea:focus {
 	top: 0;
 	height: 0.95rem;
 	width: 12px;
-	border-left: 1px solid color-mix(in srgb, var(--muted-foreground) 30%, transparent);
-	border-bottom: 1px solid color-mix(in srgb, var(--muted-foreground) 30%, transparent);
+	border-left: 1px solid var(--md-bullet-line);
+	border-bottom: 1px solid var(--md-bullet-line);
 	border-bottom-left-radius: 7px;
 }
 .md-bullet-list > li:last-child::after {

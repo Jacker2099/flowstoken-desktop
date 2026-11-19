@@ -588,12 +588,17 @@ describe("affected package selection", () => {
 		]);
 	});
 
-	it("keeps unknown SSH fixture sources fail-closed", () => {
+	it("routes unmapped SSH sources to the package Vitest suite without the strict platform matrix", () => {
 		const unknown = createImpactTestPlan(["packages/ssh-transport/src/unmapped-source.ts"], () => true);
-		expect(unknown.selectionErrors).toEqual([
-			"ssh-transport has no targeted test entry point for packages/ssh-transport/src/unmapped-source.ts",
-		]);
+		expect(unknown.selectionErrors).toEqual([]);
 		expect(unknown.sshPlatform).toBe(false);
+		expect(unknown.targets).toMatchObject([
+			{
+				key: "ssh-transport",
+				directTests: [],
+				relatedSources: ["src/unmapped-source.ts"],
+			},
+		]);
 	});
 
 	it.each(["linux", "darwin", "win32"])(

@@ -57,7 +57,7 @@ export async function waitForReleaseBuilds({
 	read = readRun,
 	delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
 	now = Date.now,
-	timeoutMs = 340 * 60_000,
+	timeoutMs = 400 * 60_000,
 	pollMs = 60_000,
 }) {
 	if (!/^[\w.-]+\/[\w.-]+$/.test(repo) || !/^\d+$/.test(runId) || !/^[a-f\d]{40}$/.test(expectedSha)) {

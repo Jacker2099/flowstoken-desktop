@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from "motion/react";
 import { type JSX, useState } from "react";
-import { cn } from "@vetta-org/ui/utils";
+import { cn, FROSTED_SURFACE_CLASS } from "@vetta-org/ui/utils";
 import { Popover, PopoverContent, PopoverTrigger } from "@vetta-org/ui/popover";
 import { ThemeSurface } from "../appearance/ThemeSurface";
 import {
@@ -92,7 +92,9 @@ export function TodoStatusBarView({
 							align="start"
 							sideOffset={8}
 							className={cn(
-								"w-[min(22rem,calc(100vw-2rem))] overflow-visible rounded-xl border border-border p-0",
+								// 外观跟模型选择弹层一致：沿用 FLOATING_SURFACE_CLASS 的外投影与深色细线，只把底色换成同款毛玻璃。
+								FROSTED_SURFACE_CLASS,
+								"w-[min(22rem,calc(100vw-2rem))] overflow-visible p-0",
 								classNames?.content,
 							)}
 							style={{ animation: "none" }}
@@ -102,7 +104,9 @@ export function TodoStatusBarView({
 								animate={{ opacity: 1, scale: 1, y: 0 }}
 								exit={{ opacity: 0, scale: 0.97, y: 6 }}
 								transition={{ duration: 0.12, ease: [0.16, 1, 0.3, 1] }}
-								className="relative overflow-visible rounded-[inherit]"
+								// 这里的 motion.div 就是 PopoverContent 本体（asChild），圆角来自 FLOATING_SURFACE_CLASS；
+								// 再写 rounded-[inherit] 会和它并排成两条声明，按样式表顺序覆盖成继承自 portal 的 0。
+								className="relative overflow-visible"
 							>
 								<ThemeSurface slot="chat.todoPanel" />
 								<div className="relative z-10 flex max-h-[min(22rem,55vh)] flex-col overflow-hidden rounded-[inherit]">
@@ -128,7 +132,7 @@ export function TodoStatusBarView({
 												setOpen(false);
 												onOpenPanel();
 											}}
-											className="flex shrink-0 items-center justify-center gap-1 border-t border-border px-3 py-1.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+											className="flex shrink-0 items-center justify-center gap-1 px-3 pb-2 pt-1.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
 										>
 											<span aria-hidden className="icon-[solar--arrow-right-up-linear] h-3 w-3" />
 											{labels.openPanel}

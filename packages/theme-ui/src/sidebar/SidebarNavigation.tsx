@@ -78,7 +78,7 @@ export function SidebarNavigation({
 	const drag = useSidebarNavDrag(onNavMove ?? noop, itemsByRegion);
 
 	return (
-		<nav className={cn("relative flex flex-col gap-0.5 px-1.5 pb-2 pt-2", className)}>
+		<nav className={cn("relative flex flex-col gap-0.5 px-1.5 pb-1 pt-2", className)}>
 			{indicatorBounds && (
 				// 纵向用测量出的 top/height 直接落位（无补间）；横向不吃测量值，靠 inset-x
 				// 跟着 <nav> 内容宽度走——拖宽侧边栏时宽度是实时写进 DOM 的，不会重渲染，
@@ -178,8 +178,10 @@ export function SidebarNavigation({
 					<PopoverContent
 						side="right"
 						align="start"
-						sideOffset={8}
-						className="w-[228px] gap-0.5 overflow-hidden rounded-lg border border-border p-1 shadow-md"
+						// 负偏移让弹层压进侧栏一点，不要飘在侧栏外面。
+						sideOffset={-40}
+						// 外观（无边框、大圆角、柔和投影）由 PopoverContent 基础样式统一提供，这里只管尺寸。
+						className="w-[240px] gap-0.5 overflow-hidden p-2"
 					>
 						{customizable && navCustomizeLabels ? (
 							<SidebarNavMorePanel

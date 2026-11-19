@@ -72,7 +72,6 @@ export function createSystemApi(
 						requestId?: unknown;
 						mode?: unknown;
 						themeId?: unknown;
-						cursorStyle?: unknown;
 					};
 					if (typeof request.requestId !== "string") return;
 					const changeRequest: DesktopThemeChangeRequest = {};
@@ -81,9 +80,6 @@ export function createSystemApi(
 					}
 					if (typeof request.themeId === "string") {
 						changeRequest.themeId = request.themeId;
-					}
-					if (request.cursorStyle === "default" || request.cursorStyle === "stoat") {
-						changeRequest.cursorStyle = request.cursorStyle;
 					}
 					void Promise.resolve(handler(changeRequest)).then(
 						(state) => ipc.send("vetta:theme:change-response", { requestId: request.requestId, state }),
@@ -157,7 +153,12 @@ export function createSystemApi(
 			createEntry: (parentDirectory, name, kind) => ipc.invoke("vetta:fs:create-entry", parentDirectory, name, kind),
 			createDirectory: (dirPath) => ipc.invoke("vetta:fs:create-directory", dirPath),
 			listSubDirs: (dirPath) => ipc.invoke("vetta:fs:list-sub-dirs", dirPath),
-			listFilesRecursive: (rootPath) => ipc.invoke("vetta:fs:list-files-recursive", rootPath),
+			listFilesRecursive: (rootPath, options) =>
+				ipc.invoke(
+					"vetta:fs:list-files-recursive",
+					rootPath,
+					options?.includeDirectories ? { includeDirectories: true } : undefined,
+				),
 			watchDir: (dirPath) => ipc.invoke("vetta:fs:watch-dir", dirPath),
 			unwatchDir: (dirPath) => ipc.invoke("vetta:fs:unwatch-dir", dirPath),
 			onDirChanged: (handler) => onIpcEvent(ipc, "vetta:fs:dir-changed", handler),
@@ -294,6 +295,7 @@ export function createSystemApi(
 			sync: () => ipc.invoke("vetta:updater:sync"),
 			getState: () => ipc.invoke("vetta:updater:get-state"),
 			getCurrentVersion: () => ipc.invoke("vetta:updater:get-current-version"),
+			getCurrentReleaseNote: () => ipc.invoke("vetta:updater:get-current-release-note"),
 			download: () => ipc.invoke("vetta:updater:download"),
 			install: () => ipc.invoke("vetta:updater:install"),
 			dismiss: () => ipc.invoke("vetta:updater:dismiss"),

@@ -117,7 +117,7 @@ function KindRows({
 		case "daily":
 			return <TimeRow schedule={schedule} onChange={(time) => onChange({ ...schedule, ...time })} />;
 		case "weekly": {
-			const names = t("schedule.weekdayNames", { returnObjects: true }) as string[];
+			const names = t("schedule.weekdayShortNames", { returnObjects: true }) as string[];
 			// 周一在前，符合日常习惯；取值仍是 cron 的 0 = 周日。
 			const order = [1, 2, 3, 4, 5, 6, 0];
 			return (
@@ -279,7 +279,7 @@ function CronFieldPicker({
 	const { t } = useTranslation("automation");
 	const parsed = parseCronField(field, spec);
 	const values = Array.from({ length: spec.max - spec.min + 1 }, (_, index) => spec.min + index);
-	const names = spec.key === "weekday" ? (t("schedule.weekdayNames", { returnObjects: true }) as string[]) : null;
+	const names = spec.key === "weekday" ? (t("schedule.weekdayShortNames", { returnObjects: true }) as string[]) : null;
 	const summary = parsed === null ? t("form.cronAny") : field;
 
 	return (
@@ -289,7 +289,7 @@ function CronFieldPicker({
 					type="button"
 					disabled={parsed === undefined}
 					title={parsed === undefined ? t("form.cronTextOnly") : undefined}
-					className="flex h-7 items-center gap-1.5 rounded-md border border-border/50 bg-background/60 px-2 text-[12px] text-muted-foreground hover:text-foreground disabled:opacity-60"
+					className="flex h-8 items-center gap-1.5 rounded-lg bg-muted px-2.5 text-[12px] text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-60"
 				>
 					<span>{t(`form.cronField.${spec.key}`)}</span>
 					<span className="max-w-[90px] truncate font-mono text-foreground">{summary}</span>

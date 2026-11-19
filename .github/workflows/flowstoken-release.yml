@@ -94,7 +94,7 @@ jobs:
   build:
     needs: validate-related
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 420
     outputs:
       recovery: ${{ steps.identity.outputs.recovery }}
       source-sha: ${{ steps.identity.outputs.source_sha }}

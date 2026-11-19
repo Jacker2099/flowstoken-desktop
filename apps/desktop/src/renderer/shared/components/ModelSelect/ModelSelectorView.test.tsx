@@ -520,8 +520,7 @@ describe("ModelSelectorView 底栏与受控开合", () => {
 		const content = document.querySelector('[data-slot="dropdown-menu-content"]') as HTMLElement;
 		expect(content.className).toContain("bg-background/40");
 		expect(content.className).toContain("backdrop-blur-2xl");
-		// 透出背后内容就别再叠自绘的描边/高光/阴影。
-		expect(content.className).not.toContain("ring-white");
+		// 毛玻璃只换底色：描边/阴影沿用 FLOATING_SURFACE_CLASS 的浮层共用规格（深色模式保留极淡描边界定边缘），不额外叠自绘装饰。
 		expect(content.innerHTML).not.toContain("bg-gradient");
 	});
 
@@ -592,6 +591,8 @@ describe("ModelSelectorView 收藏", () => {
 			favorites: { keys: new Set([selected.key]), onToggle: vi.fn(), labels: favoriteLabels },
 		});
 		await user.click(screen.getByRole("button", { name: /Alpha Model 0/ }));
+		// 当前模型已收藏，打开即在「收藏」栏；切到供应商栏才能看到未收藏的模型。
+		await user.click(screen.getByRole("menuitem", { name: "Alpha" }));
 
 		const idle = screen.getAllByRole("button", { name: "Add to favorites" })[0] as HTMLElement;
 		expect(idle.className).toContain("hidden");
@@ -625,6 +626,22 @@ describe("ModelSelectorView 收藏", () => {
 		expect(screen.queryByText("Favorites")).toBeNull();
 	});
 
+	it("当前模型已收藏时打开落在「收藏」栏，未收藏时落在它的供应商栏", async () => {
+		const user = userEvent.setup();
+		const selected = groups[1]!.models[5]!;
+		const props = { selectedModel: selected.key, selectedOption: selected };
+		const favorites = { keys: new Set([selected.key, "alpha/m1"]), onToggle: vi.fn(), labels: favoriteLabels };
+		const { unmount } = renderView({ ...props, favorites });
+		await user.click(screen.getByRole("button", { name: /Magpie Model 5/ }));
+		expect(screen.getByText("Favorites")).toBeTruthy();
+		expect(screen.getByRole("menuitem", { name: /Alpha Model 1/ })).toBeTruthy();
+		unmount();
+
+		renderView({ ...props, favorites: { ...favorites, keys: new Set(["alpha/m1"]) } });
+		await user.click(screen.getByRole("button", { name: /Magpie Model 5/ }));
+		expect(screen.queryByRole("menuitem", { name: /Alpha Model 1/ })).toBeNull();
+	});
+
 	it("宿主不接收藏时不出现星标和「收藏」入口", async () => {
 		const user = userEvent.setup();
 		renderView();
@@ -633,4 +650,23 @@ describe("ModelSelectorView 收藏", () => {
 		expect(screen.queryByRole("button", { name: "Add to favorites" })).toBeNull();
 		expect(screen.queryByRole("menuitem", { name: "Favorites" })).toBeNull();
 	});
+
+	it("搜索框右侧的刷新按钮触发宿主刷新；刷新中禁用", async () => {
+		const user = userEvent.setup();
+		const onRefresh = vi.fn();
+		const { rerender } = renderView({ refresh: { onRefresh, refreshing: false, label: "Refresh models" } });
+		await openMenu(user);
+		await user.click(screen.getByRole("button", { name: "Refresh models" }));
+		expect(onRefresh).toHaveBeenCalledTimes(1);
+		rerender(<ModelSelectorView {...baseProps({ refresh: { onRefresh, refreshing: true, label: "Refresh models" } })} />);
+		expect((screen.getByRole("button", { name: "Refresh models" }) as HTMLButtonElement).disabled).toBe(true);
+	});
+
+	it("宿主不接刷新时不出现刷新按钮", async () => {
+		const user = userEvent.setup();
+		renderView();
+		await openMenu(user);
+		expect(screen.queryByRole("button", { name: "Refresh models" })).toBeNull();
+	});
+
 });

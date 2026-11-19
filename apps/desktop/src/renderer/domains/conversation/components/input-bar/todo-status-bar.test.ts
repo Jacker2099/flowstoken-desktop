@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { TodoStatusBarView, type TodoStatusItem } from "@vetta-org/theme-ui/chat";
+import { FROSTED_SURFACE_CLASS } from "@vetta-org/ui/utils";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { describe, expect, it, vi } from "vitest";
@@ -72,6 +73,45 @@ describe("TodoStatusBarView", () => {
 	it("renders nothing without todos", () => {
 		const view = render([]);
 		expect(view.container.textContent).toBe("");
+		view.cleanup();
+	});
+
+	it("keeps the panel's own corner radius instead of inheriting one from the portal", () => {
+		// PopoverContent 用了 asChild，className 会并到同一个 motion.div 上：面板再写 rounded-[inherit]，
+		// twMerge 会用它盖掉 FLOATING_SURFACE_CLASS 的 rounded-2xl，圆角变成从 portal 容器继承的 0。
+		const view = render(ITEMS);
+		act(() => {
+			view.trigger()?.click();
+		});
+
+		const content = document.querySelector<HTMLElement>('[data-slot="popover-content"]');
+		expect(content).not.toBeNull();
+		const radiusTokens = (content?.className ?? "").split(/\s+/).filter((token) => token.startsWith("rounded"));
+		expect(radiusTokens).not.toContain("rounded-[inherit]");
+		expect(radiusTokens.length).toBeGreaterThan(0);
+		view.cleanup();
+	});
+
+	it("paints the same surface as the model selector: frosted background, shadow and hairline", () => {
+		// 与模型选择弹层同一层皮：毛玻璃底色 + FLOATING_SURFACE_CLASS 的外投影和深色细线。
+		const view = render(ITEMS);
+		act(() => {
+			view.trigger()?.click();
+		});
+
+		const content = document.querySelector<HTMLElement>('[data-slot="popover-content"]');
+		expect(content).not.toBeNull();
+		const tokens = new Set((content?.className ?? "").split(/\s+/));
+		for (const token of FROSTED_SURFACE_CLASS.split(/\s+/)) {
+			expect(tokens.has(token)).toBe(true);
+		}
+		expect(tokens.has("bg-popover")).toBe(false);
+		// 细线只保留深色模式那圈极淡描边，不能出现浅色模式的边框。
+		expect(tokens.has("dark:ring-1")).toBe(true);
+		expect(tokens.has("dark:ring-white/10")).toBe(true);
+		// 外投影用任意值阴影，不能显式写成 shadow-none。
+		expect([...tokens].some((token) => token.startsWith("shadow-["))).toBe(true);
+		expect(tokens.has("shadow-none")).toBe(false);
 		view.cleanup();
 	});
 

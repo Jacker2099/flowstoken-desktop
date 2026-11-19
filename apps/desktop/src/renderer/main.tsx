@@ -6,8 +6,8 @@ import { installInactiveWindowAnimationPause } from "./shared/lib/inactive-windo
 import { installLiveAnimations } from "./shared/lib/live-animations";
 import { applyPlatformAttribute } from "./shared/lib/platform";
 import { applyInitialTheme, syncInitialNativeTheme } from "./shared/theme/apply";
-import { applyStoredCursorStyle } from "./shared/theme/cursor";
-import { applyStoredSidebarStyle } from "./shared/theme/sidebar-style";
+import { installHairlineVariable } from "./shared/lib/hairline";
+import { applyInitialUserBubbleAppearance } from "./shared/theme/user-bubble-appearance";
 import { captureReactError, initializeRendererErrorMonitoring } from "./telemetry/error-monitoring";
 import { initializeViteHmrDiagnostics } from "./telemetry/vite-hmr-diagnostics";
 import "./styles.css";
@@ -19,8 +19,9 @@ initializeRendererErrorMonitoring("main");
 applyPlatformAttribute();
 applyInitialTheme();
 const nativeThemeReady = syncInitialNativeTheme();
-applyStoredCursorStyle();
-applyStoredSidebarStyle();
+applyInitialUserBubbleAppearance();
+// 页面缩放到非整数倍时，让需要和边框对齐的拼接处用真实的发丝线宽（见 hairline.ts）。
+installHairlineVariable();
 // 窗口不在前台时停掉无限循环的动画：毛玻璃窗口每出一帧都很贵，没人看的时候不该为它付费。
 installInactiveWindowAnimationPause();
 // 「进行中」指示器的呼吸/波纹由这里统一挂 steps(16) 合成器动画并锁同一相位：整页每秒最多多出 10 帧。

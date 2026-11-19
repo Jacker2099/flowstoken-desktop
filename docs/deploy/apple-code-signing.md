@@ -197,7 +197,7 @@ xcrun notarytool history --key "$APPLE_API_KEY" --key-id "$APPLE_API_KEY_ID" --i
 | `APPLE_API_ISSUER` | App Store Connect Issuer ID |
 | `APPLE_TEAM_ID` | Developer Program Team ID |
 
-macOS 在 matrix 里是 `dist:mac:arm64` 与 `dist:mac:x64` 两个任务（内置的 node/python 运行时按 `VETTA_VENDOR_PLATFORM` 单架构落盘，一次构建出不了两套），分别跑在 `macos-15` 与 `macos-15-intel` 托管 runner 上，两者各自签名公证并校验，产物元数据以 `latest-mac-<arch>.yml` 上传，由发布任务的 `merge:updates:mac` 合并回单一 `latest-mac.yml`。
+macOS 在 matrix 里是 `dist:mac:arm64` 与 `dist:mac:x64` 两个任务（内置的 node/python 运行时按 `VETTA_VENDOR_PLATFORM` 单架构落盘，一次构建出不了两套），分别跑在 `macos-26` 与 `macos-26-intel` 托管 runner 上，两者各自签名公证并校验，产物元数据以 `latest-mac-<arch>.yml` 上传，由发布任务的 `merge:updates:mac` 合并回单一 `latest-mac.yml`。
 
 公证不需要专用签名机：`notarytool` 把签好名的产物传给 Apple 换票据，托管 runner 有网络即可。工作流会在 runner 的临时目录还原 `.p12` 和 `.p8`（`chmod 600`），仅通过环境变量使用，构建结束随 runner 销毁。**tag 和发布型手动构建必须具备完整签名、公证凭据；FlowsToken 外层发布也拒绝未签名的构建检查点。** 只有非发布的 `workflow_dispatch` 演练在完全没有签名变量时允许未签名包；只配置一部分仍直接失败。凭据齐全的演练同样签名、公证并设置 `VETTA_REQUIRE_MAC_SIGNATURE=1`。此门禁下 `VETTA_SKIP_NOTARIZE=1` 不合法；仅限未要求正式签名验收的本地实验使用该开关。
 

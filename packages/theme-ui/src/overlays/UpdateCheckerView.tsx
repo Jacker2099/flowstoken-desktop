@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, type JSX } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { Button } from "@vetta-org/ui";
+import { ReleaseNoteMarkdown } from "./ReleaseNoteMarkdown";
 
 export interface UpdateCheckerViewLabels {
 	readonly check: string;
@@ -14,6 +13,8 @@ export interface UpdateCheckerViewLabels {
 	readonly newVersion: (version: string) => string;
 	readonly restart: string;
 	readonly viewMore?: string;
+	/** 「版本介绍」按钮文案；与 onViewCurrent 同时提供才显示按钮。 */
+	readonly viewCurrent?: string;
 }
 
 export type UpdateCheckerPhase =
@@ -33,31 +34,48 @@ export interface UpdateCheckerViewProps {
 	readonly onCheck: () => void;
 	readonly onPrimary: () => void;
 	readonly onViewMore?: () => void;
+	readonly onViewCurrent?: () => void;
 	readonly phase: UpdateCheckerPhase;
 	readonly progress?: number;
 	readonly releaseNote?: string;
 	readonly statusText: string;
 }
 
-/** Settings 行右侧：与 App 引导同款 outline sm 按钮。 */
+/** Settings 行右侧：「版本介绍」（可选）+ 与 App 引导同款 outline sm 的检查更新按钮。 */
 export function UpdateCheckerAction({
 	checking,
 	labels,
 	onCheck,
+	onViewCurrent,
 	phase,
-}: Pick<UpdateCheckerViewProps, "checking" | "labels" | "onCheck" | "phase">): JSX.Element {
+	progress,
+}: Pick<UpdateCheckerViewProps, "checking" | "labels" | "onCheck" | "onViewCurrent" | "phase" | "progress">): JSX.Element {
+	// 下载中不能再点检查更新：按钮直接变成不可点的下载进度，重新进入设置页也一致。
+	const downloading = phase === "downloading";
+	const busy = checking || downloading;
 	return (
-		<Button
-			size="sm"
-			variant="outline"
-			onClick={onCheck}
-			disabled={checking}
-			data-testid="updater-check"
-			data-updater-phase={phase}
-		>
-			<span className={`icon-[mdi--refresh] h-3.5 w-3.5 ${checking ? "animate-spin" : ""}`} />
-			{checking ? labels.checkingBtn : labels.check}
-		</Button>
+		<div className="flex items-center gap-2">
+			{onViewCurrent && labels.viewCurrent && (
+				<Button variant="field" onClick={onViewCurrent} data-testid="updater-view-current">
+					<span className="icon-[mdi--sparkles-outline] h-3.5 w-3.5" />
+					{labels.viewCurrent}
+				</Button>
+			)}
+			<Button
+				variant="field"
+				onClick={onCheck}
+				disabled={busy}
+				data-testid="updater-check"
+				data-updater-phase={phase}
+			>
+				<span className={`icon-[mdi--refresh] h-3.5 w-3.5 ${busy ? "animate-spin" : ""}`} />
+				{downloading
+					? labels.downloading(Math.round((progress ?? 0) * 100))
+					: checking
+						? labels.checkingBtn
+						: labels.check}
+			</Button>
+		</div>
 	);
 }
 
@@ -159,9 +177,7 @@ function ReleaseNotePreview({
 				}`}
 				style={isOverflowing ? { maxHeight: `${MAX_HEIGHT_PX}px` } : undefined}
 			>
-				<ReactMarkdown remarkPlugins={[remarkGfm]}>
-					{releaseNote}
-				</ReactMarkdown>
+				<ReleaseNoteMarkdown>{releaseNote}</ReleaseNoteMarkdown>
 			</div>
 			{isOverflowing && (
 				<div className="pt-6 -mt-6 bg-gradient-to-t from-secondary via-secondary/85 to-transparent flex items-center justify-center relative z-10">

@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { SettingsPageShellView } from "@vetta-org/theme-ui/settings";
 import { Button } from "@shared/components/ui/button";
 import { SettingsAiAssist } from "../ai-assist";
+import { ModelsDefaultModelSection } from "./ModelsDefaultModelSection";
 import { ModelTransportSettingsSection } from "./ModelTransportSettingsSection";
 import { ModelsProvidersSection } from "./ModelsProvidersSection";
 import { PresetProvidersSection } from "./PresetProvidersSection";
@@ -35,6 +36,7 @@ export function ModelsSettingsView({
 		>
 			{model.config && (
 				<>
+					<ModelsDefaultModelSection model={model} />
 					<div className="mb-4 rounded-xl border border-border bg-card px-4 py-3">
 						<div className="text-[14px] font-medium text-foreground">FlowsToken 一键接入</div>
 						<p className="mt-1 text-[12px] text-muted-foreground">

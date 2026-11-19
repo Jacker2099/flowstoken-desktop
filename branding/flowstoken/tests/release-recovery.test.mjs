@@ -291,7 +291,7 @@ test("the wait exits at its deadline when Apple is still processing", async () =
 	assert.equal(time, 90_000);
 });
 
-test("the default verification wait is bounded at 340 minutes within the 360-minute parent", async () => {
+test("the default verification wait is bounded at 400 minutes within the 420-minute parent", async () => {
 	let time = 0;
 	await assert.rejects(
 		waitForReleaseBuilds({
@@ -304,8 +304,8 @@ test("the default verification wait is bounded at 340 minutes within the 360-min
 		}),
 		/Timed out/,
 	);
-	assert.equal(time, 340 * 60_000);
-	assert.equal(outer.jobs.build["timeout-minutes"], 360);
+	assert.equal(time, 400 * 60_000);
+	assert.equal(outer.jobs.build["timeout-minutes"], 420);
 });
 
 test("the workflow CLI queries GitHub and returns failure for a stale run", () => {

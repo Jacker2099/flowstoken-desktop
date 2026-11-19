@@ -64,8 +64,11 @@ base64（GNU 的 `-d` 与 BSD 的 `-D` 不兼容）。
 命令引用、URI 往返和失败分类是本包的核心风险，各有定向测试。使用仓库统一入口：
 
 ```bash
+bun run --filter @vetta/ssh-transport test
 bun scripts/flowstoken/test-ssh-platform.mjs
 ```
+
+包内 `test` 脚本走仓库统一的 Vitest 入口，变更影响选择也依赖它。
 
 `SshProcessRunner` 是可注入端口，因此以上全部可以在没有 SSH 服务器的情况下验证。
 

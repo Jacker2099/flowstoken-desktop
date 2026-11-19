@@ -104,7 +104,7 @@ export function ModelsModelDialog({ model }: { model: ModelsSettingsModel }): JS
 				if (!next) close();
 			}}
 		>
-			<DialogContent className="max-h-[min(90vh,720px)] overflow-y-auto sm:max-w-[560px] rounded-2xl p-6 gap-5 border border-border/60 bg-popover shadow-2xl">
+			<DialogContent className="max-h-[min(90vh,720px)] overflow-y-auto sm:max-w-[560px]">
 				<DialogHeader className="gap-1 pr-6 text-left">
 					<DialogTitle className="flex items-center gap-2 text-base font-semibold tracking-tight text-foreground">
 						<span className="icon-[solar--cpu-bolt-linear] h-4.5 w-4.5 text-primary shrink-0" aria-hidden="true" />
@@ -143,8 +143,7 @@ export function ModelsModelDialog({ model }: { model: ModelsSettingsModel }): JS
 					<div className="flex items-center justify-between gap-3">
 						<div className="flex items-center gap-1.5">
 							<Button
-								variant="outline"
-								size="sm"
+								variant="field"
 								disabled={!modelId || busy || model.saving}
 								onClick={() => void handleTest()}
 							>
@@ -160,8 +159,7 @@ export function ModelsModelDialog({ model }: { model: ModelsSettingsModel }): JS
 								{feedback?.status === "testing" ? t("testing") : t("testConnect")}
 							</Button>
 							<Button
-								variant="outline"
-								size="sm"
+								variant="field"
 								disabled={!modelId || busy || model.saving}
 								onClick={() => void handleSync()}
 							>
