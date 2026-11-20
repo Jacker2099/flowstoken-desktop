@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import {
 	chmod,
 	copyFile,
@@ -143,8 +143,10 @@ describe("real skill archive installation flows", () => {
 				{ encoding: "utf8" },
 			);
 			expect(archive.status, archive.stderr).toBe(0);
-			const { installSkillFromMarketArchive } = await import("./skill-market-install.js");
-			await installSkillFromMarketArchive("linked-skill", "skill", await readFile(archivePath));
+			await expect(importArchive(await readFile(archivePath))).resolves.toEqual({
+				name: "linked-skill",
+				type: "skill",
+			});
 			const destination = join(fixture.home, "skills", "linked-skill");
 			expect((await lstat(join(destination, "tool-link"))).isSymbolicLink()).toBe(true);
 			await expect(readlink(join(destination, "tool-link"))).resolves.toBe("bin/tool");
@@ -154,63 +156,9 @@ describe("real skill archive installation flows", () => {
 		},
 	);
 
-	it.each(["skill"] as const)("installs and updates a market %s while preserving overlay files", async (type) => {
-		const { installSkillFromMarketArchive } = await import("./skill-market-install.js");
-		const initial = await archiveOf({ "SKILL.md": skillMarkdown("market-demo", "1.2.3", type) });
-		await expect(
-			installSkillFromMarketArchive("market-demo", type, initial, {
-				sha256: createHash("sha256").update(initial).digest("hex"),
-			}),
-		).resolves.toEqual({ name: "market-demo", type, version: "1.2.3", updated: false });
-		const destination = join(fixture.home, "skills", "market-demo");
-		await writeFile(join(destination, "legacy.txt"), "keep-existing-overlay", "utf8");
-		const updated = await archiveOf({ "SKILL.md": skillMarkdown("market-demo", "2.3.4", type), "new.txt": "new" });
-		await expect(
-			installSkillFromMarketArchive("market-demo", type, updated, {
-				alias: "Demo",
-				marketDescription: "Public description",
-			}),
-		).resolves.toEqual({ name: "market-demo", type, version: "2.3.4", updated: true });
-		await expect(readFile(join(destination, "SKILL.md"), "utf8")).resolves.toContain("version: 2.3.4");
-		await expect(readFile(join(destination, "legacy.txt"), "utf8")).resolves.toBe("keep-existing-overlay");
-		await expect(readFile(join(destination, "new.txt"), "utf8")).resolves.toBe("new");
-		const state = await installedState();
-		expect(JSON.parse(state.manifest) as unknown).toMatchObject({
-			"market-demo": {
-				type,
-				source: "market",
-				version: "2.3.4",
-				enabled: true,
-				alias: "Demo",
-				marketDescription: "Public description",
-			},
-		});
-		expect(JSON.parse(state.ledger) as unknown).toMatchObject({
-			entries: { [`${type}:market-demo`]: { version: "2.3.4" } },
-		});
-		expect(fixture.events).toEqual([
-			{
-				type: "resource.lifecycle",
-				resourceKind: type,
-				operation: "installed",
-				resourceId: "market-demo",
-				source: "market",
-			},
-			{
-				type: "resource.lifecycle",
-				resourceKind: type,
-				operation: "updated",
-				resourceId: "market-demo",
-				source: "market",
-			},
-		]);
-		await expect(readdir(join(fixture.home, "tmp"))).resolves.toEqual([]);
-	});
-
-	it("does not publish partial members from a truncated market TGZ or change the prior manifest/events", async () => {
-		const { installSkillFromMarketArchive } = await import("./skill-market-install.js");
+	it("does not publish partial members from a truncated custom TGZ or change the prior manifest/events", async () => {
 		const initial = await archiveOf({ "SKILL.md": skillMarkdown("market-demo", "1.0.0") });
-		await installSkillFromMarketArchive("market-demo", "skill", initial);
+		await expect(importArchive(initial)).resolves.toEqual({ name: "market-demo", type: "skill" });
 		const prior = await installedState();
 		const destination = join(fixture.home, "skills", "market-demo");
 		const source = await mkdtemp(join(testRoot, "truncated source "));
@@ -234,7 +182,7 @@ describe("real skill archive installation flows", () => {
 		expect(direct.status).not.toBe(0);
 		await expect(readFile(join(unsafeDestination, "SKILL.md"), "utf8")).resolves.toContain("version: 99.0.0");
 
-		await expect(installSkillFromMarketArchive("market-demo", "skill", truncated)).rejects.toThrow();
+		await expect(importArchive(truncated)).rejects.toThrow();
 		await expect(readFile(join(destination, "SKILL.md"), "utf8")).resolves.toContain("version: 1.0.0");
 		expect(await installedState()).toEqual(prior);
 		expect(fixture.events).toHaveLength(1);
@@ -304,9 +252,8 @@ describe("real skill archive installation flows", () => {
 	);
 
 	it.runIf(process.platform === "win32")(
-		"market and custom TGZ imports use the system tool despite a real PATH tar poison",
+		"custom TGZ imports use the system tool despite a real PATH tar poison",
 		async () => {
-			const market = await archiveOf({ "SKILL.md": skillMarkdown("market-poison", "1.0.0") });
 			const custom = await archiveOf({ "SKILL.md": skillMarkdown("custom-poison", "2.0.0") });
 			const poisonDirectory = join(testRoot, "path poison");
 			await mkdir(poisonDirectory);
@@ -316,18 +263,11 @@ describe("real skill archive installation flows", () => {
 			const unsafe = spawnSync("tar", ["--version"], { encoding: "utf8" });
 			expect(unsafe.status, unsafe.stderr).toBe(0);
 			expect(unsafe.stdout.trim()).toBe(process.version);
-			const { installSkillFromMarketArchive } = await import("./skill-market-install.js");
-			await expect(installSkillFromMarketArchive("market-poison", "skill", market)).resolves.toMatchObject({
-				name: "market-poison",
-			});
 			await expect(importArchive(custom)).resolves.toEqual({ name: "custom-poison", type: "skill" });
-			await expect(readFile(join(fixture.home, "skills", "market-poison", "SKILL.md"), "utf8")).resolves.toContain(
-				"version: 1.0.0",
-			);
 			await expect(readFile(join(fixture.home, "skills", "custom-poison", "SKILL.md"), "utf8")).resolves.toContain(
 				"version: 2.0.0",
 			);
-			expect(fixture.events).toHaveLength(2);
+			expect(fixture.events).toHaveLength(1);
 			await expect(readdir(join(fixture.home, "tmp"))).resolves.toEqual([]);
 		},
 	);

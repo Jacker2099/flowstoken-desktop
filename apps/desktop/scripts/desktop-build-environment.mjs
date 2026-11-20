@@ -6,7 +6,6 @@ import { isFlowsTokenUpdateFeed } from "../../../branding/flowstoken/update-feed
 
 export const OPEN_SOURCE_BUILD_DEFAULTS = Object.freeze({
 	VETTA_BUILD_ENV: "opensource",
-	VETTA_CLOUD_ENABLED: "false",
 	VETTA_DISABLE_BUILTIN_MARKETPLACE: "1",
 	VETTA_PRODUCT_NAME: "FlowsToken",
 	VETTA_APP_ID: "com.flowstoken.desktop",
@@ -234,7 +233,6 @@ export function validateDesktopBuildEnvironment({
 	arch = process.arch,
 } = {}) {
 	const errors = [];
-	const cloudFlag = validateExactFlag(env, "VETTA_CLOUD_ENABLED", ["true", "false"], errors, { required: true });
 	for (const key of OPTIONAL_BOOLEAN_KEYS) validateExactFlag(env, key, ["true", "false"], errors);
 	for (const key of OPTIONAL_ZERO_ONE_KEYS) validateExactFlag(env, key, ["0", "1"], errors);
 
@@ -261,21 +259,16 @@ export function validateDesktopBuildEnvironment({
 
 	const productionUrls = mode === "production";
 	validateUpdateConfiguration(updateConfig, productionUrls, errors);
-	if (cloudFlag === "true") {
-		validateHttpUrl(env, "VETTA_SERVER_URL", errors, { required: true, httpsOnly: productionUrls });
-		if (readValue(env, "VETTA_SITE_URL")) {
-			validateHttpUrl(env, "VETTA_SITE_URL", errors, { httpsOnly: productionUrls });
-		}
-		if (updateConfig && updateConfig.provider !== "generic") {
-			errors.push("commercial builds must use VETTA_UPDATE_PROVIDER=generic");
-		}
-	} else if (cloudFlag === "false") {
-		if (readValue(env, "VETTA_SERVER_URL")) errors.push("VETTA_SERVER_URL must be empty for an open-source build");
-		if (readValue(env, "VETTA_SITE_URL")) errors.push("VETTA_SITE_URL must be empty for an open-source build");
-		// FlowsToken: open-source builds may also use our self-hosted generic feed.
-		if (updateConfig && updateConfig.provider !== "github" && !isFlowsTokenUpdateFeed(updateConfig)) {
-			errors.push("open-source builds must use VETTA_UPDATE_PROVIDER=github");
-		}
+	// vetta-serv 已下线（ADR-0156）：构建环境不再接受服务端地址，避免留下无效配置。
+	if (readValue(env, "VETTA_SERVER_URL")) {
+		errors.push("VETTA_SERVER_URL is no longer supported: vetta-serv was removed");
+	}
+	if (readValue(env, "VETTA_SITE_URL")) {
+		errors.push("VETTA_SITE_URL is no longer supported: vetta-serv was removed");
+	}
+	// FlowsToken: generic 更新源只接受自有 feed，GitHub Releases 之外不允许任意 generic 地址。
+	if (updateConfig && updateConfig.provider !== "github" && !isFlowsTokenUpdateFeed(updateConfig)) {
+		errors.push("open-source builds must use VETTA_UPDATE_PROVIDER=github or the FlowsToken update feed");
 	}
 	validateMarketplaceRepository(env, errors);
 
@@ -299,7 +292,6 @@ export function validateDesktopBuildEnvironment({
 	}
 
 	return {
-		edition: cloudFlag === "true" ? "commercial" : "opensource",
 		mode,
 		platformTags,
 		pluginSelection,

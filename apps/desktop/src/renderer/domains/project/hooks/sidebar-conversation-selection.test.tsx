@@ -154,6 +154,7 @@ describe("sidebar conversation selection", () => {
 			allowMutations: true,
 			// 下方对话列表里的 Team 会话与普通会话一样可打标签。
 			canTag: true,
+			independent: true,
 		});
 	});
 

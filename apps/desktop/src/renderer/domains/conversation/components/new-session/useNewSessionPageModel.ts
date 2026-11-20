@@ -1,12 +1,12 @@
 import { useProjectActions } from "@domains/project/hooks/useProjects";
 import { i18n } from "@shared/i18n";
+import { resolveConversationScenario } from "@shared/lib/conversation-scenario";
 import {
 	abortMessageFnRef,
 	activeSessionAtom,
 	activeToolNamesAtom,
 	applyInputActionWorkingState,
 	attachedImagesAtom,
-	authUserAtom,
 	confirmDialogAtom,
 	contextCompactionEligibilityAtom,
 	contextUsageAtom,
@@ -26,9 +26,12 @@ import {
 	sessionExecutionModeAtom,
 	switchSessionInputDraftScope,
 } from "@shared/store/atoms";
+import { projectsAtom } from "@shared/store/project-atoms";
+import { assignSpace, selectedSpaceAtom, spacesAtom } from "@shared/store/spaces";
 import { useNavigate, useSearch } from "@tanstack/react-router";
+import type { ConversationScenario } from "@vetta-org/plugin-sdk";
 import type { NewSessionHeroIdentity } from "@vetta-org/theme-ui";
-import { useAtomValue, useSetAtom } from "jotai";
+import { useAtomValue, useSetAtom, useStore } from "jotai";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TeamChatActions, TeamChatViewModel } from "../../connectors/team/teamChatModel";
@@ -69,6 +72,11 @@ interface NewSessionPageModel {
 	/** 活动面板根目录；「对话」与待创建项目下为 null，文件面板走空态而不是暴露 conversation 根。 */
 	activityPanelCwd: string | null;
 	greetingTitle: string;
+	/**
+	 * 活动面板要用的对话场景：按「这一页将要建出什么样的会话」推导，而不是看全局
+	 * currentScenarioAtom（它恒为 conversation，会把项目会话专属的插件 tab 全部过滤掉）。
+	 */
+	activityPanelScenario: ConversationScenario;
 	/** 选中的智能体/团队身份；null 时 hero 展示问候语。 */
 	heroIdentity: NewSessionHeroIdentity | null;
 	isShort: boolean;
@@ -104,6 +112,9 @@ export function useNewSessionPageModel(): NewSessionPageModel {
 	const navigate = useNavigate();
 	const defaultConversationCwd = useAtomValue(defaultConversationCwdAtom);
 	const decodedCwd = search.cwd ? decodeURIComponent(search.cwd) : defaultConversationCwd;
+	const store = useStore();
+	const spaceId = useAtomValue(selectedSpaceAtom);
+	const draftKey = newSessionInputDraftKey(decodedCwd, spaceId);
 	const initialTargetKey = search.target ? parseNewSessionTarget(search.target) : null;
 	const [targetKey, setTargetKey] = useState<NewSessionTargetKey | null>(
 		initialTargetKey === "conversation" ? null : initialTargetKey,
@@ -131,6 +142,19 @@ export function useNewSessionPageModel(): NewSessionPageModel {
 	const { open: activityOpen, toggle: handleToggleActivity } = useNewSessionActivityPanel(
 		projectSelection.activityPanelCwd,
 	);
+	// 活动面板的对话场景：未选项目时按默认「对话」处理；选中项目后按该项目推导，
+	// 让新会话页上的插件 tab 与发送后建出的会话一致（Team 与 Runtime 对齐为 project）。
+	const projects = useAtomValue(projectsAtom);
+	const activityPanelScenario = useMemo<ConversationScenario>(() => {
+		const panelCwd = projectSelection.activityPanelCwd;
+		if (selectedTeamKey) return "project";
+		if (panelCwd === null) return "conversation";
+		return resolveConversationScenario({
+			cwd: panelCwd,
+			defaultConversationCwd,
+			projectType: projects.find((project) => project.cwd === panelCwd)?.type,
+		});
+	}, [defaultConversationCwd, projectSelection.activityPanelCwd, projects, selectedTeamKey]);
 	const [pinned, setPinned] = useState(false);
 	const setAttachedImages = useSetAtom(attachedImagesAtom);
 	const setHeaderTitle = useSetAtom(pageHeaderTitleAtom);
@@ -140,11 +164,10 @@ export function useNewSessionPageModel(): NewSessionPageModel {
 	const setCompactionEligibility = useSetAtom(contextCompactionEligibilityAtom);
 	const setActiveSession = useSetAtom(activeSessionAtom);
 	const setPendingSessionCreation = useSetAtom(pendingSessionCreationAtom);
-	const setLastActiveSession = useSetAtom(lastActiveSessionAtom);
 	const setPromptAttachment = useSetAtom(promptAttachmentAtom);
+	const setLastActiveSession = useSetAtom(lastActiveSessionAtom);
 	const setCurrentScenario = useSetAtom(currentScenarioAtom);
 	const setActiveToolNames = useSetAtom(activeToolNamesAtom);
-	const authUser = useAtomValue(authUserAtom);
 	const executionMode = useAtomValue(sessionExecutionModeAtom);
 	const openSession = useCallback<NonNullable<(typeof openSessionFnRef)["current"]>>(async (...args) => {
 		await readSessionManagerFn(openSessionFnRef, "openSession")?.(...args);
@@ -183,6 +206,9 @@ export function useNewSessionPageModel(): NewSessionPageModel {
 
 	const newSessionSend = useNewSessionSend({
 		cwd: contextCwd,
+		defaultConversationCwd,
+		spaceId,
+		draftKey,
 		executionMode,
 		prepareCwd,
 		openSession,
@@ -194,6 +220,8 @@ export function useNewSessionPageModel(): NewSessionPageModel {
 		projectSelection: currentSelection,
 		prepareCwd,
 		onSent: (sessionId) => {
+			if (!currentSelection)
+				store.set(spacesAtom, (state) => assignSpace(state, { kind: "conversation", key: sessionId }, spaceId));
 			const teamId = parseTeamTargetKey(selectedTeamKey);
 			if (!teamId) return;
 			void navigate({
@@ -245,11 +273,11 @@ export function useNewSessionPageModel(): NewSessionPageModel {
 	useEffect(() => {
 		// 会话对象只是发送路由，不改变当前新会话的草稿身份。这样切换普通
 		// 对话、单 Agent 与 Team 时，用户正在编辑的正文和附件保持可见。
-		switchSessionInputDraftScope(newSessionInputDraftKey(decodedCwd));
+		switchSessionInputDraftScope(draftKey);
+		setPromptAttachment(null);
 		// 旧 attachedImages 链路兜底清空（正文 token 已由草稿文本恢复）。
 		setAttachedImages([]);
 		// 释放一次性的插件 prompt attachment，避免带进新会话。
-		setPromptAttachment(null);
 		// 清空 input-action / 知识检索工作集，并关掉 hardIsolation contribution mode。
 		// 各既有会话的持久化状态仍在 sessionInputActionStateMap，切回可恢复。
 		applyInputActionWorkingState(emptySessionInputActionState());
@@ -269,10 +297,10 @@ export function useNewSessionPageModel(): NewSessionPageModel {
 		// 用户主动进入新会话页后，不应在后续刷新/回到根路由时恢复旧会话。
 		setLastActiveSession(null);
 	}, [
-		decodedCwd,
+		draftKey,
+		setPromptAttachment,
 		targetKey,
 		setAttachedImages,
-		setPromptAttachment,
 		setCurrentScenario,
 		setActiveToolNames,
 		setContextUsage,
@@ -302,9 +330,7 @@ export function useNewSessionPageModel(): NewSessionPageModel {
 		setPinned(next);
 	}, []);
 
-	const greetingTitle = authUser?.nickname
-		? i18n.t("chat:newSession.greetingTitle", { nickname: authUser.nickname })
-		: i18n.t("chat:newSession.greetingDefault");
+	const greetingTitle = i18n.t("chat:newSession.greetingDefault");
 
 	return {
 		contextBlock,
@@ -314,6 +340,7 @@ export function useNewSessionPageModel(): NewSessionPageModel {
 		commandPanelShift: commandPanelExpanded && skillItems.length > PANEL_SHIFT_MIN_ITEMS,
 		cwd: contextCwd,
 		activityPanelCwd: projectSelection.activityPanelCwd,
+		activityPanelScenario,
 		greetingTitle,
 		heroIdentity,
 		isShort,

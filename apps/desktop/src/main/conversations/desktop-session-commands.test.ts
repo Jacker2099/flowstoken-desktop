@@ -2,7 +2,7 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { DEFAULT_CONVERSATION_CWD } from "../config/desktop-config-store.js";
 import type { ConversationListChangedEvent } from "./conversation-list-events.js";
-import { createDesktopSessionCommands } from "./desktop-session-commands.js";
+import { createDesktopSessionCommands, deleteSessionsInDirectory } from "./desktop-session-commands.js";
 
 function setup(cwd: string | undefined) {
 	const calls: string[] = [];
@@ -47,6 +47,39 @@ describe("desktop session commands", () => {
 		await commands.delete("/s/a.jsonl");
 		expect(calls.some((call) => call.startsWith("rm "))).toBe(false);
 		expect(events).toEqual([{ cwd: "/code/vetta", sessionPath: "/s/a.jsonl" }]);
+	});
+
+	it("clears a session directory together with each workspace, surviving a refused session", async () => {
+		const first = join(DEFAULT_CONVERSATION_CWD, "11111111-1d2a-4e0b-9c1a-2f3e4d5c6b7a");
+		const second = join(DEFAULT_CONVERSATION_CWD, "22222222-1d2a-4e0b-9c1a-2f3e4d5c6b7a");
+		const calls: string[] = [];
+		const refused: string[] = [];
+		const commands = createDesktopSessionCommands({
+			runtime: {
+				deleteSession: vi.fn(async (path: string) => void calls.push(`delete ${path}`)),
+				renameSession: vi.fn(async () => undefined),
+			},
+			onSessionsDeleted: vi.fn(),
+			forgetAnnotations: vi.fn(async () => undefined),
+			assertOrdinary: async (path) => {
+				if (path === "/s/team.jsonl") throw new Error("Conversation is managed by Agent Team: t/s");
+				return path;
+			},
+			readSessionCwd: async (path) => (path === "/s/team.jsonl" ? second : path === "/s/a.jsonl" ? first : second),
+			removeDirectory: vi.fn(async (dir: string) => void calls.push(`rm ${dir}`)),
+			forgetUserMarks: vi.fn(),
+			emitListChanged: vi.fn(),
+		});
+
+		await deleteSessionsInDirectory({
+			dir: "/sessions",
+			commands,
+			onError: (sessionPath) => refused.push(sessionPath),
+			listFiles: async () => ["/s/a.jsonl", "/s/team.jsonl", "/s/b.jsonl"],
+		});
+
+		expect(refused).toEqual(["/s/team.jsonl"]);
+		expect(calls).toEqual([`delete /s/a.jsonl`, `rm ${first}`, `delete /s/b.jsonl`, `rm ${second}`]);
 	});
 
 	it("renames only ordinary sessions and tells the list", async () => {

@@ -41,6 +41,6 @@ describe("ProjectContextMenuView", () => {
 
 	it("offers a single project removal action", () => {
 		render(<ProjectContextMenuView {...props} />);
-		expect(screen.getAllByRole("button", { name: "Remove from list" })).toHaveLength(1);
+		expect(screen.getAllByRole("menuitem", { name: "Remove from list" })).toHaveLength(1);
 	});
 });

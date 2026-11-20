@@ -5,7 +5,22 @@ import { act, createElement, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("motion/react", () => ({ motion: { span: () => null } }));
+const motionSpanProps = vi.hoisted(() => [] as Array<Record<string, unknown>>);
+
+vi.mock("motion/react", async () => {
+	const { createElement } = await import("react");
+	return {
+		motion: {
+			// 透传为原生 span：保留 data-active-tab-indicator 等属性断言所需的 DOM，
+			// 记录原始 props 供断言 layoutId/transition，再丢弃 motion 专有 props 渲染。
+			span: (props: Record<string, unknown>) => {
+				motionSpanProps.push(props);
+				const { layoutId: _layoutId, transition: _transition, ...rest } = props;
+				return createElement("span", rest);
+			},
+		},
+	};
+});
 
 class ResizeObserverStub {
 	disconnect(): void {}
@@ -92,6 +107,7 @@ describe("TabBar pointer drag", () => {
 	});
 
 	it("uses a static active indicator while layout animation is suppressed", () => {
+		motionSpanProps.length = 0;
 		act(() => {
 			root.render(
 				createElement(TabBar, {
@@ -102,8 +118,13 @@ describe("TabBar pointer drag", () => {
 				}),
 			);
 		});
+		// 指示器节点始终渲染；抑制动画时不再携带 layoutId，且过渡时长归零。
 		expect(container.querySelector("[data-active-tab-indicator]")).not.toBeNull();
+		const suppressed = motionSpanProps.at(-1);
+		expect(suppressed?.layoutId).toBeUndefined();
+		expect(suppressed?.transition).toEqual({ duration: 0 });
 
+		motionSpanProps.length = 0;
 		act(() => {
 			root.render(
 				createElement(TabBar, {
@@ -114,10 +135,13 @@ describe("TabBar pointer drag", () => {
 				}),
 			);
 		});
-		expect(container.querySelector("[data-active-tab-indicator]")).toBeNull();
+		const animated = motionSpanProps.at(-1);
+		expect(typeof animated?.layoutId).toBe("string");
 	});
 
-	it("does not synchronously read the active indicator width", () => {
+	it("measures the active indicator before paint so the tab outline can draw", () => {
+		// 上游为修复拖动面板宽度后轮廓丢失，把宽度测量改回绘制前同步读取；
+		// 宽度大于 0 时才会画出三边连接轮廓，这里用 offsetWidth 桩验证整条链路。
 		const offsetWidth = vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(80);
 
 		try {
@@ -131,7 +155,7 @@ describe("TabBar pointer drag", () => {
 					}),
 				);
 			});
-			expect(offsetWidth).not.toHaveBeenCalled();
+			expect(container.querySelector("[data-connected-tab-outline]")).not.toBeNull();
 		} finally {
 			offsetWidth.mockRestore();
 		}

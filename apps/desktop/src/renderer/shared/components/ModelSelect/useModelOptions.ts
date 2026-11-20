@@ -2,14 +2,12 @@ import type { ModelsConfigData } from "@preload/api";
 import { i18n } from "@shared/i18n";
 import {
 	catalogGroupForProvider,
+	catalogGroupTitle,
 	catalogModelEntry,
-	flowstokenCatalogAtom,
-	localModelsConfigAtom,
-	remoteProvidersAtom,
 	revalidateFlowstokenCatalog,
-} from "@shared/store/atoms";
-import { catalogGroupTitle } from "@shared/store/flowstoken-catalog";
+} from "@shared/store/flowstoken-catalog";
 import { modelCatalog } from "@shared/store/model-catalog";
+import { flowstokenCatalogAtom, localModelsConfigAtom, remoteProvidersAtom } from "@shared/store/model-catalog-atoms";
 import { useAtomValue } from "jotai";
 import { useCallback, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";

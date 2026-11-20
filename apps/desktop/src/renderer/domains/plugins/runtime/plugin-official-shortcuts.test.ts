@@ -33,6 +33,10 @@ describe("createOfficialShortcutsApi", () => {
 		const api = createOfficialShortcutsApi(assertOfficial, "capability-session");
 
 		expect(api.listAvailableActions()).toEqual([
+			...([1, 2, 3, 4, 5, 6, 7, 8, 9] as const).map((position) => ({
+				id: `switch-space-${position}`,
+				defaultShortcut: `ctrl+${position}`,
+			})),
 			{ id: "new-session", defaultShortcut: "mod+n" },
 			{ id: "open-project", defaultShortcut: "mod+o" },
 			{ id: "open-settings", defaultShortcut: "mod+," },
