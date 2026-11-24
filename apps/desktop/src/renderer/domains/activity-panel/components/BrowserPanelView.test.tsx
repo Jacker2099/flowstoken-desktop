@@ -12,6 +12,8 @@ const labels: BrowserPanelLabels = {
 	reload: "reload",
 	addressPlaceholder: "address",
 	openExternal: "open-external",
+	pickElement: "pick-element",
+	pickElementActive: "picking",
 	empty: "empty",
 	loading: "loading",
 	failed: "failed",
@@ -42,6 +44,8 @@ function renderView(overrides: Partial<BrowserPanelViewProps> = {}): void {
 		onStop: () => undefined,
 		onReload: () => undefined,
 		onOpenExternal: () => undefined,
+		pickerActive: false,
+		onTogglePicker: () => undefined,
 		onRetry: () => undefined,
 		...overrides,
 	};

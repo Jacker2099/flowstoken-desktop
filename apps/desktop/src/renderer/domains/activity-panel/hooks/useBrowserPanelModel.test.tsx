@@ -9,6 +9,19 @@ import { useBrowserPanelModel } from "./useBrowserPanelModel";
 
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
+const pickerMocks = vi.hoisted(() => ({
+	insertImageToken: vi.fn(),
+	insertPlainText: vi.fn(),
+	focusInputEditor: vi.fn(),
+	captureElement: vi.fn(async () => ({ path: "/tmp/element-1.png", width: 100, height: 50 })),
+}));
+
+vi.mock("@domains/conversation/components/input-bar/editor/inputEditorHandle", () => ({
+	insertImageToken: pickerMocks.insertImageToken,
+	insertPlainText: pickerMocks.insertPlainText,
+	focusInputEditor: pickerMocks.focusInputEditor,
+}));
+
 interface FakeGuest {
 	insertCSS: (css: string) => Promise<string>;
 	removeInsertedCSS: (key: string) => Promise<void>;
@@ -98,5 +111,83 @@ describe("browser panel theme injection", () => {
 		act(() => listeners.get("dom-ready")?.());
 		await flushInjection();
 		expect(guest.insertCSS).toHaveBeenCalledWith(":root { color-scheme: dark; }");
+	});
+});
+
+describe("browser panel element picker", () => {
+	function fakePickGuest(pickedElement: unknown) {
+		const calls: string[] = [];
+		return {
+			calls,
+			guest: {
+				insertCSS: vi.fn(async () => "key"),
+				removeInsertedCSS: vi.fn(async () => undefined),
+				getWebContentsId: vi.fn(() => 42),
+				executeJavaScript: vi.fn(async (code: string) => {
+					calls.push(code);
+					// 轮询脚本很短且读取全局变量；注入脚本很长。用长度与内容区分。
+					if (code.length < 200 && code.includes("__vettaPickedElement")) return pickedElement;
+					return true;
+				}),
+			} as unknown as HTMLElement,
+		};
+	}
+
+	function setupCaptureApi() {
+		const vetta = { browser: { captureElement: pickerMocks.captureElement } };
+		Object.defineProperty(window, "vetta", { value: vetta, configurable: true, writable: true });
+	}
+
+	const picked = {
+		url: "https://example.com/",
+		title: "Example",
+		tagName: "BUTTON",
+		id: "cta",
+		classes: ["btn"],
+		selector: "#cta",
+		html: "<button>Go</button>",
+		styles: { display: "block" },
+		rect: { x: 1, y: 2, width: 30, height: 20 },
+	};
+
+	it("injects the picker script when toggled on and the cancel script when toggled off", async () => {
+		setupCaptureApi();
+		const { result } = setup();
+		const { guest, calls } = fakePickGuest(null);
+		attachGuest(result.current, guest);
+		act(() => result.current.onTogglePicker());
+		await flushInjection();
+		expect(result.current.pickerActive).toBe(true);
+		expect(calls.some((code) => code.includes("__vettaPickerCleanup") && code.length > 500)).toBe(true);
+
+		act(() => result.current.onTogglePicker());
+		expect(result.current.pickerActive).toBe(false);
+	});
+
+	it("captures a picked element into the composer as image token plus text block", async () => {
+		setupCaptureApi();
+		vi.useFakeTimers();
+		try {
+			const { result } = setup();
+			const { guest } = fakePickGuest(picked);
+			attachGuest(result.current, guest);
+			act(() => result.current.onTogglePicker());
+			await act(async () => {
+				await Promise.resolve();
+			});
+			await act(async () => {
+				vi.advanceTimersByTime(400);
+				await Promise.resolve();
+				await Promise.resolve();
+			});
+
+			expect(pickerMocks.captureElement).toHaveBeenCalledWith(42, picked.rect);
+			expect(pickerMocks.insertImageToken).toHaveBeenCalledWith("/tmp/element-1.png");
+			expect(pickerMocks.insertPlainText).toHaveBeenCalledWith(expect.stringContaining("Selector: #cta"));
+			expect(pickerMocks.focusInputEditor).toHaveBeenCalled();
+			expect(result.current.pickerActive).toBe(false);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 });

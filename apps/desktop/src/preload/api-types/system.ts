@@ -2,6 +2,20 @@ import type { Transport } from "@vetta/ai";
 import type { GitToolStatus, RuntimeStatus, RuntimesStatus, RuntimeType } from "../../main/runtimes/types.js";
 import type { UserMessageClipboardPasteResult, UserMessageClipboardWriteRequest } from "../../shared/clipboard.js";
 
+export interface DesktopBrowserCaptureResult {
+	readonly path: string;
+	readonly width: number;
+	readonly height: number;
+}
+
+/** Design Mode 元素拾取：对内嵌浏览器 guest 的元素区域截图。 */
+export interface DesktopBrowserApi {
+	readonly captureElement: (
+		webContentsId: number,
+		rect: Readonly<{ x: number; y: number; width: number; height: number }>,
+	) => Promise<DesktopBrowserCaptureResult>;
+}
+
 export interface DesktopShellApi {
 	showInFolder(fullPath: string): Promise<void>;
 	showItemInFolder(fullPath: string): Promise<void>;

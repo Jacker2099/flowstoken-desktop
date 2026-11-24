@@ -34,6 +34,7 @@ import type { DesktopSkillsApi } from "./api-types/skills.js";
 import type { DesktopSpeechInputApi } from "./api-types/speech-input.js";
 import type { DesktopSshApi } from "./api-types/ssh.js";
 import type {
+	DesktopBrowserApi,
 	DesktopClipboardApi,
 	DesktopPermissionsApi,
 	DesktopRuntimesApi,
@@ -121,6 +122,7 @@ export interface DesktopApi {
 	mcp: DesktopMcpApi;
 	media: DesktopMediaApi;
 	settings: DesktopSettingsApi;
+	browser: DesktopBrowserApi;
 	shell: DesktopShellApi;
 	clipboard: DesktopClipboardApi;
 	window: DesktopWindowApi;

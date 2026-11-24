@@ -11,6 +11,7 @@ export function createSystemApi(
 	webUtils: WebUtils,
 ): Pick<
 	DesktopApi,
+	| "browser"
 	| "dialog"
 	| "theme"
 	| "fs"
@@ -32,6 +33,9 @@ export function createSystemApi(
 	| "permissions"
 > {
 	return {
+		browser: {
+			captureElement: (webContentsId, rect) => ipc.invoke("vetta:browser:capture-element", webContentsId, rect),
+		},
 		dialog: {
 			selectFolder: () => ipc.invoke("vetta:dialog:select-folder"),
 			selectFolders: () => ipc.invoke("vetta:dialog:select-folders"),

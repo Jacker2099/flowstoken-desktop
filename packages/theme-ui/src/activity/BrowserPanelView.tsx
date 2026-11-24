@@ -9,6 +9,8 @@ export interface BrowserPanelLabels {
 	reload: string;
 	addressPlaceholder: string;
 	openExternal: string;
+	pickElement: string;
+	pickElementActive: string;
 	empty: string;
 	loading: string;
 	failed: string;
@@ -35,6 +37,8 @@ export interface BrowserPanelViewProps {
 	onStop: () => void;
 	onReload: () => void;
 	onOpenExternal: () => void;
+	pickerActive: boolean;
+	onTogglePicker: () => void;
 	onRetry: () => void;
 }
 
@@ -64,6 +68,8 @@ export function BrowserPanelView({
 	onStop,
 	onReload,
 	onOpenExternal,
+	pickerActive,
+	onTogglePicker,
 	onRetry,
 }: BrowserPanelViewProps): JSX.Element {
 	if (!workspaceId) {
@@ -120,6 +126,15 @@ export function BrowserPanelView({
 					/>
 				</form>
 				<ButtonGroup blur={false} className="shrink-0">
+					<ButtonGroupItem
+						icon={toolbarIcon("icon-[mdi--cursor-default-click-outline]")}
+						title={pickerActive ? labels.pickElementActive : labels.pickElement}
+						aria-label={pickerActive ? labels.pickElementActive : labels.pickElement}
+						aria-pressed={pickerActive}
+						disabled={!currentUrl}
+						className={pickerActive ? "text-blue-500 dark:text-blue-400" : undefined}
+						onClick={onTogglePicker}
+					/>
 					<ButtonGroupItem
 						icon={toolbarIcon("icon-[mdi--open-in-new]")}
 						title={labels.openExternal}

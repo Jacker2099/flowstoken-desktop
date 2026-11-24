@@ -9,6 +9,7 @@ import { registerActionApprovalIpc } from "./action-approval.js";
 import { registerAgentTeamsIpc } from "./agent-teams.js";
 import { registerAppMonitorIpc } from "./app-monitor.js";
 import { registerAppshotIpc } from "./appshot.js";
+import { registerBrowserCaptureIpc } from "./browser-capture.js";
 import { registerClipboardIpc } from "./clipboard.js";
 import { registerConversationTagsIpc } from "./conversation-tags.js";
 import { registerDebugIpc } from "./debug.js";
@@ -59,6 +60,7 @@ interface IpcTeardown {
 	teardownSpeechInput: () => void;
 	teardownThemes: () => void;
 	teardownDialog: () => void;
+	teardownBrowserCapture: () => void;
 	teardownClipboard: () => void;
 	teardownFs: () => void;
 	teardownFileTransfer: () => void;
@@ -112,6 +114,7 @@ export function registerAllIpc(
 		teardownSpeechInput: registerSpeechInputIpc(webContents),
 		teardownThemes: registerThemesIpc(),
 		teardownDialog: registerDialogIpc(),
+		teardownBrowserCapture: registerBrowserCaptureIpc(),
 		teardownClipboard: registerClipboardIpc(),
 		teardownFs: registerFsIpc(),
 		teardownFileTransfer: registerFileTransferIpc(),
@@ -158,6 +161,7 @@ export function teardownAllIpc(teardown: IpcTeardown): void {
 	teardown.teardownSpeechInput();
 	teardown.teardownThemes();
 	teardown.teardownDialog();
+	teardown.teardownBrowserCapture();
 	teardown.teardownClipboard();
 	teardown.teardownFs();
 	teardown.teardownFileTransfer();

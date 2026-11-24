@@ -1,4 +1,9 @@
 import {
+	focusInputEditor,
+	insertImageToken,
+	insertPlainText,
+} from "@domains/conversation/components/input-bar/editor/inputEditorHandle";
+import {
 	browserUrlByWorkspaceAtom,
 	getBrowserUrlForWorkspace,
 	resolvedThemeAtom,
@@ -10,12 +15,21 @@ import { type FormEvent, type Ref, useCallback, useEffect, useMemo, useRef, useS
 import { useTranslation } from "react-i18next";
 import { useActivityWorkspace } from "../registry/context";
 import { browserThemeCss } from "../services/browser-theme-css";
+import {
+	elementPickerCancelScript,
+	elementPickerInjectScript,
+	elementPickerPollScript,
+	formatPickedElementForPrompt,
+	type PickedElement,
+} from "../services/element-picker-script";
 
 /** 所有会话的内置浏览器共享一份持久 cookie/会话，登录一次到处复用。 */
 const BROWSER_PARTITION = "persist:vetta-browser";
 
 /** Electron <webview> 标签运行时方法的最小接口（仅声明本面板用到的）。 */
 interface WebviewElement extends HTMLElement {
+	executeJavaScript(code: string): Promise<unknown>;
+	getWebContentsId(): number;
 	canGoBack(): boolean;
 	canGoForward(): boolean;
 	goBack(): void;
@@ -56,6 +70,8 @@ export interface BrowserPanelModel {
 	onReload: () => void;
 	onOpenExternal: () => void;
 	onRetry: () => void;
+	pickerActive: boolean;
+	onTogglePicker: () => void;
 }
 
 export function useBrowserPanelModel(): BrowserPanelModel {
@@ -205,6 +221,69 @@ export function useBrowserPanelModel(): BrowserPanelModel {
 		if (currentUrl) void window.vetta.shell.openExternal(currentUrl);
 	}, [currentUrl]);
 
+	const [pickerActive, setPickerActive] = useState(false);
+	const pickerTimerRef = useRef<number | null>(null);
+
+	const stopPicker = useCallback((notifyGuest: boolean) => {
+		setPickerActive(false);
+		if (pickerTimerRef.current !== null) {
+			window.clearInterval(pickerTimerRef.current);
+			pickerTimerRef.current = null;
+		}
+		if (notifyGuest) {
+			void webviewRef.current?.executeJavaScript(elementPickerCancelScript()).catch(() => undefined);
+		}
+	}, []);
+
+	// 捕获入库：元素区域截图（主进程）→ 图片 token + 文本引用块进输入框。
+	const handlePickedElement = useCallback((element: PickedElement, webContentsId: number) => {
+		void (async () => {
+			try {
+				const shot = await window.vetta.browser.captureElement(webContentsId, element.rect);
+				insertImageToken(shot.path);
+			} catch {
+				// 元素滚出视口或 guest 已销毁：截图拿不到时仍然送文本，不让拾取白做。
+			}
+			insertPlainText(`${formatPickedElementForPrompt(element)}\n`);
+			focusInputEditor();
+		})();
+	}, []);
+
+	const onTogglePicker = useCallback(() => {
+		const el = webviewRef.current;
+		if (pickerActive) {
+			stopPicker(true);
+			return;
+		}
+		if (!el) return;
+		setPickerActive(true);
+		void el
+			.executeJavaScript(elementPickerInjectScript())
+			.then(() => {
+				const webContentsId = el.getWebContentsId();
+				pickerTimerRef.current = window.setInterval(() => {
+					void el
+						.executeJavaScript(elementPickerPollScript())
+						.then((picked) => {
+							if (picked) {
+								stopPicker(false);
+								handlePickedElement(picked as PickedElement, webContentsId);
+							}
+						})
+						.catch(() => stopPicker(false));
+				}, 300);
+			})
+			.catch(() => setPickerActive(false));
+	}, [pickerActive, stopPicker, handlePickedElement]);
+
+	// 切工作空间时 webview 重挂载，拾取状态随之失效。workspaceId 不直接参与 effect 逻辑，
+	// 但它的变化必须触发这次清理——这是依赖它的唯一原因。
+	// biome-ignore lint/correctness/useExhaustiveDependencies: workspaceId 是重挂载信号，必须触发清理
+	useEffect(() => {
+		stopPicker(false);
+		return () => stopPicker(false);
+	}, [workspaceId, stopPicker]);
+
 	const labels = useMemo(
 		(): BrowserPanelLabels => ({
 			noSession: t("browser.noSession"),
@@ -214,6 +293,8 @@ export function useBrowserPanelModel(): BrowserPanelModel {
 			reload: t("browser.reload"),
 			addressPlaceholder: t("browser.addressPlaceholder"),
 			openExternal: t("browser.openExternal"),
+			pickElement: t("browser.pickElement"),
+			pickElementActive: t("browser.pickElementActive"),
 			empty: t("browser.empty"),
 			loading: t("browser.loading"),
 			failed: t("browser.failed"),
@@ -242,5 +323,7 @@ export function useBrowserPanelModel(): BrowserPanelModel {
 		onReload: () => webviewRef.current?.reload(),
 		onOpenExternal: openExternal,
 		onRetry: retry,
+		pickerActive,
+		onTogglePicker,
 	};
 }

@@ -1,1197 +1,1199 @@
 {
-	"annotations": {
-		"title": "Q&A notes",
-		"ask": "Ask AI",
-		"history": "View Q&A notes",
-		"saved": "View {{count}} Q&A notes",
-		"close": "Close note",
-		"contextHint": "Uses the text conversation up to this message. This separate discussion does not affect the main conversation. Q&A is saved automatically.",
-		"source": "Back to source message",
-		"sourceUnavailable": "The source message is not in the current branch. Saved notes are still available.",
-		"question": "Your question",
-		"send": "Ask",
-		"cancel": "Stop answering",
-		"answering": "Answering… It will continue and save if you close this panel.",
-		"loading": "Loading notes…",
-		"search": "Search questions and answers",
-		"empty": "No Q&A notes found. Select message text and choose Ask AI from the context menu.",
-		"error": "The action could not finish. Your input is preserved. Try again, or check your model settings before asking again.",
-		"reload": "Reload",
-		"retry": "Answer this question again",
-		"length": "This answer reached its length limit. You can ask a follow-up question.",
-		"status": {
-			"failed": "The answer failed. Your question and any received text were saved. Check your model settings and retry.",
-			"cancelled": "Answering stopped. Any received text was saved.",
-			"interrupted": "The previous answer was interrupted. You can retry this question."
-		}
-	},
-	"markdown": {
-		"fileMissing": "File not found: {{path}}",
-		"openFile": "Open",
-		"revealInFinder": "Reveal in Finder",
-		"revealInExplorer": "Show in Explorer",
-		"revealInFileManager": "Show in File Manager",
-		"preview": "Preview",
-		"source": "Source",
-		"run": "Run in separate window",
-		"stop": "Stop",
-		"waiting": "Preview will appear when generation finishes.",
-		"paused": "Preview stopped. Run again to restart the page.",
-		"tooLarge": "This content is too large to preview. You can still view and copy its source.",
-		"failed": "Could not render this content. Its source is shown instead.",
-		"staticHtml": "Static preview. Run JavaScript in a separate window; external resources are unavailable.",
-		"running": "Interactive preview opened in a separate window. Closes after 30 seconds.",
-		"svg": "SVG preview",
-		"html": "HTML preview",
-		"loading": "Preparing preview…",
-		"retry": "Retry",
-		"enlarge": "Enlarge",
-		"save": "Save as",
-		"diagram": "Diagram",
-		"imageFailed": "Could not load image.",
-		"actionFailed": "Action failed. Please retry."
-	},
-	"activityPanel": {
-		"tabs": {
-			"file": "Files",
-			"batchProgress": "Progress",
-			"todo": "Todo",
-			"backgroundTasks": "Background tasks",
-			"debug": "Debug",
-			"knowledgeHistory": "Processing history",
-			"workflow": "Workflows",
-			"plan": "Plan",
-			"ports": "Port forwarding"
-		},
-		"backgroundTasks": {
-			"statusRunning": "Running",
-			"statusCompleted": "Completed",
-			"statusFailed": "Failed",
-			"statusKilled": "Killed",
-			"subagentStatusPending": "Pending",
-			"subagentStatusInterrupted": "Interrupted",
-			"durationSec": "{{sec}}s",
-			"durationMin": "{{min}}m {{sec}}s",
-			"durationHour": "{{hr}}h {{min}}m",
-			"empty": "No background tasks",
-			"clearFinished": "Clear finished ({{count}})",
-			"stop": "Stop"
-		},
-		"mcpTasks": {
-			"statusWorking": "Working",
-			"statusInputRequired": "Waiting for input",
-			"statusCancelled": "Cancelled"
-		},
-		"subagents": {
-			"usage": "{{tokens}} tokens · {{cost}}",
-			"errorPermission": "Permission blocked",
-			"errorContext": "Context limit reached",
-			"errorConnection": "Connection interrupted",
-			"errorExecution": "Run failed"
-		},
-		"batchProgress": {
-			"notFound": "Batch project not found"
-		},
-		"debug": {
-			"toolCalls": "Tool calls",
-			"requestHistory": "Request history"
-		},
-		"todo": {
-			"empty": "No todo items",
-			"headline": "In progress",
-			"allDone": "All done",
-			"progress": "{{done}} of {{total}} done",
-			"statusDone": "Done",
-			"statusInProgress": "In progress",
-			"statusPending": "Pending"
-		},
-		"ports": {
-			"heading": "Remote services",
-			"runningStat": "{{count}} running",
-			"forwardedStat": "{{count}} forwarded",
-			"sectionForwarded": "Forwarded",
-			"sectionRunning": "Running",
-			"manualTitle": "Forward a port",
-			"remotePortLabel": "Remote port",
-			"localPortLabel": "Local port",
-			"empty": "Nothing is running on the remote host yet",
-			"emptyHint": "Start a server on the remote host (for example npm run dev) and it shows up here; click Forward to open it on this machine.",
-			"remotePortPlaceholder": "e.g. 3000",
-			"localPortPlaceholder": "Same",
-			"localPortPrefix": "localhost:",
-			"add": "Forward",
-			"addManual": "Enter a port number",
-			"forward": "Forward",
-			"preview": "Preview",
-			"openExternal": "Open in system browser",
-			"copyAddress": "Copy address",
-			"copied": "Copied",
-			"changeLocalPort": "Change local port",
-			"stop": "Stop forwarding",
-			"retry": "Retry",
-			"refresh": "Scan again",
-			"statusActive": "Forwarded",
-			"statusReconnecting": "Reconnecting",
-			"statusFailed": "Forwarding stopped",
-			"scanUnsupported": "This host has no port scanner available (ss / netstat / lsof). Enter the port number to forward it.",
-			"scanFailed": "Could not read the remote host's ports",
-			"fromOutput": "Task output",
-			"notListening": "Nothing is listening on this port anymore",
-			"publicBind": "Listening on all interfaces: other machines on the remote network can reach it",
-			"justNow": "just now",
-			"terminate": "Stop process",
-			"forceTerminate": "Force stop",
-			"terminateConfirm": "Stop {{name}}?",
-			"terminateStubborn": "{{name}} ignored the stop signal and is still running. Click Force stop to kill it.",
-			"terminateFailed": "Could not stop {{name}}: {{reason}}",
-			"sensitiveToggle": "{{count}} system ports",
-			"sensitiveHint": "Privileged ports (below 1024) and the port this SSH connection uses. Stopping them could drop the connection, so they cannot be stopped from here.",
-			"unnamedToggle": "{{count}} ports with an unknown process",
-			"unnamedHint": "The owning process could not be read, usually because it belongs to another user.",
-			"ephemeralToggle": "{{count}} more ephemeral ports (above 32768)",
-			"invalidPort": "Enter a port number between 1 and 65535"
-		},
-		"toolCalls": {
-			"filterAll": "All",
-			"filterSuccess": "Success",
-			"filterError": "Failed",
-			"noSession": "No active session",
-			"searchPlaceholder": "Search tool name...",
-			"loading": "Loading...",
-			"recordCount": "{{count}} records",
-			"refresh": "Refresh",
-			"empty": "No tool calls yet",
-			"noMatch": "No matches",
-			"args": "Arguments",
-			"result": "Result"
-		},
-		"requestHistory": {
-			"noSession": "No active session",
-			"loading": "Loading...",
-			"requestCount": "{{count}} requests",
-			"refresh": "Refresh",
-			"empty": "After sending a message in debug mode, request history will appear here",
-			"showInFolder": "Reveal on disk"
-		},
-		"schedule": {
-			"statusRunning": "Running",
-			"statusSuccess": "Success",
-			"statusFailed": "Failed",
-			"statusAborted": "Aborted",
-			"unnamedTask": "Unnamed task",
-			"noTasks": "This project has no automation tasks",
-			"overview": "Automation overview",
-			"refresh": "Refresh",
-			"totalTasks": "Total tasks",
-			"enabled": "Enabled",
-			"todayExecutions": "Today",
-			"taskControl": "Task control",
-			"enabledBadge": "Enabled",
-			"pausedBadge": "Paused",
-			"run": "Run",
-			"pause": "Pause",
-			"enable": "Enable",
-			"executionRecords": "Execution records",
-			"noRecords": "No execution records",
-			"statusSkipped": "Skipped",
-			"statusMissed": "Missed"
-		},
-		"htmlPreview": {
-			"title": "HTML preview"
-		},
-		"workflow": {
-			"empty": "No workflows",
-			"noTranscript": "No messages from this workflow yet",
-			"stop": "Stop",
-			"statusQueued": "Queued",
-			"statusPending": "Starting",
-			"statusRunning": "Running",
-			"statusCompleted": "Completed",
-			"statusFailed": "Failed",
-			"statusInterrupted": "Interrupted",
-			"processingTitle": "{{count}} workflow(s) in progress",
-			"doneTitle": "All workflows finished"
-		},
-		"plan": {
-			"headline": "Current plan"
-		}
-	},
-	"fileExplorer": {
-		"display": {
-			"invalidPatterns": "Use up to 100 patterns, each no longer than 1024 characters",
-			"title": "File display settings",
-			"showHidden": "Show dotfiles and folders",
-			"exclude": "Exclude patterns",
-			"excludeHint": "One workspace-relative pattern per line, e.g. **/node_modules or **/*.log. Clear to show all ordinary files.",
-			"iconTheme": "File icon theme",
-			"builtin": "Built-in icons",
-			"unavailable": "Selected theme unavailable (using built-in icons)",
-			"apply": "Apply exclude patterns",
-			"reset": "Restore default display",
-			"saveFailed": "Could not save display settings. Try again."
-		},
-		"clearArtifactsTitle": "Clear artifacts",
-		"clearArtifactsMessage": "This will delete all artifact files under the {{label}} project cwd (session records are kept). This cannot be undone.",
-		"clearArtifactsConfirm": "Clear",
-		"clearArtifactsFailed": "Failed to clear artifacts",
-		"conversationLabel": "\"Conversation\"",
-		"moveFailed": "Move failed",
-		"deleteFailed": "Delete failed",
-		"selectProject": "Select a project to browse files",
-		"fileList": "Project files",
-		"clearArtifacts": "Clear artifacts",
-		"refresh": "Refresh",
-		"newFile": "New file",
-		"newFolder": "New folder",
-		"newMenu": "New",
-		"collapseAll": "Collapse all",
-		"newFileInputLabel": "Enter a new file name",
-		"newFolderInputLabel": "Enter a new folder name",
-		"createAlreadyExists": "A file or folder with this name already exists",
-		"createFailed": "Failed to create item",
-		"invalidName": {
-			"empty": "Name cannot be empty",
-			"dotPath": "Name cannot be . or ..",
-			"pathSeparator": "Name cannot contain path separators",
-			"invalidCharacter": "Name contains characters not allowed on Windows",
-			"reservedName": "This name is reserved on Windows",
-			"trailingCharacter": "Name cannot end with a space or period"
-		},
-		"emptyFolder": "This folder is empty",
-		"openInFinder": "Reveal in Finder",
-		"openInExplorer": "Reveal in Explorer",
-		"copy": "Copy",
-		"paste": "Paste",
-		"copyPath": "Copy path",
-		"copyName": "Copy name",
-		"rename": "Rename",
-		"delete": "Delete",
-		"confirmDeleteTitle": "Confirm delete",
-		"confirmDeleteFolder": "folder",
-		"confirmDeleteFile": "file",
-		"confirmDeletePrefix": "Delete {{type}}",
-		"confirmDeleteSuffix": "?{{folderNote}} This cannot be undone.",
-		"confirmDeleteFolderNote": " All contents inside the folder will be deleted.",
-		"confirmDeleteMultiplePrefix": "Delete these {{count}} items",
-		"confirmDeleteMultipleMore": " and {{count}} more",
-		"confirmDeleteMultipleSuffix": "? This cannot be undone.",
-		"cancel": "Cancel",
-		"transfer": {
-			"title": "Add files to project",
-			"pasteCopyTitle": "Paste files",
-			"pasteMoveTitle": "Move files",
-			"description": "Place {{count}} item(s) in “{{destination}}”",
-			"moveWarning": "Move removes successfully transferred items from their original location.",
-			"conflictLabel": "{{count}} item(s) have name conflicts",
-			"keepBoth": "Keep both",
-			"replace": "Replace existing items",
-			"skip": "Skip conflicting items",
-			"copy": "Copy",
-			"move": "Move",
-			"cancel": "Cancel",
-			"processing": "Processing…",
-			"prepareFailed": "Unable to read dropped files",
-			"commitFailed": "File transfer failed",
-			"failedCount": "{{count}} item(s) failed to transfer"
-		}
-	},
-	"fileEditor": {
-		"loading": "Opening file…",
-		"edit": "Edit",
-		"preview": "Preview",
-		"save": "Save",
-		"saving": "Saving…",
-		"saved": "Saved",
-		"unsaved": "Unsaved changes",
-		"conflict": "Another program changed this file. Reload it, or explicitly overwrite the version on disk.",
-		"reload": "Reload",
-		"overwrite": "Overwrite",
-		"errorTooLarge": "Files larger than 2 MB cannot be edited",
-		"errorPreviewTooLarge": "This file is too large to preview",
-		"errorNotUtf8": "This file is not valid UTF-8 text and cannot be edited",
-		"errorRead": "Unable to read this file",
-		"errorSave": "Unable to save this file. Try again.",
-		"unsupported": "Preview is not supported for this file type",
-		"download": "Download file",
-		"showTree": "Show file tree",
-		"hideTree": "Hide file tree",
-		"locate": "Locate in file tree",
-		"previous": "Previous (←)",
-		"next": "Next (→)",
-		"downloadShort": "Download",
-		"refresh": "Refresh",
-		"close": "Close"
-	},
-	"appshot": {
-		"errorSelfCapture": "Appshot skipped: the frontmost window is FlowsToken itself",
-		"errorNoPermission": "Appshot capture failed: Screen Recording and Accessibility permissions are missing. Grant them in Settings › Permissions",
-		"errorHelperFailed": "Appshot capture failed, please try again"
-	},
-	"askUserQuestion": {
-		"cancelledMessage": "Cancelled by user, not answered",
-		"defaultQuestionLabel": "Question {{number}}"
-	},
-	"mcpElicitation": {
-		"title": "MCP information request",
-		"source": "From {{server}}",
-		"urlNotice": "FlowsToken opens this address in your system browser only after you confirm.",
-		"decline": "Decline",
-		"openAndContinue": "Open and continue",
-		"submit": "Submit",
-		"required": "(required)",
-		"enabled": "Enabled",
-		"disabled": "Disabled",
-		"selectPlaceholder": "Select an option"
-	},
-	"atPanel": {
-		"citeDirectory": "Attach folder",
-		"citeDirectoryHint": "Attach this folder ({{shortcut}})",
-		"emptyDirectory": "Empty directory",
-		"enterDirectory": "Tab to enter",
-		"goUp": "..",
-		"header": "Reference a file or folder",
-		"loading": "Loading...",
-		"noResults": "No matches found",
-		"searchResults": "{{count}} results"
-	},
-	"backgroundTasksBadge": {
-		"runningTasksTooltip": "{{count}} background tasks running"
-	},
-	"bashHeader": {
-		"statusCancelled": "Cancelled: {{short}}",
-		"statusError": "Command failed: {{short}}",
-		"statusPending": "Running: {{short}}",
-		"statusSuccess": "Ran command: {{short}}"
-	},
-	"bashTerminalCard": {
-		"copyCommand": "Copy command",
-		"metaDescription": "Local metadata, UI only, not sent to the model"
-	},
-	"bottomPanel": {
-		"tablist": "Bottom panel tabs",
-		"closeTab": "Close",
-		"tabFailed": "This panel failed to render",
-		"pillsGroup": "Bottom panel",
-		"empty": {
-			"title": "The bottom panel is empty",
-			"description": "Pick a panel to add.",
-			"pickerLabel": "Panels you can add"
-		},
-		"actions": {
-			"add": "New panel",
-			"splitRight": "Split right",
-			"splitDown": "Split down",
-			"splitLimit": "Split limit reached",
-			"collapse": "Collapse bottom panel"
-		},
-		"addMenu": {
-			"builtinGroup": "Built-in",
-			"pluginGroup": "Plugins",
-			"instanceLimit": "Instance limit reached for this panel"
-		},
-		"closeConfirm": {
-			"title": "Close this panel?",
-			"message": "Work in progress inside the panel will be interrupted.",
-			"confirm": "Close"
-		},
-		"terminal": {
-			"title": "Terminal",
-			"exited": "[process exited with code {{code}}]",
-			"previousOutput": "-- output above is from the previous session (process ended) --",
-			"unavailable": "A terminal cannot be started in this environment",
-			"noResize": "This host has no helper installed, so the terminal size is fixed and will not follow the window.",
-			"replayTruncated": "[earlier output omitted]",
-			"closeConfirm": {
-				"title": "Close the terminal?",
-				"message": "“{{process}}” is still running; closing the terminal ends it.",
-				"confirm": "Close and end process"
-			}
-		}
-	},
-	"browser": {
-		"addressPlaceholder": "Enter a URL and press Enter",
-		"back": "Back",
-		"empty": "Click a link in the conversation, or type a URL above",
-		"failed": "Failed to load page",
-		"forward": "Forward",
-		"loading": "Loading…",
-		"noSession": "No active session",
-		"openExternal": "Open in system browser",
-		"reload": "Reload",
-		"retry": "Retry",
-		"stop": "Stop",
-		"tab": "Browser"
-	},
-	"capability": {
-		"network": "Network",
-		"read": "Read",
-		"write": "Write"
-	},
-	"chatExport": {
-		"defaultSessionName": "FlowsToken Session"
-	},
-	"chatView": {
-		"defaultSessionTitle": "FlowsToken Session",
-		"bottomPanelButton": {
-			"closed": "Open bottom panel",
-			"open": "Close bottom panel"
-		},
-		"terminalButton": {
-			"focused": "Terminal",
-			"open": "Open terminal",
-			"unavailable": "Local terminal is unavailable"
-		},
-		"exportButton": {
-			"title": "Export full session as HTML"
-		},
-		"newSessionButton": {
-			"title": "New session"
-		},
-		"panelButton": {
-			"closed": "Open activity panel",
-			"open": "Close activity panel"
-		},
-		"pinButton": {
-			"pinned": "Unpin window",
-			"unpinned": "Pin window (keep on top)"
-		},
-		"remoteBadge": "Remote",
-		"headerActions": {
-			"customize": "Customize header",
-			"topFull": "Header is full",
-			"moveToTop": "Add to header",
-			"moveToTray": "Stow",
-			"adjust": "Rearrange",
-			"done": "Done",
-			"more": "More actions"
-		}
-	},
-	"contextRing": {
-		"tooltip": {
-			"compacting": "Compacting context...",
-			"unknown": "Context window {{window}} (usage unknown)",
-			"usage": "Context {{tokens}} tokens used ({{percent}}%, {{window}} window)"
-		},
-		"details": {
-			"title": "Context composition (latest call)",
-			"actual": "Actual input",
-			"section": "Section",
-			"category": "Category",
-			"tokens": "Tokens",
-			"share": "Share",
-			"unknown": "Unknown",
-			"back": "Back",
-			"unavailableAfterRestart": "No restorable composition details are available for this session. Send another message to generate and save a new report.",
-			"items": "{{count}} items",
-			"unknownItems": "{{count}} unknown",
-			"owner": {
-				"core": "System",
-				"skill": "Skill",
-				"plugin": "Plugin",
-				"mcp": "MCP",
-				"extension": "Extension",
-				"runtime": "Runtime",
-				"user": "User",
-				"unknown": "Unattributed"
-			},
-			"kind": {
-				"instruction": "Instruction",
-				"tool_schema": "Tool schema",
-				"history": "History",
-				"runtime_context": "Runtime context",
-				"user_input": "Current input"
-			},
-			"group": {
-				"instructions": "Core instructions",
-				"capabilities": "Extensions",
-				"tools": "Tools",
-				"conversation": "Conversation",
-				"runtime": "Runtime context"
-			}
-		}
-	},
-	"copyButton": {
-		"copied": "Copied",
-		"label": "Copy"
-	},
-	"dropZone": {
-		"externalRef": "Images are attached automatically; other files are referenced",
-		"internalRef": "Reference from within the project",
-		"releaseToRef": "Release to reference file"
-	},
-	"editDiff": {
-		"anchor": {
-			"badge": "Anchor edit",
-			"delete": "Delete",
-			"insertAfter": "Insert after",
-			"replace": "Replace line",
-			"replaceRange": "Replace range"
-		},
-		"netChangeLabel": "Net {{net}}",
-		"newTextEmpty": "Empty replacement text",
-		"oldTextEmpty": "Empty match text"
-	},
-	"executionModeSelector": {
-		"fullAccess": {
-			"label": "Full access",
-			"title": "Allow full access to the current system"
-		},
-		"sandbox": {
-			"label": "Sandboxed",
-			"title": "Allow restricted access within the workspace only"
-		},
-		"sandboxUnavailable": "{{platform}} sandbox unavailable: {{reason}}",
-		"sandboxUnavailableRemote": "Sandbox is not available for remote projects: it only constrains processes on this computer, and a remote project's commands run on the remote host"
-	},
-	"export": {
-		"shareNavDescription": "shared a session",
-		"shareNavDescriptionWithNickname": "{{nickname}} shared a session"
-	},
-	"filterByTags": {
-		"hitCount": "{{count}} pages matched",
-		"noResults": "No pages matched",
-		"noTitle": "(untitled)"
-	},
-	"guideBadgeSwiper": {
-		"dismissTooltip": "Don't show again",
-		"petFeatureText": "New desktop pet feature — click to enable in settings"
-	},
-	"imagePreview": {
-		"altText": "Loaded image",
-		"imageLabel": "Image",
-		"originalLabel": "Original",
-		"processedLabel": "Model input",
-		"showInFolderButton": "Show original in file manager"
-	},
-	"inputActionBar": {
-		"chip": {
-			"removeTooltip": "Click to remove"
-		},
-		"knowledgeRetrieval": {
-			"label": "Knowledge search",
-			"tooltip": "When on, this turn can call knowledge-base tools and prefers answering from your knowledge base"
-		},
-		"planMode": {
-			"label": "Plan mode"
-		},
-		"goalMode": {
-			"label": "Goal mode"
-		}
-	},
-	"inputBar": {
-		"capsule": {
-			"appshotThumbnailAlt": "Screenshot",
-			"appshotPreview": "Preview screenshot",
-			"appshotIconAlt": "App icon",
-			"removeDefault": "Click to remove",
-			"removeImage": "Remove image",
-			"removeTooltip": "{{path}}\nClick to remove",
-			"activeGroup": "{{count}} plugins",
-			"imageBadge": "Image {{index}}"
-		},
-		"drawer": {
-			"permissionDesc": "Awaiting confirmation",
-			"permissionLabel": "Permission request",
-			"queueDelete": "Remove",
-			"contextCompaction": "Compact context",
-			"queueDesc": "{{count}} queued",
-			"queueEmpty": "No queued messages",
-			"queueLabel": "Queued",
-			"queuePaused": "Last turn was interrupted — queued messages are on hold",
-			"queuePausedDesc": "Paused · {{count}} queued",
-			"queueResume": "Resume sending",
-			"queueSendNow": "Send now"
-		},
-		"permission": {
-			"allow": "Allow once",
-			"allowSession": "Don't ask again this session",
-			"deny": "Deny"
-		},
-		"placeholder": {
-			"defaults": [
-				"Ask FlowsToken, use / for skills, @ to reference files",
-				"Describe the task, press ⏎ to send",
-				"Paste a screenshot or @ a file to get started"
-			],
-			"noSession": "Select or create a session to start",
-			"suggestion": "↵ {{suggestion}}",
-			"thinking": "FlowsToken is thinking…"
-		},
-		"mention": {
-			"trigger": "Mention members",
-			"title": "Mention team members",
-			"hint": "The team lead takes over when nobody is mentioned.",
-			"empty": "This team has no members to mention",
-			"clear": "Clear all",
-			"selected": "{{count}} members"
-		},
-		"toolbar": {
-			"addImage": "Add image",
-			"attachFile": "Attach file reference",
-			"skills": "Skills"
-		},
-		"speech": {
-			"actions": {
-				"start": "Start voice input",
-				"stop": "Stop voice input"
-			},
-			"states": {
-				"loading": "Loading offline speech model…",
-				"stopping": "Finishing speech recognition…"
-			},
-			"errors": {
-				"unsupported": "Voice input currently requires Windows x64",
-				"missing": "The speech model is missing from this installation. Reinstall the app",
-				"integrity": "The bundled speech model is incomplete. Reinstall the app",
-				"recognizer": "Speech recognition failed to start. Click to retry"
-			}
-		},
-		"contextMenu": {
-			"cut": "Cut",
-			"copy": "Copy",
-			"paste": "Paste"
-		},
-		"todo": {
-			"trigger": "To-do",
-			"allDone": "All done",
-			"panelTitle": "To-do list",
-			"openPanel": "Open in panel",
-			"statusDone": "Done",
-			"statusInProgress": "In progress",
-			"statusPending": "Pending"
-		}
-	},
-	"knowledgeTools": {
-		"empty": "No results"
-	},
-	"listTags": {
-		"empty": "The knowledge base has no tags yet",
-		"tagCount": "{{count}} tags total"
-	},
-	"messageCards": {
-		"layoutList": "List",
-		"layoutStacked": "Stacked"
-	},
-	"messageList": {
-		"scrollToBottom": "Scroll to bottom",
-		"userMessage": {
-			"expand": "Expand message",
-			"skillBadge": "Skill",
-			"settingsAssist": {
-				"mcp": "MCP setup assist",
-				"models": "Model setup assist",
-				"knowledge": "Knowledge setup assist",
-				"knowledgeBase": "Knowledge base assist",
-				"batchTasks": "Batch tasks assist",
-				"automation": "Automation assist",
-				"im": "Claw setup assist",
-				"webhook": "Webhook setup assist",
-				"appearance": "Appearance setup assist",
-				"plugins": "Plugin setup assist",
-				"pet": "Pet setup assist",
-				"environment": "Environment setup assist",
-				"shortcuts": "Shortcut setup assist",
-				"agent": "Agent setup assist",
-				"unknown": "Settings setup assist"
-			}
-		},
-		"assistantFoldTip": {
-			"collapseLabel": "Collapse",
-			"expandLabel": "Expand",
-			"streaming": "Processing · {{duration}}",
-			"waiting": "Waiting · {{duration}}",
-			"done": "Done",
-			"work": {
-				"collapse": "Completed",
-				"collapseZero": "Completed",
-				"expand": "Completed",
-				"expandZero": "Completed"
-			}
-		},
-		"assistantMessage": {
-			"predicting": "FlowsToken is predicting…",
-			"processing": "Processing…",
-			"waiting": "Waiting for model response",
-			"preparing": "Preparing request",
-			"creatingSession": "Creating conversation",
-			"fallbackName": "Bestoo"
-		},
-		"duration": {
-			"lessThanSecond": "<1s",
-			"seconds": "{{seconds}}s",
-			"minutes": "{{minutes}}m {{seconds}}s",
-			"hours": "{{hours}}h {{minutes}}m"
-		},
-		"navigation": {
-			"title": "Questions",
-			"count": "{{count}}",
-			"open": "View questions",
-			"close": "Close question list",
-			"searchLabel": "Search questions",
-			"searchPlaceholder": "Search questions",
-			"noResults": "No matching questions",
-			"jumpTo": "Jump to {{preview}}",
-			"emptyUser": "(No text)"
-		},
-		"tokenUsage": {
-			"trigger": "View token usage",
-			"sessionTitle": "Session tokens",
-			"messageTitle": "Current message tokens",
-			"scopeLabel": "Token usage scope",
-			"session": "Session total",
-			"message": "Current message",
-			"modelCalls": "{{count}} model calls",
-			"total": "Total",
-			"prompt": "Prompt tokens",
-			"uncachedInput": "Input",
-			"output": "Output",
-			"cacheRead": "Cache hit",
-			"cacheWrite": "Cache write",
-			"cacheHitRate": "Cache hit rate",
-			"moreParameters": "More parameters",
-			"readCoverage": "Read observation coverage",
-			"writeCoverage": "Write observation coverage",
-			"readOnlyReporting": "Not reported (read-only)",
-			"diagnosticCoverage": "Prefix diagnostic coverage",
-			"stableSystemChars": "Stable system prompt chars",
-			"volatileSystemChars": "Volatile system prompt chars",
-			"historyMessages": "Prefix history messages",
-			"toolCount": "Tool count",
-			"prefixStatus": "Stable prefix status",
-			"changedSegments": "Changed segments",
-			"changedPromptBlocks": "Changed prompt blocks",
-			"changedTools": "Changed tools",
-			"definitionChange": "{{id}} ({{change}})",
-			"changeKinds": {
-				"added": "added",
-				"removed": "removed",
-				"changed": "content changed",
-				"reordered": "reordered"
-			},
-			"segmentSeparator": ", ",
-			"prefixStatuses": {
-				"initial": "First diagnostic",
-				"extended": "Continuously extended",
-				"changed": "Prefix changed",
-				"unknown": "Historical version unavailable"
-			},
-			"prefixSegments": {
-				"stableSystem": "Stable system prompt",
-				"volatileSystem": "Volatile system prompt",
-				"tools": "Tool definitions",
-				"messages": "Message history"
-			},
-			"prefixHash": "Request prefix fingerprint",
-			"unavailable": "Not reported"
-		},
-		"compactionBoundary": "Context compacted",
-		"modelSwitched": "Switched model from {{from}} to {{to}}",
-		"compactionIndicator": "Compacting context...",
-		"compactionStep": {
-			"running": "Compacting context…",
-			"done": "Context compacted",
-			"failed": "Context compaction failed",
-			"tokensBefore": "{{tokens}} tokens before"
-		},
-		"retryIndicator": "Reconnecting ({{attempt}}/{{maxAttempts}})",
-		"retryReason": "Last request failed: {{reason}}",
-		"streamingPhrases": [
-			"FlowsToken is replying…",
-			"Please hold on…",
-			"FlowsToken is working hard…"
-		],
-		"copyButton": {
-			"copied": "Copied",
-			"copy": "Copy"
-		},
-		"errorBlock": {
-			"showDetail": "Show details",
-			"hideDetail": "Hide details",
-			"retriedNote": "Retried {{count}} time(s) automatically",
-			"repeatedNote": "Happened {{count}} times",
-			"diagnostic": {
-				"code": "Error code: {{value}}",
-				"origin": "Origin: {{value}}",
-				"statusCode": "HTTP status: {{value}}",
-				"provider": "Provider: {{value}}",
-				"model": "Model: {{value}}",
-				"providerCode": "Provider error code: {{value}}",
-				"phase": "Phase: {{value}}",
-				"requestId": "Request ID: {{value}}",
-				"retryAfter": "Suggested wait: {{value}} ms"
-			},
-			"kinds": {
-				"rate_limit": {
-					"title": "Too many requests",
-					"hint": "Wait a moment, then send again."
-				},
-				"quota": {
-					"title": "You're out of quota",
-					"hint": "Wait for it to reset, or check your plan and usage.",
-					"action": "View quota"
-				},
-				"network": {
-					"title": "No network connection",
-					"hint": "Check your network or proxy, then send again."
-				},
-				"auth": {
-					"title": "Model key is invalid or expired",
-					"hint": "Update the key in model settings and try again.",
-					"action": "Open settings"
-				},
-				"server": {
-					"title": "The service is having trouble",
-					"hint": "It usually recovers within minutes — try again shortly."
-				},
-				"unknown": {
-					"title": "This reply was interrupted",
-					"hint": "Try sending again; if it keeps happening, copy the details to us."
-				}
-			}
-		},
-		"contextMenu": {
-			"edit": "Edit",
-			"copy": "Copy",
-			"delete": "Delete"
-		},
-		"selectionContextMenu": {
-			"copy": "Copy",
-			"addToInput": "Add to input"
-		},
-		"delete": {
-			"title": "Delete this message?",
-			"body": "Later messages will be kept, but their context will no longer include this message. This cannot be undone.",
-			"streamingBody": "The reply in progress will be stopped first. Later messages will be kept, but their context will no longer include this message. This cannot be undone.",
-			"confirm": "Delete",
-			"suppressForOneMinute": "Don't ask again for one minute"
-		},
-		"editButton": "Edit",
-		"forkButton": "Fork to new session",
-		"forkOrigin": {
-			"label": "Forked from original session",
-			"labelWithPreview": "Forked from message"
-		},
-		"branch": {
-			"prev": "Previous version",
-			"next": "Next version",
-			"position": "Version {{current}} of {{total}}"
-		},
-		"edit": {
-			"pendingHint": "Editing the last message — send to replace the original message and reply",
-			"overwriteDraftTitle": "Overwrite current draft?",
-			"overwriteDraftBody": "The input already has content. Editing the last message will replace your draft.",
-			"overwriteDraftConfirm": "Overwrite and edit"
-		},
-		"interrupt": {
-			"editTitle": "Interrupt this turn?",
-			"editBody": "Editing a past message will stop the reply in progress. Content already produced stays on the original branch.",
-			"switchTitle": "Interrupt this turn?",
-			"switchBody": "Switching branches will stop the reply in progress. Content already produced stays on the original branch.",
-			"forkTitle": "Interrupt this turn?",
-			"forkBody": "Forking to a new session will stop the reply in progress.",
-			"confirm": "Interrupt and continue",
-			"cancel": "Cancel"
-		},
-		"progressGroup": {
-			"fallbackTitle": "Working",
-			"genericDone": "Completed {{count}} steps",
-			"genericRunning": "Working on it",
-			"thinking": "Thinking",
-			"thinkingActivity": "Thinking: {{text}}",
-			"thinkingLabel": "Thinking"
-		},
-		"toolCallGroup": {
-			"completed": "{{count}} tool calls completed",
-			"inProgress": "{{completed}}/{{total}} tool calls",
-			"thinking": "{{count}} thinking steps"
-		}
-	},
-	"modelSelector": {
-		"defaultBadge": "Default",
-		"selectModel": "Select model",
-		"visionBadge": "Supports image input"
-	},
-	"newSession": {
-		"greetingDefault": "How's it going today?",
-		"greetingTitle": "Hi, {{nickname}}",
-		"subtitle": "I can help you get work done. What can I do for you?",
-		"defaultContext": "General conversation",
-		"teamNewWorkspaceContext": "New workspace",
-		"projectContext": "Project · {{name}}",
-		"mascot": {
-			"menuTrigger": "Mascot settings",
-			"hideMascot": "Hide mascot",
-			"showMascot": "Show mascot",
-			"playOnce": "Play the current mascot animation once"
-		},
-		"mario": {
-			"hit": "Bump out the mushroom",
-			"reset": "Put the mushroom back"
-		},
-		"projectSelector": {
-			"placeholder": "Select project",
-			"clear": "No project",
-			"searchPlaceholder": "Search projects",
-			"empty": "No matching project",
-			"newProject": "New project",
-			"openProject": "Open local project",
-			"pendingHint": "pending",
-			"creating": "Creating…",
-			"preparing": "Preparing project",
-			"triggerTitle": "Choose the project for this session",
-			"createFailedTitle": "Failed to create project"
-		},
-		"agentSelector": {
-			"clear": "No agent",
-			"searchPlaceholder": "Search teams and agents",
-			"empty": "No matching teams or agents",
-			"loading": "Loading…",
-			"error": "Failed to load the list",
-			"invalid": "This team is no longer available. Choose another team.",
-			"agentInvalid": "This agent is no longer available. Choose another one.",
-			"retry": "Retry",
-			"memberCount": "{{count}} members",
-			"groupTeams": "Teams",
-			"groupAgents": "Agents",
-			"pick": "Switch agent",
-			"pickTitle": "Pick a team or a single agent for this task",
-			"switchTitle": "Switch the team or agent for this session"
-		}
-	},
-	"planMode": {
-		"entryCard": {
-			"moreSteps": "{{count}} more steps",
-			"open": "View plan",
-			"stepCount": "{{count}} steps",
-			"title": "Implementation plan"
-		},
-		"review": {
-			"approve": "Approve and start",
-			"back": "Back",
-			"commentOnStep": "Comment on step {{number}}",
-			"dismiss": "Decide later",
-			"doneEditing": "Done editing",
-			"edit": "Edit plan",
-			"edited": "Edited",
-			"editorLabel": "Plan text",
-			"feedbackLabel": "What should change?",
-			"feedbackPlaceholder": "For example: leave the database migration alone; split step 3 in two…",
-			"requestChanges": "Request changes",
-			"resetEdits": "Reset",
-			"sendFeedback": "Send feedback",
-			"sendFeedbackWithComments": "Send feedback ({{count}})",
-			"stepCommentPlaceholder": "How should this step change…",
-			"subtitle": "FlowsToken starts working from this plan once you approve it. Nothing is changed before that.",
-			"title": "A plan is waiting for your approval"
-		},
-		"switchFailed": "Couldn't switch plan mode",
-		"toolCard": {
-			"approved": "Approved",
-			"changesRequested": "Sent back for changes",
-			"dismissed": "Not decided yet",
-			"pending": "Waiting for your approval",
-			"title": "Plan"
-		}
-	},
-	"goalMode": {
-		"actions": {
-			"clear": "Clear goal",
-			"pause": "Pause goal",
-			"resume": "Resume goal"
-		},
-		"operationFailed": "Goal operation failed",
-		"summary": {
-			"groupLabel": "Current goal",
-			"usage": "{{tokens}} tokens · {{seconds}} sec · {{count}} continuations"
-		},
-		"status": {
-			"active": "Active",
-			"blocked": "Blocked",
-			"complete": "Complete",
-			"paused": "Paused",
-			"usage_limited": "Usage limited"
-		}
-	},
-	"questionPanel": {
-		"collapse": "Collapse panel",
-		"expand": "Expand panel",
-		"keyboardHint": "↑↓ Navigate · Space select · ←→ Switch · Enter next",
-		"multiSelectHint": "Multiple choice",
-		"otherOption": "Other (custom input)",
-		"otherPlaceholder": "Type your answer…",
-		"nextButton": "Next",
-		"questionTabLabel": "Question {{number}}",
-		"submitButton": "Submit",
-		"title": "FlowsToken needs your choice"
-	},
-	"sandboxGrantsBadge": {
-		"revoke": "Revoke",
-		"revokeAll": "Revoke all",
-		"title": "Sandbox grants for this session",
-		"tooltip": "Sandbox grants for this session"
-	},
-	"sendButton": {
-		"sendMessage": "Send message",
-		"stopGenerating": "Stop generating"
-	},
-	"session": {
-		"emptyMessageLabel": "(image)"
-	},
-	"subagentCard": {
-		"back": "Back to parent session",
-		"open": "View messages from subagent {{name}}",
-		"viewerSubtitle": "Subagent messages (read only)",
-		"waitingForSession": "Subagent session is preparing",
-		"status": {
-			"queued": "Queued",
-			"pending": "Preparing",
-			"running": "Running",
-			"completed": "Completed",
-			"failed": "Failed",
-			"interrupted": "Interrupted"
-		}
-	},
-	"sessionViewer": {
-		"badge": {
-			"liveUpdate": "Live update",
-			"readOnly": "Read-only view"
-		},
-		"emptyState": {
-			"noPath": "No session path specified"
-		},
-		"error": {
-			"loadPrefix": "Failed to load: "
-		},
-		"export": {
-			"defaultTitle": "FlowsToken Session"
-		},
-		"exportButton": {
-			"title": "Export full session as HTML"
-		},
-		"header": {
-			"subtitle": "This session was written by another client; the desktop app only displays it"
-		},
-		"panelToggleButton": {
-			"titleClose": "Close activity panel",
-			"titleOpen": "Open activity panel"
-		}
-	},
-	"skillPromptArea": {
-		"missingBadge": "Not installed",
-		"placeholder": "Type a prompt… use / for skills",
-		"removeSkill": "Click to remove",
-		"removeSkillMissing": "Skill not installed, click to remove",
-		"skillButtonLabel": "Skills",
-		"skillButtonTitle": "Skills"
-	},
-	"slashPanel": {
-		"compaction": {
-			"label": "Compact context",
-			"description": "Compact this chat's context ({{percent}}% used)",
-			"descriptionUnknown": "Compact this chat's context",
-			"queued": "Queued and will run after the current response",
-			"compacting": "Compacting context",
-			"errorTitle": "Couldn't compact context",
-			"errorMessage": "Couldn't queue context compaction. Try again."
-		},
-		"emptyNoMatch": "No matches found",
-		"emptyNoMatchHint": "Try another keyword, or just type your request.",
-		"emptyNoSkills": "No skills available",
-		"emptyNoSkillsHint": "Install a skill from the ability market to call it here.",
-		"moreActions": "More actions",
-		"header": "Select a skill",
-		"resultCount": "{{count}} results",
-		"skillsSection": "Skills",
-		"sourceLabels": {
-			"agentsProject": "Generic · Project",
-			"agentsUser": "Generic",
-			"path": "Custom",
-			"project": "Project",
-			"user": "User",
-			"builtin": "Built-in",
-			"plugin": "Plugin",
-			"market": "Market"
-		},
-		"connectorsSection": "Connected"
-	},
-	"suggestionBubbles": {
-		"sendTooltip": "Click to send this suggestion"
-	},
-	"textPreview": {
-		"characterUnit": "chars",
-		"emptyLabel": "Empty",
-		"lineUnit": "lines"
-	},
-	"thinkingBlock": {
-		"lineCount": "{{count}} lines",
-		"title": "Thinking"
-	},
-	"toolCall": {
-		"error": "Error",
-		"meta": "meta",
-		"metaLabel": "Local metadata, UI only, not sent to the model",
-		"audioPreview": "MCP audio result"
-	},
-	"toolFormat": {
-		"unknown": "Unknown"
-	},
-	"toolLabel": {
-		"alias": {
-			"ask_user_question": "Ask",
-			"bash": "Run command",
-			"current_time": "Current time",
-			"dir_tree": "Directory tree",
-			"dispatch_workflows": "Dispatch workflows",
-			"doc_to_pdf": "To PDF",
-			"easy_use_vettaApp": "Use app",
-			"edit": "Edit",
-			"extract_text_from_img": "Extract text (image)",
-			"extract_text_from_pdf": "Extract text (PDF)",
-			"find": "Find files",
-			"followup_task": "Follow-up task",
-			"glob": "Match files",
-			"grep": "Search",
-			"html_to_pdf": "To PDF",
-			"im_send_attachment": "Send attachment",
-			"interrupt_agent": "Interrupt agent",
-			"invoke_skill": "Run skill",
-			"list_agents": "List agents",
-			"ls": "List",
-			"memory": "Memory",
-			"read": "Read",
-			"render_pdf_page": "Render PDF page",
-			"send_message": "Send message",
-			"shell": "Run command",
-			"spawn_agent": "Spawn agent",
-			"task_output": "Task output",
-			"task_stop": "Stop task",
-			"todo": "Todo",
-			"tool_search": "Tool search",
-			"tree": "Directory tree",
-			"wait_agent": "Wait agent",
-			"write": "Write"
-		},
-		"knowledgeBase": {
-			"filterByTags": "Knowledge · Filter by tags",
-			"listTags": "Knowledge · List tags",
-			"writePage": "Knowledge · Write page"
-		}
-	},
-	"mcpApp": {
-		"externalAccess": "This MCP App declares access to {{count}} external domain(s)",
-		"permissionsDenied": "This MCP App requested device permissions; FlowsToken has not granted them",
-		"title": "MCP App"
-	},
-	"usageBar": {
-		"durationLabel": "Took {{duration}}",
-		"speedLabel": "Speed {{speed}} tok/s"
-	},
-	"writeContent": {
-		"label": "Write content"
-	},
-	"writePage": {
-		"actionCreate": "Create page",
-		"actionUpdate": "Update page",
-		"originalLocation": "Original: {{path}}"
-	}
+  "annotations": {
+    "title": "Q&A notes",
+    "ask": "Ask AI",
+    "history": "View Q&A notes",
+    "saved": "View {{count}} Q&A notes",
+    "close": "Close note",
+    "contextHint": "Uses the text conversation up to this message. This separate discussion does not affect the main conversation. Q&A is saved automatically.",
+    "source": "Back to source message",
+    "sourceUnavailable": "The source message is not in the current branch. Saved notes are still available.",
+    "question": "Your question",
+    "send": "Ask",
+    "cancel": "Stop answering",
+    "answering": "Answering… It will continue and save if you close this panel.",
+    "loading": "Loading notes…",
+    "search": "Search questions and answers",
+    "empty": "No Q&A notes found. Select message text and choose Ask AI from the context menu.",
+    "error": "The action could not finish. Your input is preserved. Try again, or check your model settings before asking again.",
+    "reload": "Reload",
+    "retry": "Answer this question again",
+    "length": "This answer reached its length limit. You can ask a follow-up question.",
+    "status": {
+      "failed": "The answer failed. Your question and any received text were saved. Check your model settings and retry.",
+      "cancelled": "Answering stopped. Any received text was saved.",
+      "interrupted": "The previous answer was interrupted. You can retry this question."
+    }
+  },
+  "markdown": {
+    "fileMissing": "File not found: {{path}}",
+    "openFile": "Open",
+    "revealInFinder": "Reveal in Finder",
+    "revealInExplorer": "Show in Explorer",
+    "revealInFileManager": "Show in File Manager",
+    "preview": "Preview",
+    "source": "Source",
+    "run": "Run in separate window",
+    "stop": "Stop",
+    "waiting": "Preview will appear when generation finishes.",
+    "paused": "Preview stopped. Run again to restart the page.",
+    "tooLarge": "This content is too large to preview. You can still view and copy its source.",
+    "failed": "Could not render this content. Its source is shown instead.",
+    "staticHtml": "Static preview. Run JavaScript in a separate window; external resources are unavailable.",
+    "running": "Interactive preview opened in a separate window. Closes after 30 seconds.",
+    "svg": "SVG preview",
+    "html": "HTML preview",
+    "loading": "Preparing preview…",
+    "retry": "Retry",
+    "enlarge": "Enlarge",
+    "save": "Save as",
+    "diagram": "Diagram",
+    "imageFailed": "Could not load image.",
+    "actionFailed": "Action failed. Please retry."
+  },
+  "activityPanel": {
+    "tabs": {
+      "file": "Files",
+      "batchProgress": "Progress",
+      "todo": "Todo",
+      "backgroundTasks": "Background tasks",
+      "debug": "Debug",
+      "knowledgeHistory": "Processing history",
+      "workflow": "Workflows",
+      "plan": "Plan",
+      "ports": "Port forwarding"
+    },
+    "backgroundTasks": {
+      "statusRunning": "Running",
+      "statusCompleted": "Completed",
+      "statusFailed": "Failed",
+      "statusKilled": "Killed",
+      "subagentStatusPending": "Pending",
+      "subagentStatusInterrupted": "Interrupted",
+      "durationSec": "{{sec}}s",
+      "durationMin": "{{min}}m {{sec}}s",
+      "durationHour": "{{hr}}h {{min}}m",
+      "empty": "No background tasks",
+      "clearFinished": "Clear finished ({{count}})",
+      "stop": "Stop"
+    },
+    "mcpTasks": {
+      "statusWorking": "Working",
+      "statusInputRequired": "Waiting for input",
+      "statusCancelled": "Cancelled"
+    },
+    "subagents": {
+      "usage": "{{tokens}} tokens · {{cost}}",
+      "errorPermission": "Permission blocked",
+      "errorContext": "Context limit reached",
+      "errorConnection": "Connection interrupted",
+      "errorExecution": "Run failed"
+    },
+    "batchProgress": {
+      "notFound": "Batch project not found"
+    },
+    "debug": {
+      "toolCalls": "Tool calls",
+      "requestHistory": "Request history"
+    },
+    "todo": {
+      "empty": "No todo items",
+      "headline": "In progress",
+      "allDone": "All done",
+      "progress": "{{done}} of {{total}} done",
+      "statusDone": "Done",
+      "statusInProgress": "In progress",
+      "statusPending": "Pending"
+    },
+    "ports": {
+      "heading": "Remote services",
+      "runningStat": "{{count}} running",
+      "forwardedStat": "{{count}} forwarded",
+      "sectionForwarded": "Forwarded",
+      "sectionRunning": "Running",
+      "manualTitle": "Forward a port",
+      "remotePortLabel": "Remote port",
+      "localPortLabel": "Local port",
+      "empty": "Nothing is running on the remote host yet",
+      "emptyHint": "Start a server on the remote host (for example npm run dev) and it shows up here; click Forward to open it on this machine.",
+      "remotePortPlaceholder": "e.g. 3000",
+      "localPortPlaceholder": "Same",
+      "localPortPrefix": "localhost:",
+      "add": "Forward",
+      "addManual": "Enter a port number",
+      "forward": "Forward",
+      "preview": "Preview",
+      "openExternal": "Open in system browser",
+      "copyAddress": "Copy address",
+      "copied": "Copied",
+      "changeLocalPort": "Change local port",
+      "stop": "Stop forwarding",
+      "retry": "Retry",
+      "refresh": "Scan again",
+      "statusActive": "Forwarded",
+      "statusReconnecting": "Reconnecting",
+      "statusFailed": "Forwarding stopped",
+      "scanUnsupported": "This host has no port scanner available (ss / netstat / lsof). Enter the port number to forward it.",
+      "scanFailed": "Could not read the remote host's ports",
+      "fromOutput": "Task output",
+      "notListening": "Nothing is listening on this port anymore",
+      "publicBind": "Listening on all interfaces: other machines on the remote network can reach it",
+      "justNow": "just now",
+      "terminate": "Stop process",
+      "forceTerminate": "Force stop",
+      "terminateConfirm": "Stop {{name}}?",
+      "terminateStubborn": "{{name}} ignored the stop signal and is still running. Click Force stop to kill it.",
+      "terminateFailed": "Could not stop {{name}}: {{reason}}",
+      "sensitiveToggle": "{{count}} system ports",
+      "sensitiveHint": "Privileged ports (below 1024) and the port this SSH connection uses. Stopping them could drop the connection, so they cannot be stopped from here.",
+      "unnamedToggle": "{{count}} ports with an unknown process",
+      "unnamedHint": "The owning process could not be read, usually because it belongs to another user.",
+      "ephemeralToggle": "{{count}} more ephemeral ports (above 32768)",
+      "invalidPort": "Enter a port number between 1 and 65535"
+    },
+    "toolCalls": {
+      "filterAll": "All",
+      "filterSuccess": "Success",
+      "filterError": "Failed",
+      "noSession": "No active session",
+      "searchPlaceholder": "Search tool name...",
+      "loading": "Loading...",
+      "recordCount": "{{count}} records",
+      "refresh": "Refresh",
+      "empty": "No tool calls yet",
+      "noMatch": "No matches",
+      "args": "Arguments",
+      "result": "Result"
+    },
+    "requestHistory": {
+      "noSession": "No active session",
+      "loading": "Loading...",
+      "requestCount": "{{count}} requests",
+      "refresh": "Refresh",
+      "empty": "After sending a message in debug mode, request history will appear here",
+      "showInFolder": "Reveal on disk"
+    },
+    "schedule": {
+      "statusRunning": "Running",
+      "statusSuccess": "Success",
+      "statusFailed": "Failed",
+      "statusAborted": "Aborted",
+      "unnamedTask": "Unnamed task",
+      "noTasks": "This project has no automation tasks",
+      "overview": "Automation overview",
+      "refresh": "Refresh",
+      "totalTasks": "Total tasks",
+      "enabled": "Enabled",
+      "todayExecutions": "Today",
+      "taskControl": "Task control",
+      "enabledBadge": "Enabled",
+      "pausedBadge": "Paused",
+      "run": "Run",
+      "pause": "Pause",
+      "enable": "Enable",
+      "executionRecords": "Execution records",
+      "noRecords": "No execution records",
+      "statusSkipped": "Skipped",
+      "statusMissed": "Missed"
+    },
+    "htmlPreview": {
+      "title": "HTML preview"
+    },
+    "workflow": {
+      "empty": "No workflows",
+      "noTranscript": "No messages from this workflow yet",
+      "stop": "Stop",
+      "statusQueued": "Queued",
+      "statusPending": "Starting",
+      "statusRunning": "Running",
+      "statusCompleted": "Completed",
+      "statusFailed": "Failed",
+      "statusInterrupted": "Interrupted",
+      "processingTitle": "{{count}} workflow(s) in progress",
+      "doneTitle": "All workflows finished"
+    },
+    "plan": {
+      "headline": "Current plan"
+    }
+  },
+  "fileExplorer": {
+    "display": {
+      "invalidPatterns": "Use up to 100 patterns, each no longer than 1024 characters",
+      "title": "File display settings",
+      "showHidden": "Show dotfiles and folders",
+      "exclude": "Exclude patterns",
+      "excludeHint": "One workspace-relative pattern per line, e.g. **/node_modules or **/*.log. Clear to show all ordinary files.",
+      "iconTheme": "File icon theme",
+      "builtin": "Built-in icons",
+      "unavailable": "Selected theme unavailable (using built-in icons)",
+      "apply": "Apply exclude patterns",
+      "reset": "Restore default display",
+      "saveFailed": "Could not save display settings. Try again."
+    },
+    "clearArtifactsTitle": "Clear artifacts",
+    "clearArtifactsMessage": "This will delete all artifact files under the {{label}} project cwd (session records are kept). This cannot be undone.",
+    "clearArtifactsConfirm": "Clear",
+    "clearArtifactsFailed": "Failed to clear artifacts",
+    "conversationLabel": "\"Conversation\"",
+    "moveFailed": "Move failed",
+    "deleteFailed": "Delete failed",
+    "selectProject": "Select a project to browse files",
+    "fileList": "Project files",
+    "clearArtifacts": "Clear artifacts",
+    "refresh": "Refresh",
+    "newFile": "New file",
+    "newFolder": "New folder",
+    "newMenu": "New",
+    "collapseAll": "Collapse all",
+    "newFileInputLabel": "Enter a new file name",
+    "newFolderInputLabel": "Enter a new folder name",
+    "createAlreadyExists": "A file or folder with this name already exists",
+    "createFailed": "Failed to create item",
+    "invalidName": {
+      "empty": "Name cannot be empty",
+      "dotPath": "Name cannot be . or ..",
+      "pathSeparator": "Name cannot contain path separators",
+      "invalidCharacter": "Name contains characters not allowed on Windows",
+      "reservedName": "This name is reserved on Windows",
+      "trailingCharacter": "Name cannot end with a space or period"
+    },
+    "emptyFolder": "This folder is empty",
+    "openInFinder": "Reveal in Finder",
+    "openInExplorer": "Reveal in Explorer",
+    "copy": "Copy",
+    "paste": "Paste",
+    "copyPath": "Copy path",
+    "copyName": "Copy name",
+    "rename": "Rename",
+    "delete": "Delete",
+    "confirmDeleteTitle": "Confirm delete",
+    "confirmDeleteFolder": "folder",
+    "confirmDeleteFile": "file",
+    "confirmDeletePrefix": "Delete {{type}}",
+    "confirmDeleteSuffix": "?{{folderNote}} This cannot be undone.",
+    "confirmDeleteFolderNote": " All contents inside the folder will be deleted.",
+    "confirmDeleteMultiplePrefix": "Delete these {{count}} items",
+    "confirmDeleteMultipleMore": " and {{count}} more",
+    "confirmDeleteMultipleSuffix": "? This cannot be undone.",
+    "cancel": "Cancel",
+    "transfer": {
+      "title": "Add files to project",
+      "pasteCopyTitle": "Paste files",
+      "pasteMoveTitle": "Move files",
+      "description": "Place {{count}} item(s) in “{{destination}}”",
+      "moveWarning": "Move removes successfully transferred items from their original location.",
+      "conflictLabel": "{{count}} item(s) have name conflicts",
+      "keepBoth": "Keep both",
+      "replace": "Replace existing items",
+      "skip": "Skip conflicting items",
+      "copy": "Copy",
+      "move": "Move",
+      "cancel": "Cancel",
+      "processing": "Processing…",
+      "prepareFailed": "Unable to read dropped files",
+      "commitFailed": "File transfer failed",
+      "failedCount": "{{count}} item(s) failed to transfer"
+    }
+  },
+  "fileEditor": {
+    "loading": "Opening file…",
+    "edit": "Edit",
+    "preview": "Preview",
+    "save": "Save",
+    "saving": "Saving…",
+    "saved": "Saved",
+    "unsaved": "Unsaved changes",
+    "conflict": "Another program changed this file. Reload it, or explicitly overwrite the version on disk.",
+    "reload": "Reload",
+    "overwrite": "Overwrite",
+    "errorTooLarge": "Files larger than 2 MB cannot be edited",
+    "errorPreviewTooLarge": "This file is too large to preview",
+    "errorNotUtf8": "This file is not valid UTF-8 text and cannot be edited",
+    "errorRead": "Unable to read this file",
+    "errorSave": "Unable to save this file. Try again.",
+    "unsupported": "Preview is not supported for this file type",
+    "download": "Download file",
+    "showTree": "Show file tree",
+    "hideTree": "Hide file tree",
+    "locate": "Locate in file tree",
+    "previous": "Previous (←)",
+    "next": "Next (→)",
+    "downloadShort": "Download",
+    "refresh": "Refresh",
+    "close": "Close"
+  },
+  "appshot": {
+    "errorSelfCapture": "Appshot skipped: the frontmost window is FlowsToken itself",
+    "errorNoPermission": "Appshot capture failed: Screen Recording and Accessibility permissions are missing. Grant them in Settings › Permissions",
+    "errorHelperFailed": "Appshot capture failed, please try again"
+  },
+  "askUserQuestion": {
+    "cancelledMessage": "Cancelled by user, not answered",
+    "defaultQuestionLabel": "Question {{number}}"
+  },
+  "mcpElicitation": {
+    "title": "MCP information request",
+    "source": "From {{server}}",
+    "urlNotice": "FlowsToken opens this address in your system browser only after you confirm.",
+    "decline": "Decline",
+    "openAndContinue": "Open and continue",
+    "submit": "Submit",
+    "required": "(required)",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "selectPlaceholder": "Select an option"
+  },
+  "atPanel": {
+    "citeDirectory": "Attach folder",
+    "citeDirectoryHint": "Attach this folder ({{shortcut}})",
+    "emptyDirectory": "Empty directory",
+    "enterDirectory": "Tab to enter",
+    "goUp": "..",
+    "header": "Reference a file or folder",
+    "loading": "Loading...",
+    "noResults": "No matches found",
+    "searchResults": "{{count}} results"
+  },
+  "backgroundTasksBadge": {
+    "runningTasksTooltip": "{{count}} background tasks running"
+  },
+  "bashHeader": {
+    "statusCancelled": "Cancelled: {{short}}",
+    "statusError": "Command failed: {{short}}",
+    "statusPending": "Running: {{short}}",
+    "statusSuccess": "Ran command: {{short}}"
+  },
+  "bashTerminalCard": {
+    "copyCommand": "Copy command",
+    "metaDescription": "Local metadata, UI only, not sent to the model"
+  },
+  "bottomPanel": {
+    "tablist": "Bottom panel tabs",
+    "closeTab": "Close",
+    "tabFailed": "This panel failed to render",
+    "pillsGroup": "Bottom panel",
+    "empty": {
+      "title": "The bottom panel is empty",
+      "description": "Pick a panel to add.",
+      "pickerLabel": "Panels you can add"
+    },
+    "actions": {
+      "add": "New panel",
+      "splitRight": "Split right",
+      "splitDown": "Split down",
+      "splitLimit": "Split limit reached",
+      "collapse": "Collapse bottom panel"
+    },
+    "addMenu": {
+      "builtinGroup": "Built-in",
+      "pluginGroup": "Plugins",
+      "instanceLimit": "Instance limit reached for this panel"
+    },
+    "closeConfirm": {
+      "title": "Close this panel?",
+      "message": "Work in progress inside the panel will be interrupted.",
+      "confirm": "Close"
+    },
+    "terminal": {
+      "title": "Terminal",
+      "exited": "[process exited with code {{code}}]",
+      "previousOutput": "-- output above is from the previous session (process ended) --",
+      "unavailable": "A terminal cannot be started in this environment",
+      "noResize": "This host has no helper installed, so the terminal size is fixed and will not follow the window.",
+      "replayTruncated": "[earlier output omitted]",
+      "closeConfirm": {
+        "title": "Close the terminal?",
+        "message": "“{{process}}” is still running; closing the terminal ends it.",
+        "confirm": "Close and end process"
+      }
+    }
+  },
+  "browser": {
+    "addressPlaceholder": "Enter a URL and press Enter",
+    "back": "Back",
+    "empty": "Click a link in the conversation, or type a URL above",
+    "failed": "Failed to load page",
+    "forward": "Forward",
+    "loading": "Loading…",
+    "noSession": "No active session",
+    "openExternal": "Open in system browser",
+    "reload": "Reload",
+    "retry": "Retry",
+    "stop": "Stop",
+    "tab": "Browser",
+    "pickElement": "Pick element into input",
+    "pickElementActive": "Picking… click an element to capture, Esc or click again to cancel"
+  },
+  "capability": {
+    "network": "Network",
+    "read": "Read",
+    "write": "Write"
+  },
+  "chatExport": {
+    "defaultSessionName": "FlowsToken Session"
+  },
+  "chatView": {
+    "defaultSessionTitle": "FlowsToken Session",
+    "bottomPanelButton": {
+      "closed": "Open bottom panel",
+      "open": "Close bottom panel"
+    },
+    "terminalButton": {
+      "focused": "Terminal",
+      "open": "Open terminal",
+      "unavailable": "Local terminal is unavailable"
+    },
+    "exportButton": {
+      "title": "Export full session as HTML"
+    },
+    "newSessionButton": {
+      "title": "New session"
+    },
+    "panelButton": {
+      "closed": "Open activity panel",
+      "open": "Close activity panel"
+    },
+    "pinButton": {
+      "pinned": "Unpin window",
+      "unpinned": "Pin window (keep on top)"
+    },
+    "remoteBadge": "Remote",
+    "headerActions": {
+      "customize": "Customize header",
+      "topFull": "Header is full",
+      "moveToTop": "Add to header",
+      "moveToTray": "Stow",
+      "adjust": "Rearrange",
+      "done": "Done",
+      "more": "More actions"
+    }
+  },
+  "contextRing": {
+    "tooltip": {
+      "compacting": "Compacting context...",
+      "unknown": "Context window {{window}} (usage unknown)",
+      "usage": "Context {{tokens}} tokens used ({{percent}}%, {{window}} window)"
+    },
+    "details": {
+      "title": "Context composition (latest call)",
+      "actual": "Actual input",
+      "section": "Section",
+      "category": "Category",
+      "tokens": "Tokens",
+      "share": "Share",
+      "unknown": "Unknown",
+      "back": "Back",
+      "unavailableAfterRestart": "No restorable composition details are available for this session. Send another message to generate and save a new report.",
+      "items": "{{count}} items",
+      "unknownItems": "{{count}} unknown",
+      "owner": {
+        "core": "System",
+        "skill": "Skill",
+        "plugin": "Plugin",
+        "mcp": "MCP",
+        "extension": "Extension",
+        "runtime": "Runtime",
+        "user": "User",
+        "unknown": "Unattributed"
+      },
+      "kind": {
+        "instruction": "Instruction",
+        "tool_schema": "Tool schema",
+        "history": "History",
+        "runtime_context": "Runtime context",
+        "user_input": "Current input"
+      },
+      "group": {
+        "instructions": "Core instructions",
+        "capabilities": "Extensions",
+        "tools": "Tools",
+        "conversation": "Conversation",
+        "runtime": "Runtime context"
+      }
+    }
+  },
+  "copyButton": {
+    "copied": "Copied",
+    "label": "Copy"
+  },
+  "dropZone": {
+    "externalRef": "Images are attached automatically; other files are referenced",
+    "internalRef": "Reference from within the project",
+    "releaseToRef": "Release to reference file"
+  },
+  "editDiff": {
+    "anchor": {
+      "badge": "Anchor edit",
+      "delete": "Delete",
+      "insertAfter": "Insert after",
+      "replace": "Replace line",
+      "replaceRange": "Replace range"
+    },
+    "netChangeLabel": "Net {{net}}",
+    "newTextEmpty": "Empty replacement text",
+    "oldTextEmpty": "Empty match text"
+  },
+  "executionModeSelector": {
+    "fullAccess": {
+      "label": "Full access",
+      "title": "Allow full access to the current system"
+    },
+    "sandbox": {
+      "label": "Sandboxed",
+      "title": "Allow restricted access within the workspace only"
+    },
+    "sandboxUnavailable": "{{platform}} sandbox unavailable: {{reason}}",
+    "sandboxUnavailableRemote": "Sandbox is not available for remote projects: it only constrains processes on this computer, and a remote project's commands run on the remote host"
+  },
+  "export": {
+    "shareNavDescription": "shared a session",
+    "shareNavDescriptionWithNickname": "{{nickname}} shared a session"
+  },
+  "filterByTags": {
+    "hitCount": "{{count}} pages matched",
+    "noResults": "No pages matched",
+    "noTitle": "(untitled)"
+  },
+  "guideBadgeSwiper": {
+    "dismissTooltip": "Don't show again",
+    "petFeatureText": "New desktop pet feature — click to enable in settings"
+  },
+  "imagePreview": {
+    "altText": "Loaded image",
+    "imageLabel": "Image",
+    "originalLabel": "Original",
+    "processedLabel": "Model input",
+    "showInFolderButton": "Show original in file manager"
+  },
+  "inputActionBar": {
+    "chip": {
+      "removeTooltip": "Click to remove"
+    },
+    "knowledgeRetrieval": {
+      "label": "Knowledge search",
+      "tooltip": "When on, this turn can call knowledge-base tools and prefers answering from your knowledge base"
+    },
+    "planMode": {
+      "label": "Plan mode"
+    },
+    "goalMode": {
+      "label": "Goal mode"
+    }
+  },
+  "inputBar": {
+    "capsule": {
+      "appshotThumbnailAlt": "Screenshot",
+      "appshotPreview": "Preview screenshot",
+      "appshotIconAlt": "App icon",
+      "removeDefault": "Click to remove",
+      "removeImage": "Remove image",
+      "removeTooltip": "{{path}}\nClick to remove",
+      "activeGroup": "{{count}} plugins",
+      "imageBadge": "Image {{index}}"
+    },
+    "drawer": {
+      "permissionDesc": "Awaiting confirmation",
+      "permissionLabel": "Permission request",
+      "queueDelete": "Remove",
+      "contextCompaction": "Compact context",
+      "queueDesc": "{{count}} queued",
+      "queueEmpty": "No queued messages",
+      "queueLabel": "Queued",
+      "queuePaused": "Last turn was interrupted — queued messages are on hold",
+      "queuePausedDesc": "Paused · {{count}} queued",
+      "queueResume": "Resume sending",
+      "queueSendNow": "Send now"
+    },
+    "permission": {
+      "allow": "Allow once",
+      "allowSession": "Don't ask again this session",
+      "deny": "Deny"
+    },
+    "placeholder": {
+      "defaults": [
+        "Ask FlowsToken, use / for skills, @ to reference files",
+        "Describe the task, press ⏎ to send",
+        "Paste a screenshot or @ a file to get started"
+      ],
+      "noSession": "Select or create a session to start",
+      "suggestion": "↵ {{suggestion}}",
+      "thinking": "FlowsToken is thinking…"
+    },
+    "mention": {
+      "trigger": "Mention members",
+      "title": "Mention team members",
+      "hint": "The team lead takes over when nobody is mentioned.",
+      "empty": "This team has no members to mention",
+      "clear": "Clear all",
+      "selected": "{{count}} members"
+    },
+    "toolbar": {
+      "addImage": "Add image",
+      "attachFile": "Attach file reference",
+      "skills": "Skills"
+    },
+    "speech": {
+      "actions": {
+        "start": "Start voice input",
+        "stop": "Stop voice input"
+      },
+      "states": {
+        "loading": "Loading offline speech model…",
+        "stopping": "Finishing speech recognition…"
+      },
+      "errors": {
+        "unsupported": "Voice input currently requires Windows x64",
+        "missing": "The speech model is missing from this installation. Reinstall the app",
+        "integrity": "The bundled speech model is incomplete. Reinstall the app",
+        "recognizer": "Speech recognition failed to start. Click to retry"
+      }
+    },
+    "contextMenu": {
+      "cut": "Cut",
+      "copy": "Copy",
+      "paste": "Paste"
+    },
+    "todo": {
+      "trigger": "To-do",
+      "allDone": "All done",
+      "panelTitle": "To-do list",
+      "openPanel": "Open in panel",
+      "statusDone": "Done",
+      "statusInProgress": "In progress",
+      "statusPending": "Pending"
+    }
+  },
+  "knowledgeTools": {
+    "empty": "No results"
+  },
+  "listTags": {
+    "empty": "The knowledge base has no tags yet",
+    "tagCount": "{{count}} tags total"
+  },
+  "messageCards": {
+    "layoutList": "List",
+    "layoutStacked": "Stacked"
+  },
+  "messageList": {
+    "scrollToBottom": "Scroll to bottom",
+    "userMessage": {
+      "expand": "Expand message",
+      "skillBadge": "Skill",
+      "settingsAssist": {
+        "mcp": "MCP setup assist",
+        "models": "Model setup assist",
+        "knowledge": "Knowledge setup assist",
+        "knowledgeBase": "Knowledge base assist",
+        "batchTasks": "Batch tasks assist",
+        "automation": "Automation assist",
+        "im": "Claw setup assist",
+        "webhook": "Webhook setup assist",
+        "appearance": "Appearance setup assist",
+        "plugins": "Plugin setup assist",
+        "pet": "Pet setup assist",
+        "environment": "Environment setup assist",
+        "shortcuts": "Shortcut setup assist",
+        "agent": "Agent setup assist",
+        "unknown": "Settings setup assist"
+      }
+    },
+    "assistantFoldTip": {
+      "collapseLabel": "Collapse",
+      "expandLabel": "Expand",
+      "streaming": "Processing · {{duration}}",
+      "waiting": "Waiting · {{duration}}",
+      "done": "Done",
+      "work": {
+        "collapse": "Completed",
+        "collapseZero": "Completed",
+        "expand": "Completed",
+        "expandZero": "Completed"
+      }
+    },
+    "assistantMessage": {
+      "predicting": "FlowsToken is predicting…",
+      "processing": "Processing…",
+      "waiting": "Waiting for model response",
+      "preparing": "Preparing request",
+      "creatingSession": "Creating conversation",
+      "fallbackName": "Bestoo"
+    },
+    "duration": {
+      "lessThanSecond": "<1s",
+      "seconds": "{{seconds}}s",
+      "minutes": "{{minutes}}m {{seconds}}s",
+      "hours": "{{hours}}h {{minutes}}m"
+    },
+    "navigation": {
+      "title": "Questions",
+      "count": "{{count}}",
+      "open": "View questions",
+      "close": "Close question list",
+      "searchLabel": "Search questions",
+      "searchPlaceholder": "Search questions",
+      "noResults": "No matching questions",
+      "jumpTo": "Jump to {{preview}}",
+      "emptyUser": "(No text)"
+    },
+    "tokenUsage": {
+      "trigger": "View token usage",
+      "sessionTitle": "Session tokens",
+      "messageTitle": "Current message tokens",
+      "scopeLabel": "Token usage scope",
+      "session": "Session total",
+      "message": "Current message",
+      "modelCalls": "{{count}} model calls",
+      "total": "Total",
+      "prompt": "Prompt tokens",
+      "uncachedInput": "Input",
+      "output": "Output",
+      "cacheRead": "Cache hit",
+      "cacheWrite": "Cache write",
+      "cacheHitRate": "Cache hit rate",
+      "moreParameters": "More parameters",
+      "readCoverage": "Read observation coverage",
+      "writeCoverage": "Write observation coverage",
+      "readOnlyReporting": "Not reported (read-only)",
+      "diagnosticCoverage": "Prefix diagnostic coverage",
+      "stableSystemChars": "Stable system prompt chars",
+      "volatileSystemChars": "Volatile system prompt chars",
+      "historyMessages": "Prefix history messages",
+      "toolCount": "Tool count",
+      "prefixStatus": "Stable prefix status",
+      "changedSegments": "Changed segments",
+      "changedPromptBlocks": "Changed prompt blocks",
+      "changedTools": "Changed tools",
+      "definitionChange": "{{id}} ({{change}})",
+      "changeKinds": {
+        "added": "added",
+        "removed": "removed",
+        "changed": "content changed",
+        "reordered": "reordered"
+      },
+      "segmentSeparator": ", ",
+      "prefixStatuses": {
+        "initial": "First diagnostic",
+        "extended": "Continuously extended",
+        "changed": "Prefix changed",
+        "unknown": "Historical version unavailable"
+      },
+      "prefixSegments": {
+        "stableSystem": "Stable system prompt",
+        "volatileSystem": "Volatile system prompt",
+        "tools": "Tool definitions",
+        "messages": "Message history"
+      },
+      "prefixHash": "Request prefix fingerprint",
+      "unavailable": "Not reported"
+    },
+    "compactionBoundary": "Context compacted",
+    "modelSwitched": "Switched model from {{from}} to {{to}}",
+    "compactionIndicator": "Compacting context...",
+    "compactionStep": {
+      "running": "Compacting context…",
+      "done": "Context compacted",
+      "failed": "Context compaction failed",
+      "tokensBefore": "{{tokens}} tokens before"
+    },
+    "retryIndicator": "Reconnecting ({{attempt}}/{{maxAttempts}})",
+    "retryReason": "Last request failed: {{reason}}",
+    "streamingPhrases": [
+      "FlowsToken is replying…",
+      "Please hold on…",
+      "FlowsToken is working hard…"
+    ],
+    "copyButton": {
+      "copied": "Copied",
+      "copy": "Copy"
+    },
+    "errorBlock": {
+      "showDetail": "Show details",
+      "hideDetail": "Hide details",
+      "retriedNote": "Retried {{count}} time(s) automatically",
+      "repeatedNote": "Happened {{count}} times",
+      "diagnostic": {
+        "code": "Error code: {{value}}",
+        "origin": "Origin: {{value}}",
+        "statusCode": "HTTP status: {{value}}",
+        "provider": "Provider: {{value}}",
+        "model": "Model: {{value}}",
+        "providerCode": "Provider error code: {{value}}",
+        "phase": "Phase: {{value}}",
+        "requestId": "Request ID: {{value}}",
+        "retryAfter": "Suggested wait: {{value}} ms"
+      },
+      "kinds": {
+        "rate_limit": {
+          "title": "Too many requests",
+          "hint": "Wait a moment, then send again."
+        },
+        "quota": {
+          "title": "You're out of quota",
+          "hint": "Wait for it to reset, or check your plan and usage.",
+          "action": "View quota"
+        },
+        "network": {
+          "title": "No network connection",
+          "hint": "Check your network or proxy, then send again."
+        },
+        "auth": {
+          "title": "Model key is invalid or expired",
+          "hint": "Update the key in model settings and try again.",
+          "action": "Open settings"
+        },
+        "server": {
+          "title": "The service is having trouble",
+          "hint": "It usually recovers within minutes — try again shortly."
+        },
+        "unknown": {
+          "title": "This reply was interrupted",
+          "hint": "Try sending again; if it keeps happening, copy the details to us."
+        }
+      }
+    },
+    "contextMenu": {
+      "edit": "Edit",
+      "copy": "Copy",
+      "delete": "Delete"
+    },
+    "selectionContextMenu": {
+      "copy": "Copy",
+      "addToInput": "Add to input"
+    },
+    "delete": {
+      "title": "Delete this message?",
+      "body": "Later messages will be kept, but their context will no longer include this message. This cannot be undone.",
+      "streamingBody": "The reply in progress will be stopped first. Later messages will be kept, but their context will no longer include this message. This cannot be undone.",
+      "confirm": "Delete",
+      "suppressForOneMinute": "Don't ask again for one minute"
+    },
+    "editButton": "Edit",
+    "forkButton": "Fork to new session",
+    "forkOrigin": {
+      "label": "Forked from original session",
+      "labelWithPreview": "Forked from message"
+    },
+    "branch": {
+      "prev": "Previous version",
+      "next": "Next version",
+      "position": "Version {{current}} of {{total}}"
+    },
+    "edit": {
+      "pendingHint": "Editing the last message — send to replace the original message and reply",
+      "overwriteDraftTitle": "Overwrite current draft?",
+      "overwriteDraftBody": "The input already has content. Editing the last message will replace your draft.",
+      "overwriteDraftConfirm": "Overwrite and edit"
+    },
+    "interrupt": {
+      "editTitle": "Interrupt this turn?",
+      "editBody": "Editing a past message will stop the reply in progress. Content already produced stays on the original branch.",
+      "switchTitle": "Interrupt this turn?",
+      "switchBody": "Switching branches will stop the reply in progress. Content already produced stays on the original branch.",
+      "forkTitle": "Interrupt this turn?",
+      "forkBody": "Forking to a new session will stop the reply in progress.",
+      "confirm": "Interrupt and continue",
+      "cancel": "Cancel"
+    },
+    "progressGroup": {
+      "fallbackTitle": "Working",
+      "genericDone": "Completed {{count}} steps",
+      "genericRunning": "Working on it",
+      "thinking": "Thinking",
+      "thinkingActivity": "Thinking: {{text}}",
+      "thinkingLabel": "Thinking"
+    },
+    "toolCallGroup": {
+      "completed": "{{count}} tool calls completed",
+      "inProgress": "{{completed}}/{{total}} tool calls",
+      "thinking": "{{count}} thinking steps"
+    }
+  },
+  "modelSelector": {
+    "defaultBadge": "Default",
+    "selectModel": "Select model",
+    "visionBadge": "Supports image input"
+  },
+  "newSession": {
+    "greetingDefault": "How's it going today?",
+    "greetingTitle": "Hi, {{nickname}}",
+    "subtitle": "I can help you get work done. What can I do for you?",
+    "defaultContext": "General conversation",
+    "teamNewWorkspaceContext": "New workspace",
+    "projectContext": "Project · {{name}}",
+    "mascot": {
+      "menuTrigger": "Mascot settings",
+      "hideMascot": "Hide mascot",
+      "showMascot": "Show mascot",
+      "playOnce": "Play the current mascot animation once"
+    },
+    "mario": {
+      "hit": "Bump out the mushroom",
+      "reset": "Put the mushroom back"
+    },
+    "projectSelector": {
+      "placeholder": "Select project",
+      "clear": "No project",
+      "searchPlaceholder": "Search projects",
+      "empty": "No matching project",
+      "newProject": "New project",
+      "openProject": "Open local project",
+      "pendingHint": "pending",
+      "creating": "Creating…",
+      "preparing": "Preparing project",
+      "triggerTitle": "Choose the project for this session",
+      "createFailedTitle": "Failed to create project"
+    },
+    "agentSelector": {
+      "clear": "No agent",
+      "searchPlaceholder": "Search teams and agents",
+      "empty": "No matching teams or agents",
+      "loading": "Loading…",
+      "error": "Failed to load the list",
+      "invalid": "This team is no longer available. Choose another team.",
+      "agentInvalid": "This agent is no longer available. Choose another one.",
+      "retry": "Retry",
+      "memberCount": "{{count}} members",
+      "groupTeams": "Teams",
+      "groupAgents": "Agents",
+      "pick": "Switch agent",
+      "pickTitle": "Pick a team or a single agent for this task",
+      "switchTitle": "Switch the team or agent for this session"
+    }
+  },
+  "planMode": {
+    "entryCard": {
+      "moreSteps": "{{count}} more steps",
+      "open": "View plan",
+      "stepCount": "{{count}} steps",
+      "title": "Implementation plan"
+    },
+    "review": {
+      "approve": "Approve and start",
+      "back": "Back",
+      "commentOnStep": "Comment on step {{number}}",
+      "dismiss": "Decide later",
+      "doneEditing": "Done editing",
+      "edit": "Edit plan",
+      "edited": "Edited",
+      "editorLabel": "Plan text",
+      "feedbackLabel": "What should change?",
+      "feedbackPlaceholder": "For example: leave the database migration alone; split step 3 in two…",
+      "requestChanges": "Request changes",
+      "resetEdits": "Reset",
+      "sendFeedback": "Send feedback",
+      "sendFeedbackWithComments": "Send feedback ({{count}})",
+      "stepCommentPlaceholder": "How should this step change…",
+      "subtitle": "FlowsToken starts working from this plan once you approve it. Nothing is changed before that.",
+      "title": "A plan is waiting for your approval"
+    },
+    "switchFailed": "Couldn't switch plan mode",
+    "toolCard": {
+      "approved": "Approved",
+      "changesRequested": "Sent back for changes",
+      "dismissed": "Not decided yet",
+      "pending": "Waiting for your approval",
+      "title": "Plan"
+    }
+  },
+  "goalMode": {
+    "actions": {
+      "clear": "Clear goal",
+      "pause": "Pause goal",
+      "resume": "Resume goal"
+    },
+    "operationFailed": "Goal operation failed",
+    "summary": {
+      "groupLabel": "Current goal",
+      "usage": "{{tokens}} tokens · {{seconds}} sec · {{count}} continuations"
+    },
+    "status": {
+      "active": "Active",
+      "blocked": "Blocked",
+      "complete": "Complete",
+      "paused": "Paused",
+      "usage_limited": "Usage limited"
+    }
+  },
+  "questionPanel": {
+    "collapse": "Collapse panel",
+    "expand": "Expand panel",
+    "keyboardHint": "↑↓ Navigate · Space select · ←→ Switch · Enter next",
+    "multiSelectHint": "Multiple choice",
+    "otherOption": "Other (custom input)",
+    "otherPlaceholder": "Type your answer…",
+    "nextButton": "Next",
+    "questionTabLabel": "Question {{number}}",
+    "submitButton": "Submit",
+    "title": "FlowsToken needs your choice"
+  },
+  "sandboxGrantsBadge": {
+    "revoke": "Revoke",
+    "revokeAll": "Revoke all",
+    "title": "Sandbox grants for this session",
+    "tooltip": "Sandbox grants for this session"
+  },
+  "sendButton": {
+    "sendMessage": "Send message",
+    "stopGenerating": "Stop generating"
+  },
+  "session": {
+    "emptyMessageLabel": "(image)"
+  },
+  "subagentCard": {
+    "back": "Back to parent session",
+    "open": "View messages from subagent {{name}}",
+    "viewerSubtitle": "Subagent messages (read only)",
+    "waitingForSession": "Subagent session is preparing",
+    "status": {
+      "queued": "Queued",
+      "pending": "Preparing",
+      "running": "Running",
+      "completed": "Completed",
+      "failed": "Failed",
+      "interrupted": "Interrupted"
+    }
+  },
+  "sessionViewer": {
+    "badge": {
+      "liveUpdate": "Live update",
+      "readOnly": "Read-only view"
+    },
+    "emptyState": {
+      "noPath": "No session path specified"
+    },
+    "error": {
+      "loadPrefix": "Failed to load: "
+    },
+    "export": {
+      "defaultTitle": "FlowsToken Session"
+    },
+    "exportButton": {
+      "title": "Export full session as HTML"
+    },
+    "header": {
+      "subtitle": "This session was written by another client; the desktop app only displays it"
+    },
+    "panelToggleButton": {
+      "titleClose": "Close activity panel",
+      "titleOpen": "Open activity panel"
+    }
+  },
+  "skillPromptArea": {
+    "missingBadge": "Not installed",
+    "placeholder": "Type a prompt… use / for skills",
+    "removeSkill": "Click to remove",
+    "removeSkillMissing": "Skill not installed, click to remove",
+    "skillButtonLabel": "Skills",
+    "skillButtonTitle": "Skills"
+  },
+  "slashPanel": {
+    "compaction": {
+      "label": "Compact context",
+      "description": "Compact this chat's context ({{percent}}% used)",
+      "descriptionUnknown": "Compact this chat's context",
+      "queued": "Queued and will run after the current response",
+      "compacting": "Compacting context",
+      "errorTitle": "Couldn't compact context",
+      "errorMessage": "Couldn't queue context compaction. Try again."
+    },
+    "emptyNoMatch": "No matches found",
+    "emptyNoMatchHint": "Try another keyword, or just type your request.",
+    "emptyNoSkills": "No skills available",
+    "emptyNoSkillsHint": "Install a skill from the ability market to call it here.",
+    "moreActions": "More actions",
+    "header": "Select a skill",
+    "resultCount": "{{count}} results",
+    "skillsSection": "Skills",
+    "sourceLabels": {
+      "agentsProject": "Generic · Project",
+      "agentsUser": "Generic",
+      "path": "Custom",
+      "project": "Project",
+      "user": "User",
+      "builtin": "Built-in",
+      "plugin": "Plugin",
+      "market": "Market"
+    },
+    "connectorsSection": "Connected"
+  },
+  "suggestionBubbles": {
+    "sendTooltip": "Click to send this suggestion"
+  },
+  "textPreview": {
+    "characterUnit": "chars",
+    "emptyLabel": "Empty",
+    "lineUnit": "lines"
+  },
+  "thinkingBlock": {
+    "lineCount": "{{count}} lines",
+    "title": "Thinking"
+  },
+  "toolCall": {
+    "error": "Error",
+    "meta": "meta",
+    "metaLabel": "Local metadata, UI only, not sent to the model",
+    "audioPreview": "MCP audio result"
+  },
+  "toolFormat": {
+    "unknown": "Unknown"
+  },
+  "toolLabel": {
+    "alias": {
+      "ask_user_question": "Ask",
+      "bash": "Run command",
+      "current_time": "Current time",
+      "dir_tree": "Directory tree",
+      "dispatch_workflows": "Dispatch workflows",
+      "doc_to_pdf": "To PDF",
+      "easy_use_vettaApp": "Use app",
+      "edit": "Edit",
+      "extract_text_from_img": "Extract text (image)",
+      "extract_text_from_pdf": "Extract text (PDF)",
+      "find": "Find files",
+      "followup_task": "Follow-up task",
+      "glob": "Match files",
+      "grep": "Search",
+      "html_to_pdf": "To PDF",
+      "im_send_attachment": "Send attachment",
+      "interrupt_agent": "Interrupt agent",
+      "invoke_skill": "Run skill",
+      "list_agents": "List agents",
+      "ls": "List",
+      "memory": "Memory",
+      "read": "Read",
+      "render_pdf_page": "Render PDF page",
+      "send_message": "Send message",
+      "shell": "Run command",
+      "spawn_agent": "Spawn agent",
+      "task_output": "Task output",
+      "task_stop": "Stop task",
+      "todo": "Todo",
+      "tool_search": "Tool search",
+      "tree": "Directory tree",
+      "wait_agent": "Wait agent",
+      "write": "Write"
+    },
+    "knowledgeBase": {
+      "filterByTags": "Knowledge · Filter by tags",
+      "listTags": "Knowledge · List tags",
+      "writePage": "Knowledge · Write page"
+    }
+  },
+  "mcpApp": {
+    "externalAccess": "This MCP App declares access to {{count}} external domain(s)",
+    "permissionsDenied": "This MCP App requested device permissions; FlowsToken has not granted them",
+    "title": "MCP App"
+  },
+  "usageBar": {
+    "durationLabel": "Took {{duration}}",
+    "speedLabel": "Speed {{speed}} tok/s"
+  },
+  "writeContent": {
+    "label": "Write content"
+  },
+  "writePage": {
+    "actionCreate": "Create page",
+    "actionUpdate": "Update page",
+    "originalLocation": "Original: {{path}}"
+  }
 }
