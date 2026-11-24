@@ -26,6 +26,11 @@
 		}
 	},
 	"markdown": {
+		"fileMissing": "文件不存在：{{path}}",
+		"openFile": "打开",
+		"revealInFinder": "在访达中显示",
+		"revealInExplorer": "在资源管理器中显示",
+		"revealInFileManager": "在文件管理器中显示",
 		"preview": "预览",
 		"source": "源码",
 		"run": "在独立窗口运行",
@@ -549,8 +554,7 @@
 	},
 	"guideBadgeSwiper": {
 		"dismissTooltip": "不再提示",
-		"petFeatureText": "新增桌宠功能，点击前往设置开启",
-		"quickPanelText": "FlowsToken 支持快捷面板，点击前往设置开启"
+		"petFeatureText": "新增桌宠功能，点击前往设置开启"
 	},
 	"imagePreview": {
 		"altText": "读取的图片",
@@ -1009,6 +1013,8 @@
 		}
 	},
 	"questionPanel": {
+		"collapse": "收起面板",
+		"expand": "展开面板",
 		"keyboardHint": "↑↓ 选择 · 空格选中 · ←→ 切换 · Enter 下一题",
 		"multiSelectHint": "可多选",
 		"otherOption": "其它（自定义输入）",

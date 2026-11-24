@@ -26,6 +26,11 @@
 		}
 	},
 	"markdown": {
+		"fileMissing": "File not found: {{path}}",
+		"openFile": "Open",
+		"revealInFinder": "Reveal in Finder",
+		"revealInExplorer": "Show in Explorer",
+		"revealInFileManager": "Show in File Manager",
 		"preview": "Preview",
 		"source": "Source",
 		"run": "Run in separate window",
@@ -549,8 +554,7 @@
 	},
 	"guideBadgeSwiper": {
 		"dismissTooltip": "Don't show again",
-		"petFeatureText": "New desktop pet feature — click to enable in settings",
-		"quickPanelText": "FlowsToken now has a Quick Panel — click to set it up"
+		"petFeatureText": "New desktop pet feature — click to enable in settings"
 	},
 	"imagePreview": {
 		"altText": "Loaded image",
@@ -1009,6 +1013,8 @@
 		}
 	},
 	"questionPanel": {
+		"collapse": "Collapse panel",
+		"expand": "Expand panel",
 		"keyboardHint": "↑↓ Navigate · Space select · ←→ Switch · Enter next",
 		"multiSelectHint": "Multiple choice",
 		"otherOption": "Other (custom input)",

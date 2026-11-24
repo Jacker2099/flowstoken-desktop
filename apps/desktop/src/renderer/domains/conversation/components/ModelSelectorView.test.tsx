@@ -241,7 +241,7 @@ it("preserves the tab being browsed during catalog refresh and follows explicit 
 	const { rerender } = render(<ModelSelectorView {...props} />);
 	await user.click(screen.getByRole("button", { name: "Auto" }));
 	await user.click(await screen.findByRole("button", { name: "Official" }));
-	expect(screen.getByRole("menuitem", { name: "Claude" })).toBeTruthy();
+	expect(screen.getByRole("menuitem", { name: /^Claude\b/ })).toBeTruthy();
 
 	// Fetching a fresh catalog recreates its arrays without changing the selected model.
 	rerender(
@@ -251,17 +251,17 @@ it("preserves the tab being browsed during catalog refresh and follows explicit 
 			groups={props.groups.map((group) => ({ ...group, models: [...group.models] }))}
 		/>,
 	);
-	expect(screen.getByRole("menuitem", { name: "Claude" })).toBeTruthy();
-	expect(screen.queryByRole("menuitem", { name: "Auto" })).toBeNull();
+	expect(screen.getByRole("menuitem", { name: /^Claude\b/ })).toBeTruthy();
+	expect(screen.queryByRole("menuitem", { name: /^Auto\b/ })).toBeNull();
 
 	// An explicit selection still selects the corresponding tab, as before.
 	rerender(<ModelSelectorView {...props} selectedModel={official.key} selectedOption={official} initialTab="vip" />);
 	rerender(<ModelSelectorView {...props} />);
-	await waitFor(() => expect(screen.getByRole("menuitem", { name: "Auto" })).toBeTruthy());
+	await waitFor(() => expect(screen.getByRole("menuitem", { name: /^Auto\b/ })).toBeTruthy());
 
 	await user.click(screen.getByRole("button", { name: "Official" }));
 	rerender(<ModelSelectorView {...props} tabs={props.tabs?.filter((tab) => tab.id !== "vip")} />);
-	await waitFor(() => expect(screen.getByRole("menuitem", { name: "Auto" })).toBeTruthy());
+	await waitFor(() => expect(screen.getByRole("menuitem", { name: /^Auto\b/ })).toBeTruthy());
 });
 
 describe("ModelSelectorView upstream controls", () => {
@@ -485,7 +485,7 @@ describe("compact catalog interactions", () => {
 		await waitFor(() => expect(button.title).toContain(refreshLabels.refreshFailed));
 		expect(screen.getByRole("status").textContent).toBe(refreshLabels.refreshFailed);
 		expect(props.onModelSelect).not.toHaveBeenCalled();
-		expect(screen.getByRole("menuitem", { name: "Alpha" })).toBeTruthy();
+		expect(screen.getByRole("menuitem", { name: /^Alpha\b/ })).toBeTruthy();
 	});
 
 	it("handles valid prototype-like billing names without inventing inherited recommendation or vendor data", async () => {
@@ -501,7 +501,7 @@ describe("compact catalog interactions", () => {
 			/>,
 		);
 		await user.click(screen.getByRole("button", { name: "Alpha" }));
-		expect(await screen.findByRole("menuitem", { name: "Alpha" })).toBeTruthy();
+		expect(await screen.findByRole("menuitem", { name: /^Alpha\b/ })).toBeTruthy();
 		expect(screen.queryByRole("button", { name: /recommendation/ })).toBeNull();
 	});
 	it("filters a real all billing tab by providers rather than its reserved-looking name", async () => {
@@ -518,12 +518,12 @@ describe("compact catalog interactions", () => {
 			/>,
 		);
 		await user.click(screen.getByRole("button", { name: "Alpha" }));
-		expect(await screen.findByRole("menuitem", { name: "Alpha" })).toBeTruthy();
-		expect(screen.queryByRole("menuitem", { name: "Beta" })).toBeNull();
+		expect(await screen.findByRole("menuitem", { name: /^Alpha\b/ })).toBeTruthy();
+		expect(screen.queryByRole("menuitem", { name: /^Beta\b/ })).toBeNull();
 		await user.click(screen.getByRole("button", { name: "Every group" }));
 		// 三栏布局下第二栏只列当前服务商；切到 Second group 才能看到它的模型。
 		await user.click(screen.getByRole("menuitem", { name: "Second group" }));
-		expect(screen.getByRole("menuitem", { name: "Beta" })).toBeTruthy();
+		expect(screen.getByRole("menuitem", { name: /^Beta\b/ })).toBeTruthy();
 	});
 
 	it("keeps a valid browsing tab when the server adds and reorders groups, then safely follows its removal", async () => {
@@ -535,7 +535,7 @@ describe("compact catalog interactions", () => {
 		const newTab = { id: "new", label: "Newly added", providers: ["group-a"] };
 		rerender(<ModelSelectorView {...props} tabs={[newTab, ...props.tabs!]} />);
 		expect(screen.getByRole("button", { name: "Second" }).getAttribute("aria-current")).toBe("page");
-		expect(screen.getByRole("menuitem", { name: "Beta" })).toBeTruthy();
+		expect(screen.getByRole("menuitem", { name: /^Beta\b/ })).toBeTruthy();
 		rerender(<ModelSelectorView {...props} tabs={[newTab, props.tabs![0]]} />);
 		await waitFor(() =>
 			expect(screen.getByRole("button", { name: "Newly added" }).getAttribute("aria-current")).toBe("page"),

@@ -1158,6 +1158,16 @@
   "noArchivedProjects": "No archived projects",
   "unarchive": "Unarchive",
   "deleteProject": "Delete",
+  "archivedSelectAll": "Select all",
+  "archivedSelectProject": "Select {{name}}",
+  "archivedSelectedCount": "{{count}} selected",
+  "archivedClearSelection": "Clear selection",
+  "archivedUnarchiveSelected": "Unarchive selected",
+  "archivedDeleteSelected": "Delete selected",
+  "archivedDeleteSelectedConfirm": "Delete Archived Projects",
+  "archivedDeleteSelectedMessage_one": "Permanently remove {{count}} selected project from the archive list? Files on disk are not deleted.",
+  "archivedDeleteSelectedMessage_other": "Permanently remove {{count}} selected projects from the archive list? Files on disk are not deleted.",
+  "archivedBatchFailed": "{{count}} could not be processed. You can try again.",
   "appearanceTitle": "Appearance",
   "generalTitle": "General",
   "modelTitle": "Model",
@@ -1182,8 +1192,6 @@
   "themeSystem": "System",
   "uiThemeDefault": "Default theme",
   "uiThemeDefaultHint": "Use the standard desktop interface",
-  "uiThemeXianxia": "Xianxia theme",
-  "uiThemeXianxiaHint": "Use the Xianxia-styled interface",
   "uiThemeUnavailable": "Coming soon",
   "colorThemes": {
     "mono": "Default",
@@ -1210,15 +1218,6 @@
   "resetShortcuts": "Reset shortcuts",
   "shortcutPlaceholder": "Press shortcut...",
   "shortcutHint": "Click the shortcut area, then press the new key combination to record. Changes take effect immediately, no restart needed.",
-  "quickPanelTrigger": "Trigger",
-  "quickPanelTriggerDescription": "Double-tap a modifier key to summon the quick panel system-wide",
-  "quickPanelTriggerHintMac": "First time: grant FlowsToken access in System Settings › Privacy & Security › Input Monitoring",
-  "quickPanelTriggerNone": "Disabled",
-  "quickPanelTriggerDoubleTap": "Double-tap {{key}}",
-  "quickPanelBehavior": "After Send",
-  "quickPanelBehaviorDescription": "What to do after sending from the quick panel",
-  "quickPanelBehaviorForeground": "Open the main window and jump to the new session",
-  "quickPanelBehaviorBackground": "Run in the background, just close the panel",
   "appshotGesture": "Trigger Shortcut",
   "appshotGestureDescription": "Hold both sides of the same modifier key for about 0.25s to attach the frontmost window's screenshot and text for the AI. First use requires Screen Recording and Accessibility access in System Settings.",
   "appshotGestureBothShift": "Hold both {{key}} keys",
@@ -1243,6 +1242,7 @@
   "onboardingAllGranted": "All permissions granted",
   "onboardingDragError": "Drag failed: the FlowsToken Computer Use helper app could not be found. Please rebuild or reinstall the app",
   "tabGeneral": "General",
+  "tabLauncher": "Launcher",
   "tabAppearance": "Appearance",
   "tabContext": "Agent",
   "tabModels": "Models",
@@ -1261,6 +1261,8 @@
   "tabRemote": "Remote access",
   "section_remote-pairing": "Add a phone",
   "section_general-basics": "Basics",
+  "section_launcher-features": "What it does",
+  "section_launcher-shortcut": "Shortcut",
   "section_general-notifications": "Notifications",
   "section_general-network": "Network proxy",
   "section_general-app": "App",
@@ -1295,6 +1297,12 @@
   "chatAppearanceBackground": "Chat background",
   "userBubbleShape": "Bubble shape",
   "userBubbleColor": "Bubble color",
+  "userBubbleColorCustom": "Custom",
+  "userBubbleColorValueInput": "Color value",
+  "userBubbleColorInvalid": "Unrecognized color",
+  "userBubbleColorHue": "Hue",
+  "userBubbleColorArea": "Saturation and brightness",
+  "userBubbleColorEyedropper": "Pick a color from screen",
   "userBubbleWeight": "Message font weight",
   "userBubbleWeights": {
     "default": "Default",
@@ -1360,7 +1368,6 @@
   "section_imbridge-logs": "Live Logs",
   "section_webhook-channels": "Channel List",
   "section_shortcuts-global": "Global Shortcuts",
-  "section_shortcuts-quickpanel": "Quick Panel",
   "section_appshot-gesture": "Trigger Shortcut",
   "section_appshot-permissions": "Permissions",
   "section_archived-list": "Archived List",
@@ -1372,8 +1379,9 @@
   "section_knowledge-actions": "Manual Actions",
   "section_pet-display": "Display & Window",
   "section_pet-behavior": "Behavior",
+  "section_pet-actions": "Actions",
+  "section_pet-tips": "How to interact",
   "section_pet-decoration": "Decorations",
-  "section_pet-bubble": "Bubble Style",
   "section_pet-developer": "Developer",
   "updaterChecking": "Checking...",
   "appVersion": "Current Version",
@@ -1593,7 +1601,6 @@
       },
       "shortcuts": {
         "list": "Show current global shortcuts",
-        "quickpanel": "Adjust quick panel related settings",
         "reset": "Reset shortcuts to defaults"
       },
       "agent": {
@@ -1742,8 +1749,44 @@
   "shortcutOpenProjectDesc": "Select and open a project folder",
   "shortcutOpenSettingsLabel": "Open Settings",
   "shortcutOpenSettingsDesc": "Open the settings page",
-  "shortcutOpenCommandMenuLabel": "Open command menu",
+  "shortcutOpenCommandMenuLabel": "Open launcher",
   "shortcutOpenCommandMenuDesc": "Centered palette for projects, sessions, abilities, settings and plugin views",
+  "launcher": {
+    "title": "Launcher",
+    "subtitle": "One entry point, always a keystroke away. Jump back into running sessions, find any project or setting, or start a new conversation without leaving the keyboard.",
+    "pressBefore": "Press",
+    "pressAfter": "anywhere in the app to open it",
+    "tryNow": "Try it now",
+    "preview": {
+      "waitingSession": "Refactor the sign-in flow",
+      "waitingMeta": "2 min ago",
+      "runningSession": "Draft this week's release notes",
+      "runningMeta": "Just now",
+      "recentProject": "my-website",
+      "recentMeta": "Project"
+    },
+    "features": {
+      "active": {
+        "title": "Sessions in progress",
+        "description": "Sessions that need you, are running, or just finished come first"
+      },
+      "search": {
+        "title": "Search everything",
+        "description": "Projects, sessions, abilities and settings in a few keystrokes"
+      },
+      "newSession": {
+        "title": "Start right away",
+        "description": "Open a new session without hunting for a button"
+      },
+      "plugins": {
+        "title": "Plugin views",
+        "description": "Pages from your installed plugins open from here too"
+      }
+    },
+    "shortcutTitle": "Open the launcher",
+    "shortcutDescription": "Works anywhere in the app. Press it again or hit Esc to close",
+    "sidebarHint": "The search button at the top of the sidebar opens the launcher too"
+  },
   "shortcutOpenModelSelectorLabel": "Open model menu",
   "shortcutOpenModelSelectorDesc": "Open the model menu in the input to pick model, reasoning and sandbox access; press again to close.",
   "shortcutSaveFileLabel": "Save File",
@@ -2053,154 +2096,6 @@
   "bound": "Bound",
   "permDiskFullAccess": "Full Disk Access",
   "permDiskFullAccessDesc": "Allows FlowsToken to read/write files outside the project directory.",
-  "tabAchievements": "Achievements",
-  "achievement": {
-    "title": "Achievements",
-    "subtitle": "Progress through nine stages and explore badges earned and yet to be unlocked.",
-    "setSelector": "Badge series",
-    "sets": {
-      "fanren": "A Record of a Mortal's Journey",
-      "classic": "Classic badges"
-    },
-    "setSubtitles": {
-      "fanren": "Advance through the fifteen canonical cultivation realms and view current and upcoming realm badges.",
-      "classic": "Progress through nine stages and explore badges earned and yet to be unlocked."
-    },
-    "dragHint": "Drag or scroll to view all achievements",
-    "previous": "View previous achievement",
-    "next": "View next achievement",
-    "current": "Current achievement",
-    "stage": "Stage {{current}} / {{total}}",
-    "stageProgress": "Stage progress",
-    "startingPoint": "Starting stage",
-    "completed": "Completed",
-    "inProgress": "In progress",
-    "targetValue": "Target: {{target}}",
-    "promotion": {
-      "title": "Achievement Unlocked",
-      "stageName": "Promoted to “{{name}}”"
-    },
-    "metrics": {
-      "activeTime": "Active usage",
-      "activeStreak": "Active streak",
-      "todayActiveTime": "Today active",
-      "todayMessages": "Today messages",
-      "sessions": "Interactive sessions",
-      "turns": "Conversation turns",
-      "messages": "Completed messages",
-      "longestConversation": "Longest conversation",
-      "tools": "Completed tool calls",
-      "tokens": "Input/output tokens",
-      "projects": "Projects / KBs",
-      "fileOperations": "File operations",
-      "batchRuns": "Batch runs",
-      "automationRuns": "Automation runs"
-    },
-    "durationMinutes": "{{count}} min",
-    "durationHours": "{{count}} hr",
-    "durationHoursMinutes": "{{hours}} hr {{minutes}} min",
-    "days": "{{count}} day(s)",
-    "longestConversationValue": "{{turns}} turns / {{messages}} messages",
-    "projectsValue": "{{projects}} projects / {{kb}} KBs",
-    "stages": {
-      "awakeningSpark": {
-        "name": "Spark of Awakening",
-        "meaning": "Commemorates the intellectual awakening of the New Culture and May Fourth movements, honoring those who spread Marxism and symbolizing the spark that broke old thinking and inspired national renewal."
-      },
-      "redBoatVoyage": {
-        "name": "Red Boat Sets Sail",
-        "meaning": "Traces the Red Boat spirit and the founding of the Party, symbolizing the courage to lead, loyalty to the people, and readiness to shoulder a historic mission."
-      },
-      "jinggangFire": {
-        "name": "Jinggang Spark",
-        "meaning": "Carries forward the spirit of August First, Jinggangshan, and the Soviet areas, symbolizing roots among the people, hard struggle, and revolutionary resolve."
-      },
-      "longMarch": {
-        "name": "The Long March",
-        "meaning": "Honors the Long March spirit and the heroic defense of conviction in desperate conditions, symbolizing courage, unity, and unwavering faith."
-      },
-      "yananBeacon": {
-        "name": "Yan'an Beacon",
-        "meaning": "Upholds the Yan'an spirit and the wartime pursuit of truth and people-centered culture, symbolizing realism, service to the people, and self-reliance."
-      },
-      "governanceTest": {
-        "name": "The Governing Test",
-        "meaning": "Recalls the Xibaipo spirit and the call to remain vigilant and modest, symbolizing clear-minded governance, humility, and service to the people."
-      },
-      "constructionGlory": {
-        "name": "Blueprint of Construction",
-        "meaning": "Honors the builders of socialist development and their spirit of self-reliance, dedication to the nation, and achievement through practical work."
-      },
-      "reformTide": {
-        "name": "Tide of Reform",
-        "meaning": "Celebrates the pioneering course of reform and opening up, symbolizing the courage to experiment, openness, inclusion, and determined innovation."
-      },
-      "rejuvenationEpic": {
-        "name": "Epic of Rejuvenation",
-        "meaning": "Builds on cultural confidence and red heritage while looking toward modernization and national rejuvenation, symbolizing principled innovation and purposeful action."
-      },
-      "mortalWarrior": {
-        "name": "Mortal Warrior",
-        "meaning": "A secular martial stage before drawing spiritual energy into the body. There is no orthodox cultivation base yet, and the body remains close to ordinary mortals."
-      },
-      "qiRefiningRealm": {
-        "name": "Qi Refining",
-        "meaning": "The initial entry realm of cultivation, divided into thirteen layers. Cultivators absorb worldly spiritual energy into magic power, with fragile foundations and mortal-like longevity."
-      },
-      "foundationBuildingRealm": {
-        "name": "Foundation Building",
-        "meaning": "The cultivation foundation is stabilized and scattered power becomes condensed. Cultivators can fly on artifacts, cast spells, practice fasting, and gain a longer lifespan."
-      },
-      "goldenCoreRealm": {
-        "name": "Golden Core",
-        "meaning": "Magic power condenses into a golden core, strengthening divine sense, body, and combat ability. A personal bonded treasure can be refined at this stable stage."
-      },
-      "nascentSoulRealm": {
-        "name": "Nascent Soul",
-        "meaning": "The golden core breaks and gives birth to a nascent soul, allowing the spirit to persist independently. Even with the body destroyed, rebirth remains possible."
-      },
-      "spiritTransformationRealm": {
-        "name": "Spirit Transformation",
-        "meaning": "Cultivation breaks personal limits and can sense and borrow worldly vital energy. It is the human realm's peak and qualifies one for ascension."
-      },
-      "voidRefiningRealm": {
-        "name": "Void Refining",
-        "meaning": "The starting point of higher cultivation, where the nascent soul and primordial spirit transform deeply. Rule manipulation, divine abilities, and lifespan rise sharply."
-      },
-      "bodyFusionRealm": {
-        "name": "Body Fusion",
-        "meaning": "Body, primordial spirit, and magic power merge into one complete foundation. Strength far surpasses Void Refining cultivators and can guard a region."
-      },
-      "greatAscensionRealm": {
-        "name": "Great Ascension",
-        "meaning": "The peak realm of lower-world cultivation. Body, divine sense, and law comprehension reach worldly limits, forming the foundation to challenge the immortal world."
-      },
-      "tribulationTranscendRealm": {
-        "name": "Tribulation Transcendence",
-        "meaning": "A transitional ascension trial where cultivators endure heavenly thunder to temper body and soul. Passing it breaks lower-world limits and enters immortal cultivation."
-      },
-      "trueImmortalRealm": {
-        "name": "True Immortal",
-        "meaning": "The orthodox initial immortal realm, where mortal magic power is fully shed and pure immortal essence is refined, granting an immortal status and long lifespan."
-      },
-      "goldenImmortalRealm": {
-        "name": "Golden Immortal",
-        "meaning": "An advanced immortal rank beyond True Immortal, requiring opened immortal apertures and source-law comprehension. Three decline tribulations temper immortal body and soul."
-      },
-      "taiyiJadeImmortalRealm": {
-        "name": "Taiyi Jade Immortal",
-        "meaning": "A top immortal realm beyond Golden Immortal constraints, passing dual decline tribulations. Law comprehension is profound enough to govern an immortal domain."
-      },
-      "daluoGoldenImmortalRealm": {
-        "name": "Daluo Golden Immortal",
-        "meaning": "A high peak immortal realm with deep mastery of great dao laws, able to influence cosmic order. It requires severing the three corpse obsessions."
-      },
-      "daoAncestorRealm": {
-        "name": "Dao Ancestor",
-        "meaning": "The ultimate cultivation realm, severing all three corpse obsessions and fully perceiving the dao's source. It commands complete heavenly laws and stands at the summit."
-      }
-    }
-  },
   "feishuBindTitle": "Set up Feishu by QR",
   "feishuBind": "Set up by QR",
   "feishuManage": "Manage / unbind",
@@ -2267,5 +2162,124 @@
   "providerRenameConflict": "A provider with this name already exists. Choose another name.",
   "providerRenameFailed": "Could not finish saving the provider. Refresh the settings and try again.",
   "tabFlowstoken": "FlowsToken Account",
-  "section_flowstoken-account": "FlowsToken Account"
+  "section_flowstoken-account": "FlowsToken Account",
+  "tabUsage": "Usage",
+  "section_usage-overview": "Overview",
+  "section_usage-trend": "Usage trend",
+  "section_usage-models": "By model",
+  "section_usage-heatmap": "Daily activity",
+  "usage": {
+    "title": "Usage",
+    "subtitle": "Tokens used in FlowsToken",
+    "refresh": "Refresh",
+    "presets": {
+      "today": "Today",
+      "3d": "3 days",
+      "7d": "7 days",
+      "30d": "30 days",
+      "all": "All",
+      "custom": "Custom"
+    },
+    "customRangeLabel": "Pick a date range",
+    "rangeSpan": "{{start}} – {{end}}",
+    "cards": {
+      "input": "Input",
+      "output": "Output",
+      "requests": "Model requests",
+      "inputHint": "{{rate}} cache hits · {{value}}",
+      "outputHint": "{{rate}} of total",
+      "requestsHint": "Includes each follow-up after a tool call"
+    },
+    "sections": {
+      "trend": "Usage trend",
+      "models": "By model",
+      "heatmap": "Daily activity"
+    },
+    "granularity": {
+      "hour": "Hourly",
+      "day": "Daily",
+      "week": "Weekly"
+    },
+    "trendAria": "Token usage trend for the selected period",
+    "table": {
+      "model": "Model",
+      "total": "Total",
+      "share": "Share"
+    },
+    "series": {
+      "unknown": "Unknown model",
+      "unattributed": "Unattributed (earlier records)",
+      "knowledgeBase": "Knowledge base processing",
+      "other": "Other"
+    },
+    "total": "Total",
+    "hourLabel": "{{hour}}:00",
+    "weekOf": "Week of {{date}}",
+    "heatmapSummary": "{{tokens}} tokens over {{days}} active days in the past year",
+    "heatmapAria": "Heatmap of daily token usage over the past year",
+    "heatmapCell": "{{date}} · {{tokens}} tokens",
+    "heatmapCellEmpty": "{{date}} · No usage",
+    "heatmapHint": "Click a day to see its breakdown",
+    "less": "Less",
+    "more": "More",
+    "emptyTitle": "No usage yet",
+    "emptyDescription": "Once you start chatting, token usage is summarized here by day and by model.",
+    "emptyRange": "No usage in this period",
+    "errorTitle": "Couldn't load usage",
+    "retry": "Retry",
+    "average": "Avg",
+    "distributionCaption_one": "tokens · {{count}} model",
+    "distributionCaption_other": "tokens · {{count}} models",
+    "rowRequests_one": "{{value}} call",
+    "rowRequests_other": "{{value}} calls",
+    "rowDetail": "In {{input}} · Out {{output}} · Cache {{cache}}",
+    "hero": {
+      "label": "Total usage",
+      "average": "{{value}} per day",
+      "activeDays": "Active {{days}}/{{total}} days",
+      "peak": "Peak {{date}} · {{value}}"
+    },
+    "composition": {
+      "input": "Fresh input",
+      "cacheRead": "Cache read",
+      "cacheWrite": "Cache write",
+      "output": "Output"
+    },
+    "ticket": {
+      "open": "Make ticket",
+      "title": "Usage ticket",
+      "description": "Print the tokens you used in FlowsToken over this period as a ticket, saved as an image ready to share.",
+      "copy": "Copy to clipboard",
+      "copied": "Copied to clipboard",
+      "saved": "Saving started",
+      "failed": "Couldn't create the image",
+      "from": "FROM",
+      "to": "TO",
+      "span_one": "{{count}} day",
+      "span_other": "{{count}} days",
+      "active_one": "{{count}} active day",
+      "active_other": "{{count}} active days",
+      "streak": "Streak",
+      "days_one": "{{count}} day",
+      "days_other": "{{count}} days",
+      "topShare": "Top share",
+      "cacheHit": "Cache hits",
+      "peakHour": "Peak hour",
+      "hour": "{{start}}:00–{{end}}:00",
+      "models": "Models",
+      "modelCount_one": "{{count}} model",
+      "modelCount_other": "{{count}} models",
+      "modelList": "Models",
+      "issued": "Issued",
+      "footer": "FLOWSTOKEN · TOKEN PASS",
+      "date": "DATE",
+      "total": "TOTAL",
+      "today": "TODAY",
+      "eyebrow": "Token Pass",
+      "period": "Period",
+      "image": "Image",
+      "make": "Make ticket",
+      "close": "Close"
+    }
+  }
 }

@@ -1,19 +1,4 @@
 export type {
-	AchievementNavigationAssets,
-	AchievementNavigationButtonViewProps,
-} from "./AchievementNavigationButtonView";
-export { AchievementNavigationButtonView } from "./AchievementNavigationButtonView";
-export type {
-	AchievementPromotionDialogViewLabels,
-	AchievementPromotionDialogViewProps,
-} from "./AchievementPromotionDialogView";
-export { AchievementPromotionDialogView } from "./AchievementPromotionDialogView";
-export type {
-	AchievementSetOptionView,
-	AchievementSettingsViewProps,
-} from "./AchievementSettingsView";
-export { AchievementSettingsView } from "./AchievementSettingsView";
-export type {
 	AppshotPermissionStatusView,
 	AppshotSettingsViewLabels,
 	AppshotSettingsViewProps,
@@ -25,22 +10,6 @@ export type {
 	ArchivedProjectsSettingsViewProps,
 } from "./ArchivedProjectsSettingsView";
 export { ArchivedProjectsSettingsView } from "./ArchivedProjectsSettingsView";
-export type {
-	AchievementCurtainSideLayout,
-	AchievementCurtainsAssets,
-	AchievementCurtainsLayout,
-	AchievementCurtainsProps,
-	AchievementPromotionBadge3DProps,
-	AchievementPromotionConfettiProps,
-	AchievementTitleLayout,
-	AchievementTitleProps,
-} from "./achievements";
-export {
-	AchievementCurtains,
-	AchievementPromotionBadge3D,
-	AchievementPromotionConfetti,
-	AchievementTitle,
-} from "./achievements";
 export type {
 	BuiltinMcpSecretFieldView,
 	BuiltinMcpSecretsDialogViewLabels,
@@ -99,6 +68,15 @@ export type { ImStatusBadgeStatus, ImStatusBadgeViewProps } from "./ImStatusBadg
 export { ImStatusBadgeView } from "./ImStatusBadgeView";
 export type { JsonConfigInputViewProps } from "./JsonConfigInputView";
 export { JsonConfigInputView } from "./JsonConfigInputView";
+export type {
+	LauncherFeatureView,
+	LauncherPreviewGroupView,
+	LauncherPreviewRowView,
+	LauncherPreviewStatusView,
+	LauncherSettingsViewLabels,
+	LauncherSettingsViewProps,
+} from "./LauncherSettingsView";
+export { LauncherSettingsView } from "./LauncherSettingsView";
 export { McpDefaultIcon } from "./McpDefaultIcon";
 export type { McpJsonEditorViewProps } from "./McpJsonEditorView";
 export { McpJsonEditorView } from "./McpJsonEditorView";
@@ -135,13 +113,19 @@ export type {
 	PermissionsSettingsViewProps,
 } from "./PermissionsSettingsView";
 export { PermissionsSettingsView } from "./PermissionsSettingsView";
-export type { PetBubbleStylePreviewViewProps } from "./PetBubbleStylePreviewView";
-export { PetBubbleStylePreviewView } from "./PetBubbleStylePreviewView";
 export type {
-	PetBubbleStyleOptionView,
+	PetActionGalleryViewLabels,
+	PetActionGalleryViewProps,
+	PetActionGroupView,
+	PetActionView,
+} from "./PetActionGalleryView";
+export { PetActionGalleryView } from "./PetActionGalleryView";
+export type {
 	PetDecorationView,
 	PetSettingsViewLabels,
 	PetSettingsViewProps,
+	PetSizeControlView,
+	PetTipView,
 } from "./PetSettingsView";
 export { PetSettingsView } from "./PetSettingsView";
 export type {
@@ -175,11 +159,6 @@ export type {
 	QrBindDialogViewProps,
 } from "./QrBindDialogView";
 export { QrBindDialogView } from "./QrBindDialogView";
-export type {
-	QuickPanelOptionView,
-	QuickPanelSettingsSectionViewProps,
-} from "./QuickPanelSettingsSectionView";
-export { QuickPanelSettingsSectionView } from "./QuickPanelSettingsSectionView";
 export type {
 	RemoteMcpSectionViewLabels,
 	RemoteMcpSectionViewModel,
@@ -219,6 +198,7 @@ export type {
 } from "./SpaceEditorDialogView";
 export { SpaceEditorDialogView } from "./SpaceEditorDialogView";
 export type {
+	SpacesFeatureView,
 	SpacesSettingsViewItem,
 	SpacesSettingsViewLabels,
 	SpacesSettingsViewProps,

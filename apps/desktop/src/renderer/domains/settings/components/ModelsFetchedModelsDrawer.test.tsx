@@ -120,9 +120,9 @@ describe("ModelsFetchedModelsDrawer", () => {
 				},
 			},
 		});
-		// 添加完抽屉自动关闭（jsdom 不跑退场动画，内容仍在 DOM 里，看的是抽屉状态）。
-		const drawer = document.querySelector('[data-slot="drawer-content"]');
-		await waitFor(() => expect(drawer?.getAttribute("data-state")).toBe("closed"));
+		// 添加完抽屉自动关闭。jsdom 里 getComputedStyle 读不到退场动画，radix Presence
+		// 判定无动画可播会直接卸载内容，因此这里断言抽屉已从 DOM 移除。
+		await waitFor(() => expect(document.querySelector('[data-slot="drawer-content"]')).toBeNull());
 	});
 
 	it("keeps selections that the search filter hides when deselecting all", async () => {

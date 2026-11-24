@@ -37,10 +37,10 @@ function createTools(remoteCwd: string) {
 }
 
 describe("远程项目里的搜索工具（经回环 SSH 跑在真实 shell 上）", () => {
-	it("grep 搜的是远端项目，命中带可用于 edit 的行锚点", async () => {
+	it("grep 搜的是远端项目，命中带可用于 edit 的行号", async () => {
 		const run = createTools(createProject());
 		const output = await run("grep", { pattern: "port" });
-		expect(output).toMatch(/^src\/server\.ts:1:[0-9a-z]+: const port = 3000;$/m);
+		expect(output).toMatch(/^src\/server\.ts:1: const port = 3000;$/m);
 		expect(output).toContain("src/it's here/notes.md:1:");
 	});
 

@@ -1,4 +1,4 @@
-import { closeSync, type Dirent, openSync, readFileSync, readSync } from "node:fs";
+import { closeSync, type Dirent, openSync, readFileSync, readSync, type Stats, statSync } from "node:fs";
 import { type FileHandle, open, readdir, readFile, rm, stat } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import type {
@@ -8,13 +8,19 @@ import type {
 	RuntimeSessionFileHistoryReader,
 	SessionHistoryInfo,
 } from "@vetta/runtime-core";
-import { projectConversationDocumentHistory } from "@vetta/runtime-core/conversation";
+import { type ConversationDocument, projectConversationDocumentHistory } from "@vetta/runtime-core/conversation";
 import {
 	type ConversationOwnershipManager,
 	isConversationFileHeader,
 	type ReadConversationFileHeader,
 } from "@vetta/runtime-storage/conversation";
-import { documentFromFile, encodeConversationSessionId, parseConversationFile } from "./conversation-file-codec.js";
+import {
+	documentFromFile,
+	encodeConversationSessionId,
+	extendDocumentWithRecords,
+	parseAppendedConversationRecords,
+	parseConversationFile,
+} from "./conversation-file-codec.js";
 import { acquireConversationFileLock } from "./conversation-file-lock.js";
 import { FileConversationOwnershipManager } from "./conversation-ownership-lease.js";
 import { FileConversationRepository } from "./file-conversation-repository.js";
@@ -23,6 +29,46 @@ import { nodeErrorCode } from "./node-error-code.js";
 const CONVERSATION_FILE_SUFFIX = ".conversation.jsonl";
 const CONVERSATION_HEADER_READ_BYTES = 64 * 1024;
 const LAST_MESSAGE_PREVIEW_LENGTH = 120;
+/** 会话摘要缓存的条数上限；每条只是一份小摘要，上限只防止极端目录把内存撑大。 */
+const HISTORY_INFO_CACHE_LIMIT = 20_000;
+
+interface CachedHistoryInfo {
+	readonly mtimeMs: number;
+	readonly size: number;
+	readonly info: SessionHistoryInfo;
+}
+
+/**
+ * 会话摘要（标题、首条消息、活跃时间）按文件缓存，模块级共享。
+ *
+ * 列目录原本要把目录下每个会话文件完整读入并解析，会话一多就是数秒，而侧栏加载项目、
+ * 命令面板的每次搜索都要列目录。会话文件只追加写，内容变了大小必变，所以用
+ * （修改时间, 大小）判定是否还能复用：没变的文件只做一次 stat。Catalog 实例按调用新建
+ * （见 runtime-desktop 的 catalogForCurrentRoots），缓存因此放在模块级而不是实例上。
+ * 以 Map 的插入顺序做 LRU。
+ */
+const historyInfoCache = new Map<string, CachedHistoryInfo>();
+
+async function readCachedSessionHistoryInfo(sessionPath: string, fallbackCwd: string): Promise<SessionHistoryInfo> {
+	const stats = await stat(sessionPath);
+	// fallbackCwd 会进入结果（文件里没有 cwd 时兜底），所以也是键的一部分。
+	const key = `${resolve(sessionPath)}\0${fallbackCwd}`;
+	const cached = historyInfoCache.get(key);
+	if (cached && cached.mtimeMs === stats.mtimeMs && cached.size === stats.size) {
+		historyInfoCache.delete(key);
+		historyInfoCache.set(key, cached);
+		return { ...cached.info };
+	}
+	const info = await readSessionHistoryInfo(sessionPath, fallbackCwd, stats.mtimeMs);
+	historyInfoCache.delete(key);
+	historyInfoCache.set(key, { mtimeMs: stats.mtimeMs, size: stats.size, info });
+	while (historyInfoCache.size > HISTORY_INFO_CACHE_LIMIT) {
+		const oldest = historyInfoCache.keys().next().value;
+		if (oldest === undefined) break;
+		historyInfoCache.delete(oldest);
+	}
+	return { ...info };
+}
 
 export interface RuntimeConversationSessionRoot {
 	readonly cwd: string;
@@ -137,7 +183,7 @@ export class FileConversationRuntimeSessionCatalog implements RuntimeSessionCata
 				.filter((entry) => entry.isFile() && entry.name.endsWith(CONVERSATION_FILE_SUFFIX))
 				.map(async (entry) => {
 					try {
-						return await readSessionHistoryInfo(join(sessionDir, entry.name), cwd);
+						return await readCachedSessionHistoryInfo(join(sessionDir, entry.name), cwd);
 					} catch {
 						return undefined;
 					}
@@ -147,8 +193,38 @@ export class FileConversationRuntimeSessionCatalog implements RuntimeSessionCata
 	}
 }
 
-/** Native conversation 文件到 Runtime 历史合同的同步只读投影。 */
+interface FileHistoryCacheEntry {
+	readonly ino: number;
+	readonly size: number;
+	readonly mtimeMs: number;
+	readonly header: ReadConversationFileHeader;
+	readonly document: ConversationDocument;
+	readonly nextEventSequence: number;
+	readonly history: HistoryEntry[];
+}
+
+export interface FileConversationRuntimeSessionFileHistoryReaderOptions {
+	/** 缓存几份会话的解析结果；一次性批量读取（如搜索）传 0。 */
+	readonly cacheEntries?: number;
+}
+
+const DEFAULT_FILE_HISTORY_CACHE_ENTRIES = 4;
+
+/**
+ * Native conversation 文件到 Runtime 历史合同的同步只读投影。
+ *
+ * 只读查看器在被观察的会话每次写入后都会重读；长会话整份解析要上百毫秒，且压在 Electron 主进程上。
+ * 会话文件只追加写，所以按路径缓存上次的文档投影：文件没变直接返回同一份历史（引用相等，调用方可据此跳过推送），
+ * 只变长就只解析新增的整行；其他任何变化回退整份解析。
+ */
 export class FileConversationRuntimeSessionFileHistoryReader implements RuntimeSessionFileHistoryReader {
+	private readonly cache = new Map<string, FileHistoryCacheEntry>();
+	private readonly cacheEntries: number;
+
+	constructor(options: FileConversationRuntimeSessionFileHistoryReaderOptions = {}) {
+		this.cacheEntries = options.cacheEntries ?? DEFAULT_FILE_HISTORY_CACHE_ENTRIES;
+	}
+
 	canRead(sessionPath: string): boolean {
 		try {
 			const header = readConversationHeaderSync(sessionPath);
@@ -159,17 +235,104 @@ export class FileConversationRuntimeSessionFileHistoryReader implements RuntimeS
 	}
 
 	read(sessionPath: string): { history: HistoryEntry[] } {
+		const key = resolve(sessionPath);
+		const cached = this.cache.get(key);
+		if (cached) {
+			const stats = statSync(key);
+			if (stats.ino === cached.ino && stats.size === cached.size && stats.mtimeMs === cached.mtimeMs) {
+				this.remember(key, cached);
+				return { history: cached.history };
+			}
+			if (stats.ino === cached.ino && stats.size > cached.size) {
+				const extended = extendFileHistory(key, cached, stats);
+				if (extended) {
+					this.remember(key, extended);
+					return { history: extended.history };
+				}
+			}
+			this.cache.delete(key);
+		}
+		return { history: this.readWhole(key).history };
+	}
+
+	private readWhole(sessionPath: string): FileHistoryCacheEntry {
+		const before = statSync(sessionPath);
 		const text = readFileSync(sessionPath, "utf8");
 		const header = parseConversationHeader(text);
 		if (!header || !isCanonicalConversationPath(sessionPath, header.sessionId)) {
 			throw new Error(`Unsupported native conversation file: ${sessionPath}`);
 		}
 		const file = parseConversationFile(text, header.sessionId);
-		return { history: projectConversationDocumentHistory(documentFromFile(header.sessionId, file)) };
+		const document = documentFromFile(header.sessionId, file);
+		const entry: FileHistoryCacheEntry = {
+			ino: before.ino,
+			size: before.size,
+			mtimeMs: before.mtimeMs,
+			header,
+			document,
+			nextEventSequence: (file.eventRecords.at(-1)?.sequence ?? 0) + 1,
+			history: projectConversationDocumentHistory(document),
+		};
+		// 读的过程中文件被改写时，内容与身份对不上，不缓存。
+		if (Buffer.byteLength(text, "utf8") === before.size) this.remember(sessionPath, entry);
+		return entry;
+	}
+
+	private remember(sessionPath: string, entry: FileHistoryCacheEntry): void {
+		this.cache.delete(sessionPath);
+		if (this.cacheEntries <= 0) return;
+		this.cache.set(sessionPath, entry);
+		while (this.cache.size > this.cacheEntries) {
+			this.cache.delete(this.cache.keys().next().value as string);
+		}
 	}
 }
 
-async function readSessionHistoryInfo(sessionPath: string, fallbackCwd: string): Promise<SessionHistoryInfo> {
+/** 只解析缓存之后新增的整行；读到半行时保留缓存等下次写入，无法增量时返回 undefined。 */
+function extendFileHistory(
+	sessionPath: string,
+	cached: FileHistoryCacheEntry,
+	stats: Stats,
+): FileHistoryCacheEntry | undefined {
+	const appended = Buffer.alloc(stats.size - cached.size);
+	const descriptor = openSync(sessionPath, "r");
+	let bytesRead: number;
+	try {
+		bytesRead = readSync(descriptor, appended, 0, appended.length, cached.size);
+	} finally {
+		closeSync(descriptor);
+	}
+	const lastNewline = appended.lastIndexOf(0x0a, bytesRead - 1);
+	if (lastNewline < 0) return cached;
+	const complete = appended.subarray(0, lastNewline + 1);
+	try {
+		const parsed = parseAppendedConversationRecords(
+			complete.toString("utf8"),
+			cached.header.sessionId,
+			cached.header,
+			cached.nextEventSequence,
+		);
+		if (!parsed) return undefined;
+		const document = extendDocumentWithRecords(cached.header.sessionId, cached.document, parsed.records);
+		return {
+			...cached,
+			size: cached.size + complete.length,
+			// 只并入了一部分新增字节时，让下次的身份比较必然不等，从新的偏移继续读。
+			mtimeMs: complete.length === appended.length ? stats.mtimeMs : Number.NaN,
+			document,
+			nextEventSequence: parsed.nextEventSequence,
+			history: projectConversationDocumentHistory(document),
+		};
+	} catch {
+		return undefined;
+	}
+}
+
+async function readSessionHistoryInfo(
+	sessionPath: string,
+	fallbackCwd: string,
+	fileModifiedAt: number,
+): Promise<SessionHistoryInfo> {
 	const text = await readFile(sessionPath, "utf8");
 	const header = parseConversationHeader(text);
 	if (!header || !isCanonicalConversationPath(sessionPath, header.sessionId)) {
@@ -197,7 +360,7 @@ async function readSessionHistoryInfo(sessionPath: string, fallbackCwd: string):
 		if (!Number.isFinite(message.timestamp) || message.timestamp <= 0) return latest;
 		return Math.max(latest ?? 0, message.timestamp);
 	}, undefined);
-	const modifiedAt = lastMessageActivityAt ?? (await stat(sessionPath)).mtimeMs;
+	const modifiedAt = lastMessageActivityAt ?? fileModifiedAt;
 	return {
 		id: header.sessionId,
 		path: resolve(sessionPath),

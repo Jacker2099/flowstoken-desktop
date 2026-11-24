@@ -167,7 +167,7 @@ function classify(abs, text, deferrals) {
 	const rel = toRel(abs);
 	const lines = text.split("\n").length;
 
-	if (/\/onboarding\/|\/pet\/|\/quickpanel\//.test(rel)) {
+	if (/\/onboarding\/|\/pet\//.test(rel)) {
 		return { status: "non_goal", rel, lines };
 	}
 	// Host design-system chrome (Dialog/Button implementations) — not business views.
@@ -216,7 +216,7 @@ function classify(abs, text, deferrals) {
 		hasTheme &&
 		lines <= 70 &&
 		!dataHeavy &&
-		(hasI18n || /ACHIEVEMENT_|useCodeClipboard|as Theme|formatResetCountdown/.test(text));
+		(hasI18n || /useCodeClipboard|as Theme|formatResetCountdown/.test(text));
 	if (isThinReexport || isAdapter) return { status: "migrated", rel, lines };
 
 	if (!hasExport) return { status: "skip", rel, lines };

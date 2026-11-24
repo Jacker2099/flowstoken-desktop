@@ -3,13 +3,15 @@ import { useThemeSurface } from "@vetta-org/theme-sdk/appearance";
 import type { SettingsTab } from "@shared/store/atoms";
 import { lazy, Suspense, type ComponentType, type LazyExoticComponent } from "react";
 import { SettingsPageView } from "./SettingsPageView";
-import { SETTINGS_TAB_LOADERS } from "./settings-tab-loaders";
+import { SETTINGS_TAB_LOADERS, useIdleSettingsTabPrefetch } from "./settings-tab-loaders";
 import { useSettingsPageModel } from "./useSettingsPageModel";
 import "./settings-highlight.css";
 
 /** MCP 已迁至扩展 → 连接器；`mcp` 保留在 SettingsTab 供 analytics / 旧链接重定向，此处不渲染。 */
 const SETTINGS_CONTENT: Record<Exclude<SettingsTab, "mcp">, LazyExoticComponent<ComponentType>> = {
+	usage: lazy(SETTINGS_TAB_LOADERS.usage),
 	general: lazy(SETTINGS_TAB_LOADERS.general),
+	launcher: lazy(SETTINGS_TAB_LOADERS.launcher),
 	appearance: lazy(SETTINGS_TAB_LOADERS.appearance),
 	flowstoken: lazy(SETTINGS_TAB_LOADERS.flowstoken),
 	models: lazy(SETTINGS_TAB_LOADERS.models),
@@ -36,6 +38,7 @@ export function SettingsPage(): JSX.Element {
 		model.activeTab === "mcp" ? SETTINGS_CONTENT.general : SETTINGS_CONTENT[model.activeTab];
 
 	const activeTab = model.activeTab === "mcp" ? "general" : model.activeTab;
+	useIdleSettingsTabPrefetch(activeTab);
 	const embedded = model.embeddedView;
 
 	// 内嵌的插件视图是整页 surface：给它完整宽高，不套设置页的居中窄栏。

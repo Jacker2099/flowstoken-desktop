@@ -56,7 +56,9 @@ export const pageHeaderImmersiveAtom = atom<boolean>(false);
 // ─── Settings page ───
 
 export type SettingsTab =
+	| "usage"
 	| "general"
+	| "launcher"
 	| "appearance"
 	| "models"
 	| "mcp"
@@ -129,7 +131,7 @@ export interface SandboxPermissionDrawerState {
 export const sandboxPermissionDrawerAtom = atom<SandboxPermissionDrawerState | null>(null);
 
 /**
- * 全局 Command Menu（⌘K）的开合。放 atom 而非组件内部 state：唤起点有两个
+ * 全局 Command Menu（⌘T）的开合。放 atom 而非组件内部 state：唤起点有两个
  * ——全局快捷键与侧栏顶部的入口按钮，而面板本身挂在 RootGlobalOverlays 下。
  */
 export const commandMenuOpenAtom = atom<boolean>(false);

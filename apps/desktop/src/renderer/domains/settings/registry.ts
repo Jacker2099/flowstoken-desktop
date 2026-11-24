@@ -1,7 +1,9 @@
 import type { SettingsTab } from "@shared/store/atoms";
 
 export type SettingsTabLabelKey =
+	| "tabUsage"
 	| "tabGeneral"
+	| "tabLauncher"
 	| "tabAppearance"
 	| "tabContext"
 	| "tabModels"
@@ -40,7 +42,10 @@ export interface SettingsSectionRegistration {
 
 export const SETTINGS_TABS: readonly SettingsTabRegistration[] = [
 	{ key: "flowstoken", label: "FlowsToken 账户", labelKey: "tabFlowstoken", icon: "icon-[mdi--key-chain-variant]" },
+	{ key: "usage", label: "用量", labelKey: "tabUsage", icon: "icon-[solar--chart-2-linear]" },
 	{ key: "general", label: "通用设置", labelKey: "tabGeneral", icon: "icon-[mdi--cog-outline]" },
+	// ⌘T 面板没有常驻入口，放在靠前的位置让人能发现它。
+	{ key: "launcher", label: "启动器", labelKey: "tabLauncher", icon: "icon-[solar--rocket-2-linear]" },
 	{
 		key: "remote",
 		label: "远程连接",
@@ -88,11 +93,17 @@ export const SETTINGS_TABS: readonly SettingsTabRegistration[] = [
 ] as const;
 
 export const SETTINGS_SECTIONS = [
+	{ tab: "usage", id: "usage-overview", title: "概览", titleKey: "section_usage-overview" },
+	{ tab: "usage", id: "usage-trend", title: "用量趋势", titleKey: "section_usage-trend" },
+	{ tab: "usage", id: "usage-models", title: "模型明细", titleKey: "section_usage-models" },
+	{ tab: "usage", id: "usage-heatmap", title: "每日活跃", titleKey: "section_usage-heatmap" },
 	{ tab: "general", id: "general-basics", title: "基础", titleKey: "section_general-basics" },
 	{ tab: "general", id: "general-notifications", title: "通知", titleKey: "section_general-notifications" },
 	{ tab: "general", id: "general-network", title: "网络代理", titleKey: "section_general-network" },
 	{ tab: "general", id: "general-app", title: "应用", titleKey: "section_general-app" },
 	{ tab: "general", id: "general-developer", title: "开发者", titleKey: "section_general-developer" },
+	{ tab: "launcher", id: "launcher-features", title: "能做什么", titleKey: "section_launcher-features" },
+	{ tab: "launcher", id: "launcher-shortcut", title: "快捷键", titleKey: "section_launcher-shortcut" },
 	{ tab: "remote", id: "remote-devices", title: "已配对的手机", titleKey: "section_remote-devices" },
 	{ tab: "remote", id: "remote-pairing", title: "添加手机", titleKey: "section_remote-pairing" },
 	{ tab: "remote", id: "remote-cloud", title: "外网访问", titleKey: "section_remote-cloud" },
@@ -137,7 +148,6 @@ export const SETTINGS_SECTIONS = [
 	{ tab: "im", id: "imbridge-logs", title: "实时日志", titleKey: "section_imbridge-logs" },
 	{ tab: "webhook", id: "webhook-channels", title: "渠道列表", titleKey: "section_webhook-channels" },
 	{ tab: "shortcuts", id: "shortcuts-global", title: "全局快捷键", titleKey: "section_shortcuts-global" },
-	{ tab: "shortcuts", id: "shortcuts-quickpanel", title: "快捷面板", titleKey: "section_shortcuts-quickpanel" },
 	{ tab: "appshot", id: "appshot-gesture", title: "触发快捷键", titleKey: "section_appshot-gesture" },
 	{ tab: "appshot", id: "appshot-permissions", title: "权限", titleKey: "section_appshot-permissions" },
 	{ tab: "spaces", id: "workspaces", title: "工作空间", titleKey: "section_workspaces" },
@@ -149,8 +159,10 @@ export const SETTINGS_SECTIONS = [
 	{ tab: "knowledge", id: "knowledge-processing", title: "后台加工", titleKey: "section_knowledge-processing" },
 	{ tab: "knowledge", id: "knowledge-actions", title: "手动操作", titleKey: "section_knowledge-actions" },
 	{ tab: "pet", id: "pet-display", title: "显示与窗口", titleKey: "section_pet-display" },
+	{ tab: "pet", id: "pet-behavior", title: "行为", titleKey: "section_pet-behavior" },
+	{ tab: "pet", id: "pet-actions", title: "动作", titleKey: "section_pet-actions" },
+	{ tab: "pet", id: "pet-tips", title: "互动方式", titleKey: "section_pet-tips" },
 	{ tab: "pet", id: "pet-decoration", title: "桌宠装饰", titleKey: "section_pet-decoration" },
-	{ tab: "pet", id: "pet-bubble", title: "气泡样式", titleKey: "section_pet-bubble" },
 	{ tab: "pet", id: "pet-developer", title: "开发调试", titleKey: "section_pet-developer" },
 ] as const satisfies readonly SettingsSectionRegistration[];
 

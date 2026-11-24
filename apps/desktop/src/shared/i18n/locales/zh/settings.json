@@ -1158,6 +1158,16 @@
   "noArchivedProjects": "暂无归档项目",
   "unarchive": "取消归档",
   "deleteProject": "删除",
+  "archivedSelectAll": "全选",
+  "archivedSelectProject": "选择「{{name}}」",
+  "archivedSelectedCount": "已选 {{count}} 个",
+  "archivedClearSelection": "取消选择",
+  "archivedUnarchiveSelected": "取消归档所选",
+  "archivedDeleteSelected": "删除所选",
+  "archivedDeleteSelectedConfirm": "删除归档项目",
+  "archivedDeleteSelectedMessage_one": "确定要永久移除所选的 {{count}} 个项目吗？此操作不会删除磁盘上的文件，仅从归档列表中移除。",
+  "archivedDeleteSelectedMessage_other": "确定要永久移除所选的 {{count}} 个项目吗？此操作不会删除磁盘上的文件，仅从归档列表中移除。",
+  "archivedBatchFailed": "有 {{count}} 个未能处理，可以重试。",
   "appearanceTitle": "外观",
   "modelTitle": "模型",
   "mcpTitle": "MCP 管理",
@@ -1182,8 +1192,6 @@
   "themeSystem": "跟随系统",
   "uiThemeDefault": "默认主题",
   "uiThemeDefaultHint": "使用标准桌面界面",
-  "uiThemeXianxia": "修仙主题",
-  "uiThemeXianxiaHint": "使用修仙风格界面",
   "uiThemeUnavailable": "尽请期待",
   "colorThemes": {
     "mono": "默认",
@@ -1210,15 +1218,6 @@
   "resetShortcuts": "重置快捷键",
   "shortcutPlaceholder": "请按下快捷键…",
   "shortcutHint": "点击快捷键区域后按下新的组合键即可录制。修改后立即生效，无需重启。",
-  "quickPanelTrigger": "呼出方式",
-  "quickPanelTriggerDescription": "双击功能键全局唤出快捷面板",
-  "quickPanelTriggerHintMac": "首次使用需在「系统设置 › 隐私与安全性 › 输入监控」中授权 FlowsToken",
-  "quickPanelTriggerNone": "不启用",
-  "quickPanelTriggerDoubleTap": "双击 {{key}}",
-  "quickPanelBehavior": "发送后行为",
-  "quickPanelBehaviorDescription": "在快捷面板发送后如何处理",
-  "quickPanelBehaviorForeground": "打开主窗并定位到新会话",
-  "quickPanelBehaviorBackground": "后台运行，仅关闭面板",
   "appshotGesture": "触发快捷键",
   "appshotGestureDescription": "同时按住左右两侧的同一功能键约 0.25 秒，把前台窗口的截图和文字作为附件交给 AI。首次使用需在系统设置中授权屏幕录制与辅助功能。",
   "appshotGestureBothShift": "同时按住左右 {{key}}",
@@ -1243,6 +1242,7 @@
   "onboardingAllGranted": "已完成授权",
   "onboardingDragError": "拖拽失败：未找到 FlowsToken Computer Use 辅助程序，请重新构建或重装应用",
   "tabGeneral": "通用设置",
+  "tabLauncher": "启动器",
   "tabAppearance": "外观",
   "tabContext": "Agent配置",
   "tabModels": "模型配置",
@@ -1261,6 +1261,8 @@
   "tabRemote": "远程连接",
   "section_remote-pairing": "添加手机",
   "section_general-basics": "基础",
+  "section_launcher-features": "能做什么",
+  "section_launcher-shortcut": "快捷键",
   "section_general-notifications": "通知",
   "section_general-network": "网络代理",
   "section_general-app": "应用",
@@ -1295,6 +1297,12 @@
   "chatAppearanceBackground": "聊天背景",
   "userBubbleShape": "气泡外观",
   "userBubbleColor": "气泡颜色",
+  "userBubbleColorCustom": "自定义",
+  "userBubbleColorValueInput": "颜色值",
+  "userBubbleColorInvalid": "无法识别的颜色",
+  "userBubbleColorHue": "色相",
+  "userBubbleColorArea": "饱和度与明度",
+  "userBubbleColorEyedropper": "从屏幕取色",
   "userBubbleWeight": "消息字重",
   "userBubbleWeights": {
     "default": "默认",
@@ -1360,7 +1368,6 @@
   "section_imbridge-logs": "实时日志",
   "section_webhook-channels": "渠道列表",
   "section_shortcuts-global": "全局快捷键",
-  "section_shortcuts-quickpanel": "快捷面板",
   "section_appshot-gesture": "触发快捷键",
   "section_appshot-permissions": "权限",
   "section_archived-list": "归档列表",
@@ -1372,8 +1379,9 @@
   "section_knowledge-actions": "手动操作",
   "section_pet-display": "显示与窗口",
   "section_pet-behavior": "行为",
+  "section_pet-actions": "动作",
+  "section_pet-tips": "互动方式",
   "section_pet-decoration": "桌宠装饰",
-  "section_pet-bubble": "气泡样式",
   "section_pet-developer": "开发调试",
   "updaterChecking": "正在检查...",
   "appVersion": "当前版本",
@@ -1593,7 +1601,6 @@
       },
       "shortcuts": {
         "list": "看看当前有哪些全局快捷键",
-        "quickpanel": "调整快捷面板相关设置",
         "reset": "把快捷键恢复默认"
       },
       "agent": {
@@ -1742,8 +1749,44 @@
   "shortcutOpenProjectDesc": "选择并打开一个项目文件夹",
   "shortcutOpenSettingsLabel": "打开设置",
   "shortcutOpenSettingsDesc": "打开设置页面",
-  "shortcutOpenCommandMenuLabel": "打开命令面板",
+  "shortcutOpenCommandMenuLabel": "打开启动器",
   "shortcutOpenCommandMenuDesc": "居中弹出，搜索项目、会话、能力、设置与插件视图",
+  "launcher": {
+    "title": "启动器",
+    "subtitle": "一个随叫随到的入口。不用离开键盘，就能回到进行中的会话、找到任何项目和设置，或者马上开始新的对话。",
+    "pressBefore": "在应用里随时按",
+    "pressAfter": "唤起启动器",
+    "tryNow": "立即试试",
+    "preview": {
+      "waitingSession": "重构登录流程",
+      "waitingMeta": "2 分钟前",
+      "runningSession": "整理本周的发布说明",
+      "runningMeta": "刚刚",
+      "recentProject": "my-website",
+      "recentMeta": "项目"
+    },
+    "features": {
+      "active": {
+        "title": "进行中的会话",
+        "description": "等你回答、运行中、刚完成的会话排在最前，回车直接回去"
+      },
+      "search": {
+        "title": "搜索一切",
+        "description": "项目、会话、能力、设置，输入几个字就能找到"
+      },
+      "newSession": {
+        "title": "马上开始",
+        "description": "不用找按钮，直接开一个新会话"
+      },
+      "plugins": {
+        "title": "插件视图",
+        "description": "已安装插件提供的页面，也能从这里打开"
+      }
+    },
+    "shortcutTitle": "唤起启动器",
+    "shortcutDescription": "在应用内任何地方按下即可打开，再按一次或按 Esc 关闭",
+    "sidebarHint": "侧栏顶部的搜索按钮也能打开启动器"
+  },
   "shortcutOpenModelSelectorLabel": "打开模型选择",
   "shortcutOpenModelSelectorDesc": "在输入框弹出模型菜单，可选模型、思考强度与沙箱权限；再按一次收起。",
   "shortcutSaveFileLabel": "保存文件",
@@ -2053,154 +2096,6 @@
   "bound": "已绑定",
   "permDiskFullAccess": "完全磁盘访问",
   "permDiskFullAccessDesc": "允许 FlowsToken 读写项目目录之外的文件，未授权时 macOS 会静默拦截。",
-  "tabAchievements": "成就",
-  "achievement": {
-    "title": "成就",
-    "subtitle": "沿着九个阶段前进，查看已经获得和即将解锁的徽章。",
-    "setSelector": "徽章系列",
-    "sets": {
-      "fanren": "凡人修仙传境界",
-      "classic": "经典徽章"
-    },
-    "setSubtitles": {
-      "fanren": "以原著正统十五大境界推进，查看当前修行阶段与后续境界徽章。",
-      "classic": "沿着九个阶段前进，查看已经获得和即将解锁的徽章。"
-    },
-    "dragHint": "拖动或滚动查看全部成就",
-    "previous": "查看上一个成就",
-    "next": "查看下一个成就",
-    "current": "当前成就",
-    "stage": "第 {{current}} / {{total}} 阶段",
-    "stageProgress": "阶段进度",
-    "startingPoint": "启程阶段",
-    "completed": "已完成",
-    "inProgress": "进行中",
-    "targetValue": "目标：{{target}}",
-    "promotion": {
-      "title": "成就晋升",
-      "stageName": "已晋升至「{{name}}」"
-    },
-    "metrics": {
-      "activeTime": "有效使用时长",
-      "activeStreak": "连续使用",
-      "todayActiveTime": "今日活跃",
-      "todayMessages": "今日消息",
-      "sessions": "交互会话",
-      "turns": "对话轮次",
-      "messages": "完成消息",
-      "longestConversation": "最长单次对话",
-      "tools": "完成工具调用",
-      "tokens": "输入输出 Token",
-      "projects": "项目 / 知识库",
-      "fileOperations": "文件操作",
-      "batchRuns": "批量任务运行",
-      "automationRuns": "自动化运行"
-    },
-    "durationMinutes": "{{count}} 分钟",
-    "durationHours": "{{count}} 小时",
-    "durationHoursMinutes": "{{hours}} 小时 {{minutes}} 分钟",
-    "days": "{{count}} 天",
-    "longestConversationValue": "{{turns}} 轮 / {{messages}} 条",
-    "projectsValue": "{{projects}} 项目 / {{kb}} 知识库",
-    "stages": {
-      "awakeningSpark": {
-        "name": "觉醒星火",
-        "meaning": "纪念新文化运动、五四运动思想觉醒，致敬传播马克思主义的先驱，象征破除旧思想、点燃民族救亡的思想火种，代表坚守初心、勤学明理的精神底色。"
-      },
-      "redBoatVoyage": {
-        "name": "红船初航",
-        "meaning": "溯源红船精神，铭记建党伟业与早期工农革命探索，象征敢为人先、忠诚为民的建党底色，代表立足根基、勇担使命的奋斗起点。"
-      },
-      "jinggangFire": {
-        "name": "井冈星火",
-        "meaning": "传承八一精神、井冈山精神、苏区精神，纪念工农武装割据创建革命根据地，象征扎根群众、艰苦奋斗、武装救国的革命意志。"
-      },
-      "longMarch": {
-        "name": "万里长征",
-        "meaning": "弘扬长征精神，铭记绝境中坚守理想信念的英雄壮举，象征不畏艰险、团结奋进、矢志不渝的坚定信仰。"
-      },
-      "yananBeacon": {
-        "name": "延河灯塔",
-        "meaning": "践行延安精神，纪念抗战时期思想整风、革命文艺大众化探索，象征实事求是、全心为民、自力更生的优良作风。"
-      },
-      "governanceTest": {
-        "name": "赶考初心",
-        "meaning": "牢记西柏坡精神与“两个务必”赶考嘱托，纪念解放全国、筹备人民政权历程，象征居安思危、谦虚谨慎、执政为民的清醒自觉。"
-      },
-      "constructionGlory": {
-        "name": "建设宏图",
-        "meaning": "传承大庆精神、两弹一星精神、雷锋焦裕禄精神，致敬艰苦创业的建设者，象征自力更生、报国奉献、实干兴邦的建设品格。"
-      },
-      "reformTide": {
-        "name": "改革潮涌",
-        "meaning": "弘扬特区精神、抗洪、载人航天等时代精神，铭记改革开放开拓历程，象征敢闯敢试、开放包容、锐意进取的改革魄力。"
-      },
-      "rejuvenationEpic": {
-        "name": "复兴华章",
-        "meaning": "立足文化自信，传承红色基因，聚焦中国式现代化、民族复兴伟业，象征守正创新、实干奋进、奔赴民族复兴的时代担当。"
-      },
-      "mortalWarrior": {
-        "name": "凡人武者",
-        "meaning": "处于凡俗习武层次，未引天地灵气入体，无正统修仙修为。体魄与常人差距较小，尚未踏入真正的修行大道。"
-      },
-      "qiRefiningRealm": {
-        "name": "炼气期",
-        "meaning": "修仙初始入门境界，分为一至十三层。修士引纳天地灵气转化为自身法力，根基孱弱，寿元与凡人相近，为修仙起步阶段。"
-      },
-      "foundationBuildingRealm": {
-        "name": "筑基期",
-        "meaning": "稳固修行道基，将散乱法力凝实固化。修士可御器飞行、施展术法、辟谷存生，寿元显著提升，正式立足修仙道途。"
-      },
-      "goldenCoreRealm": {
-        "name": "结丹期",
-        "meaning": "丹田法力凝练为金丹，神识、肉身与战力全方位提升。可祭炼专属本命法宝，修为稳固，成为修行界的中坚力量。"
-      },
-      "nascentSoulRealm": {
-        "name": "元婴期",
-        "meaning": "金丹破碎化生出元婴，神魂得以独立存续。元婴可离体游走，肉身损毁仍有重生之机，是人界高阶修行境界。"
-      },
-      "spiritTransformationRealm": {
-        "name": "化神期",
-        "meaning": "修行突破自身桎梏，可感应并借引天地元气加持自身。为人界修为极限，具备横渡虚空、飞升更高界面的修行资质。"
-      },
-      "voidRefiningRealm": {
-        "name": "炼虚期",
-        "meaning": "高阶修行起步境界，元婴与元神完成深度蜕变。修士调动天地规则的能力大幅增强，神通与寿元实现跨越式提升。"
-      },
-      "bodyFusionRealm": {
-        "name": "合体期",
-        "meaning": "肉身、元神与法力彻底相融归一，修行根基圆满无缺。战力远超炼虚修士，具备镇守一方疆域的强大实力。"
-      },
-      "greatAscensionRealm": {
-        "name": "大乘期",
-        "meaning": "下界修行的顶级境界，肉身、神识与法则感悟尽数抵达俗世极致，修为圆满，拥有冲击仙界的修行底蕴。"
-      },
-      "tribulationTranscendRealm": {
-        "name": "渡劫期",
-        "meaning": "境界飞升的专属过渡关卡，修士需承受九天雷劫淬炼身躯与神魂。成功渡过雷劫，即可挣脱下界桎梏，踏入仙界修行体系。"
-      },
-      "trueImmortalRealm": {
-        "name": "真仙境",
-        "meaning": "仙界正统初始境界，彻底褪去凡俗法力，凝练纯粹仙元力。脱离下界修行规则，位列仙班，拥有绵长不朽仙寿。"
-      },
-      "goldenImmortalRealm": {
-        "name": "金仙境",
-        "meaning": "真仙进阶的高阶仙位，需打通周身仙窍、参悟本源法则。历经三重衰劫淬炼仙体仙魂，综合战力远超普通真仙。"
-      },
-      "taiyiJadeImmortalRealm": {
-        "name": "太乙玉仙",
-        "meaning": "仙界顶尖修行境界，突破金仙修行桎梏，渡过双重衰劫。法则领悟极为精深，可执掌一方仙域，威慑四方修士。"
-      },
-      "daluoGoldenImmortalRealm": {
-        "name": "大罗金仙",
-        "meaning": "仙界高阶顶级境界，深度参悟并掌控天地大道法则，可影响寰宇秩序。需斩断自身三尸执念，修为强横无匹。"
-      },
-      "daoAncestorRealm": {
-        "name": "道祖境",
-        "meaning": "修行体系的终极境界，斩尽三尸执念，彻底勘破大道本源。执掌完整天地法则，超脱诸天修行桎梏，屹立修为顶点。"
-      }
-    }
-  },
   "feishuBindTitle": "扫码接入飞书",
   "feishuBind": "扫码接入",
   "feishuManage": "管理 / 解绑",
@@ -2267,5 +2162,118 @@
   "providerRenameConflict": "此服务商名称已存在，请使用其他名称。",
   "providerRenameFailed": "无法完成服务商保存，请刷新设置后重试。",
   "tabFlowstoken": "FlowsToken 账户",
-  "section_flowstoken-account": "FlowsToken 账户"
+  "section_flowstoken-account": "FlowsToken 账户",
+  "tabUsage": "用量",
+  "section_usage-overview": "概览",
+  "section_usage-trend": "用量趋势",
+  "section_usage-models": "模型明细",
+  "section_usage-heatmap": "每日活跃",
+  "usage": {
+    "title": "用量",
+    "subtitle": "在 FlowsToken 中消耗的 token",
+    "refresh": "刷新",
+    "presets": {
+      "today": "今天",
+      "3d": "近 3 天",
+      "7d": "近 7 天",
+      "30d": "近 30 天",
+      "all": "全部",
+      "custom": "自定义"
+    },
+    "customRangeLabel": "选择日期区间",
+    "rangeSpan": "{{start}} – {{end}}",
+    "cards": {
+      "input": "输入",
+      "output": "输出",
+      "requests": "模型请求",
+      "inputHint": "缓存命中 {{rate}} · {{value}}",
+      "outputHint": "占总用量 {{rate}}",
+      "requestsHint": "含工具调用后的每轮续写"
+    },
+    "sections": {
+      "trend": "用量趋势",
+      "models": "模型明细",
+      "heatmap": "每日活跃"
+    },
+    "granularity": {
+      "hour": "按小时",
+      "day": "按天",
+      "week": "按周"
+    },
+    "trendAria": "所选时间段的 token 用量趋势",
+    "table": {
+      "model": "模型",
+      "total": "合计",
+      "share": "占比"
+    },
+    "series": {
+      "unknown": "未知模型",
+      "unattributed": "未区分模型（早期记录）",
+      "knowledgeBase": "知识库加工",
+      "other": "其他"
+    },
+    "total": "合计",
+    "hourLabel": "{{hour}} 时",
+    "weekOf": "{{date}} 起一周",
+    "heatmapSummary": "过去一年共 {{tokens}} token，活跃 {{days}} 天",
+    "heatmapAria": "过去一年每天的 token 用量热力图",
+    "heatmapCell": "{{date}} · {{tokens}} token",
+    "heatmapCellEmpty": "{{date}} · 无用量",
+    "heatmapHint": "点击某一天查看当天明细",
+    "less": "少",
+    "more": "多",
+    "emptyTitle": "还没有用量记录",
+    "emptyDescription": "开始对话后，这里会按天、按模型汇总 token 消耗。",
+    "emptyRange": "这段时间没有用量",
+    "errorTitle": "用量加载失败",
+    "retry": "重试",
+    "average": "平均",
+    "distributionCaption": "Token · {{count}} 个模型",
+    "rowRequests": "{{value}} 次调用",
+    "rowDetail": "输入 {{input}} · 输出 {{output}} · 缓存 {{cache}}",
+    "hero": {
+      "label": "总用量",
+      "average": "日均 {{value}}",
+      "activeDays": "活跃 {{days}}/{{total}} 天",
+      "peak": "峰值 {{date}} · {{value}}"
+    },
+    "composition": {
+      "input": "新输入",
+      "cacheRead": "缓存读取",
+      "cacheWrite": "缓存写入",
+      "output": "输出"
+    },
+    "ticket": {
+      "open": "制作小票",
+      "title": "用量小票",
+      "description": "把这段时间在 FlowsToken 里消耗的 token 印成一张小票，保存成图片就能直接分享。",
+      "copy": "复制到剪贴板",
+      "copied": "已复制到剪贴板",
+      "saved": "已开始保存",
+      "failed": "生成图片失败",
+      "from": "FROM",
+      "to": "TO",
+      "span": "{{count}} 天",
+      "active": "活跃 {{count}} 天",
+      "streak": "连续使用",
+      "days": "{{count}} 天",
+      "topShare": "主力占比",
+      "cacheHit": "缓存命中",
+      "peakHour": "高峰时段",
+      "hour": "{{start}}–{{end}} 点",
+      "models": "模型数",
+      "modelCount": "{{count}} 个",
+      "modelList": "模型",
+      "issued": "出票日",
+      "footer": "FLOWSTOKEN · TOKEN PASS",
+      "date": "DATE",
+      "total": "TOTAL",
+      "today": "TODAY",
+      "eyebrow": "Token Pass",
+      "period": "时间段",
+      "image": "图片",
+      "make": "制作小票",
+      "close": "关闭"
+    }
+  }
 }

@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
+import { appendFile, mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { MessageAppendedEvent, TurnCompletedEvent, TurnStartedEvent } from "@vetta/runtime-core/kernel";
@@ -70,6 +70,32 @@ describe("Greenfield runtime session services", () => {
 		expect(session?.modifiedAt).toBe(touchedAt.getTime());
 	});
 
+	it("reuses a parsed session summary until the file changes, then re-reads it", async () => {
+		const rootDir = await createTemporaryRoot();
+		const cwd = join(rootDir, "workspace");
+		const repository = new FileConversationRepository({ rootDir });
+		await repository.create({ sessionId: "cached", createdAt: 10, cwd });
+		await repository.append("cached", 0, [started("cached", 100), userMessage("cached", "alpha question", 110)]);
+		const sessionPath = repository.resolveConversationPath("cached");
+		await repository.close();
+		// 固定到整秒，后面才能把修改时间原样还原（文件系统的亚毫秒精度经 utimes 会丢失）。
+		const pinned = new Date("2030-01-01T00:00:00.000Z");
+		await utimes(sessionPath, pinned, pinned);
+		const catalog = new FileConversationRuntimeSessionCatalog();
+		expect((await catalog.listSessions(cwd, rootDir))[0]?.firstMessage).toBe("alpha question");
+
+		// 同样大小、同样修改时间的改写：摘要直接复用缓存，不重新解析文件。
+		const original = await readFile(sessionPath, "utf8");
+		await writeFile(sessionPath, original.replace("alpha question", "bravo question"));
+		await utimes(sessionPath, pinned, pinned);
+		expect((await catalog.listSessions(cwd, rootDir))[0]?.firstMessage).toBe("alpha question");
+
+		// 内容变长（大小变化）：缓存失效，读到最新内容。
+		await writeFile(sessionPath, original.replace("alpha question", "charlie question"));
+		await utimes(sessionPath, pinned, pinned);
+		expect((await catalog.listSessions(cwd, rootDir))[0]?.firstMessage).toBe("charlie question");
+	});
+
 	it("lists, reads, renames and deletes conversation artifacts without exposing storage details", async () => {
 		const rootDir = await createTemporaryRoot();
 		const cwd = join(rootDir, "workspace");
@@ -134,6 +160,50 @@ describe("Greenfield runtime session services", () => {
 		expect(existsSync(`${sessionPath}.lock`)).toBe(false);
 		expect(existsSync(`${sessionPath}.owner.lock`)).toBe(false);
 		expect(existsSync(snapshotPath)).toBe(false);
+	});
+
+	it("reads only appended records of a watched session and keeps the history identity while unchanged", async () => {
+		const rootDir = await createTemporaryRoot();
+		const sessionId = "watched";
+		const repository = new FileConversationRepository({ rootDir });
+		await repository.create({ sessionId, createdAt: 10 });
+		const first = await repository.append(sessionId, 0, [
+			started(sessionId, 100),
+			userMessage(sessionId, "first question", 110),
+			assistantMessage(sessionId, "first answer", 120),
+			completed(sessionId, 130),
+		]);
+		const sessionPath = repository.resolveConversationPath(sessionId);
+		const firstText = await readFile(sessionPath, "utf8");
+		await repository.append(sessionId, first.version, [
+			{ ...started(sessionId, 200), turnId: "turn-2" },
+			{ ...userMessage(sessionId, "second question", 210), turnId: "turn-2" },
+			{ ...assistantMessage(sessionId, "second answer", 220), turnId: "turn-2" },
+			{ ...completed(sessionId, 230), turnId: "turn-2" },
+		]);
+		await repository.close();
+		const fullText = await readFile(sessionPath, "utf8");
+		const expected = new FileConversationRuntimeSessionFileHistoryReader().read(sessionPath).history;
+		const appended = fullText.slice(firstText.length);
+		const cut = Math.floor(appended.indexOf("\n") / 2);
+
+		await writeFile(sessionPath, firstText, "utf8");
+		const reader = new FileConversationRuntimeSessionFileHistoryReader();
+		const initial = reader.read(sessionPath).history;
+		expect(reader.read(sessionPath).history).toBe(initial);
+
+		// A writer caught mid-record: the half line is not parsed yet.
+		await appendFile(sessionPath, appended.slice(0, cut), "utf8");
+		expect(reader.read(sessionPath).history).toBe(initial);
+
+		await appendFile(sessionPath, appended.slice(cut), "utf8");
+		const grown = reader.read(sessionPath).history;
+		expect(grown).not.toBe(initial);
+		expect(grown).toEqual(expected);
+
+		// Any rewrite other than an append falls back to a whole read.
+		await writeFile(sessionPath, firstText, "utf8");
+		expect(reader.read(sessionPath).history).toEqual(initial);
 	});
 
 	it("keeps the session file when auxiliary artifact cleanup fails so deletion can be retried", async () => {
