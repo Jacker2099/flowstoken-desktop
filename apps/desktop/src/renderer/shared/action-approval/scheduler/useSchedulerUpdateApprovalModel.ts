@@ -38,13 +38,14 @@ export function useSchedulerUpdateApprovalModel(): SchedulerUpdateApprovalModel 
 	// 当前任务叠加 agent 提交的补丁；补丁里的 null 表示清除该可选项。
 	const initialData = useMemo<SchedulerEditableData | null>(() => {
 		if (!task || !input) return null;
-		const { model, notification, ...rest } = input.data;
+		const { model, notification, activeHours, ...rest } = input.data;
 		return automationDraftFrom(
 			{
 				...task,
 				...rest,
 				model: model === null ? undefined : (model ?? task.model),
 				notification: notification === null ? undefined : (notification ?? task.notification),
+				activeHours: activeHours === null ? undefined : (activeHours ?? task.activeHours),
 			},
 			defaults,
 		);
