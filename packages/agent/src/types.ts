@@ -13,6 +13,7 @@ import type {
 	Tool,
 	ToolResultMessage,
 } from "@vetta/ai";
+import type { DoomLoopOptions } from "./loop/doom-loop.js";
 import type { AgentTracer } from "./telemetry.js";
 
 /** Stream function - can return sync or Promise for async config lookup */
@@ -144,6 +145,14 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 
 	/** Finite execution budgets. Omitted fields use conservative library defaults. */
 	limits?: AgentLoopLimits;
+
+	/**
+	 * Doom-loop protection: consecutive tool calls with identical name, arguments and
+	 * results are blocked once they repeat past a threshold, and the run terminates if
+	 * the agent keeps retrying regardless. Enabled by default; pass `false` to disable
+	 * or an object to tune the thresholds.
+	 */
+	doomLoop?: false | DoomLoopOptions;
 
 	/**
 	 * Resolves an API key dynamically for each LLM call.

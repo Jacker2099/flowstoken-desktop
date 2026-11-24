@@ -51,14 +51,18 @@ function response(content: Parameters<typeof createAssistantMessage>[0], stopRea
 }
 
 function tool(execute: () => void): AgentTool {
+	let invocation = 0;
 	return {
 		name: "repeat",
 		label: "repeat",
 		description: "repeat",
 		parameters: Type.Object({}),
 		async execute() {
+			invocation += 1;
 			execute();
-			return { content: [{ type: "text", text: "done" }], details: {} };
+			// 结果携带轮次：长任务的真实重复调用结果各不相同，不会命中 doom-loop 的
+			// 「参数与结果完全一致」判定，否则测试测量的就是重复保护而非通用预算。
+			return { content: [{ type: "text", text: `done ${invocation}` }], details: {} };
 		},
 	};
 }

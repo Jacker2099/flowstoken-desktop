@@ -6,6 +6,7 @@
 import { EventStream, type ToolResultMessage } from "@vetta/ai";
 import { streamAssistantResponse } from "./loop/assistant-stream.js";
 import { AgentContextCheckpointFailure, requestContextCheckpoint } from "./loop/context-checkpoint.js";
+import { createDoomLoopDetector } from "./loop/doom-loop.js";
 import { assertWithinAgentLoopLimit, resolveAgentLoopLimits } from "./loop/limits.js";
 import {
 	agentRunInput,
@@ -127,6 +128,7 @@ async function runLoop(
 	let modelCallCount = 0;
 	let toolCallCount = 0;
 	let recoveryAttempt = 0;
+	const doomLoop = config.doomLoop === false ? undefined : createDoomLoopDetector(config.doomLoop);
 	let pendingMessages: AgentMessage[] = (await config.getSteeringMessages?.()) || [];
 
 	try {
@@ -213,6 +215,7 @@ async function runLoop(
 						config.getSteeringMessages,
 						traceChildren ? agentObservation : undefined,
 						config.tracing,
+						doomLoop,
 					);
 					toolResults.push(...toolExecution.toolResults);
 					steeringAfterTools = toolExecution.steeringMessages ?? null;
@@ -223,7 +226,7 @@ async function runLoop(
 				}
 
 				stream.push({ type: "turn_end", message, toolResults });
-				if (signal?.aborted) {
+				if (signal?.aborted || doomLoop?.terminate) {
 					stream.push({ type: "agent_end", messages: newMessages });
 					stream.end(newMessages);
 					return;
