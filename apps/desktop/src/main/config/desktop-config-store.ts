@@ -31,6 +31,8 @@ export interface ExperimentalConfig {
 	promptPrediction?: boolean;
 	/** 适配通用 Agent Skill。缺省开。 */
 	agentSkills?: boolean;
+	/** 跨会话记忆（ADR-0009 桌面泛化）：memory 工具 + MEMORY.md 快照 + rollover 前抢救写入。缺省关——rollover 时的抢救写入是一次额外模型调用，须用户知情开启。 */
+	memory?: boolean;
 }
 
 /** Agent 图片生成 Provider 偏好；未设置时沿用内置 Provider 优先策略。 */
@@ -240,6 +242,7 @@ export function normalizeExperimental(value: unknown): ExperimentalConfig {
 			vettaCli: true,
 			promptPrediction: false,
 			agentSkills: true,
+			memory: false,
 		};
 	}
 	const input = value as Record<string, unknown>;
@@ -247,6 +250,7 @@ export function normalizeExperimental(value: unknown): ExperimentalConfig {
 		vettaCli: typeof input.vettaCli === "boolean" ? input.vettaCli : true,
 		promptPrediction: typeof input.promptPrediction === "boolean" ? input.promptPrediction : false,
 		agentSkills: typeof input.agentSkills === "boolean" ? input.agentSkills : true,
+		memory: typeof input.memory === "boolean" ? input.memory : false,
 	};
 }
 

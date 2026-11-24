@@ -1,4 +1,4 @@
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
 	CODING_AGENT_COMPACTION_PREFIRE_OBSERVATION,
 	CODING_AGENT_LIFECYCLE_ISSUE_OBSERVATION,
@@ -206,7 +206,9 @@ export function createDesktopRuntimeComposition(): DesktopRuntimeComposition {
 						memoryFile,
 						memoryCharLimit: options.memoryCharLimit,
 						memoryStorage: new NodeTextFileStorage(memoryFile),
-						journalStorage: new NodeTextFileStorage(join(options.cwd, "JOURNAL.md")),
+						// 工作日志与记忆文件同目录：桌面端记忆落在 agent 状态目录时，
+						// 日志同样不该写进用户工程根。
+						journalStorage: new NodeTextFileStorage(join(dirname(memoryFile), "JOURNAL.md")),
 					});
 				},
 				observationHub: {

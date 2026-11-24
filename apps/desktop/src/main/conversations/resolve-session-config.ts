@@ -1,5 +1,8 @@
+import { createHash } from "node:crypto";
+import { join } from "node:path";
 import { VETTA_CLI_GUIDANCE } from "@vetta/coding-agent/cli-guidance";
 import { createCodingAgentRuntimeSessionSelection } from "@vetta/coding-agent/composition";
+import { getAgentDir } from "@vetta/coding-agent/config";
 import type { AgentConfigurationSelection, ConversationScenario } from "@vetta/coding-agent/profile";
 import type {
 	CodingAgentPinnedModelContextBinder,
@@ -95,6 +98,13 @@ export async function resolveDesktopSessionConfig(
 		config?.sessionPath,
 		config?.agentMode ?? desktopConfig.defaultAgentMode ?? "work",
 	);
+	// 跨会话记忆（ADR-0009 桌面泛化）：opt-in。记忆文件不进用户工程目录——
+	// 与会话产物同理（宿主状态不该在用户工程里长出未跟踪文件），按项目路径散列
+	// 落在 agent 状态目录下，同一项目的所有会话共享一份记忆。
+	const memoryEnabled = desktopConfig.experimental?.memory === true;
+	const memoryFile = memoryEnabled
+		? join(getAgentDir(), "memory", createHash("sha256").update(effectiveCwd).digest("hex").slice(0, 16), "MEMORY.md")
+		: undefined;
 	const {
 		scenario: _scenario,
 		agentMode: _agentMode,
@@ -124,6 +134,8 @@ export async function resolveDesktopSessionConfig(
 					systemPromptVolatileAddon: config?.systemPromptVolatileAddon,
 					enableBackgroundTasks,
 					includeAgentSkills,
+					memoryMode: memoryEnabled,
+					memoryFile,
 					automaticRetry: config?.automaticRetry,
 					agentConfiguration: config?.agentConfiguration,
 					sessionRuntimeTools: config?.sessionRuntimeTools,

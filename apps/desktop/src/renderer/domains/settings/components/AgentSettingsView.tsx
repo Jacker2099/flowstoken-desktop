@@ -128,12 +128,11 @@ export function AgentSettingsView({ model, imageGeneration, runtimeConfiguration
 							onCheckedChange={model.actions.togglePromptPrediction}
 						/>
 					</SettingRow>
-					<SettingRow
-						title={model.labels.agentSkill}
-						description={model.labels.agentSkillDescription}
-						border={false}
-					>
+					<SettingRow title={model.labels.agentSkill} description={model.labels.agentSkillDescription}>
 						<Switch checked={model.agentSkillsEnabled} onCheckedChange={model.actions.toggleAgentSkills} />
+					</SettingRow>
+					<SettingRow title={model.labels.memory} description={model.labels.memoryDescription} border={false}>
+						<Switch checked={model.memoryEnabled} onCheckedChange={model.actions.toggleMemory} />
 					</SettingRow>
 				</SettingSection>
 			</div>

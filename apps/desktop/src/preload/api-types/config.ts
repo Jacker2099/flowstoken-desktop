@@ -71,12 +71,14 @@ export interface DesktopConfigData {
 	notificationsEnabled?: boolean;
 	/** Agent 事件的系统横幅、内置提示音与显示时机。 */
 	notificationPreferences: DesktopNotificationPreferences;
-	/** 实验性功能开关分组（「Agent配置 → 扩展功能」）。缺省视为全部开启。 */
+	/** 实验性功能开关分组（「Agent配置 → 扩展功能」）。各字段缺省值见字段注释。 */
 	experimental?: {
 		/** Vetta CLI 提示词开关。仅对桌面端对话会话生效，缺省开。 */
 		vettaCli?: boolean;
 		/** 输入预测开关。缺省关；批量/流转会话不适用。 */
 		promptPrediction?: boolean;
+		/** 跨会话记忆（ADR-0009 桌面泛化）。缺省关。 */
+		memory?: boolean;
 		/** 适配通用 Agent Skill 开关。发现 ~/.agents/skills 与 <cwd>/.agents/skills，缺省开。 */
 		agentSkills?: boolean;
 	};

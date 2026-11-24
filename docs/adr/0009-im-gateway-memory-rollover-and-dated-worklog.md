@@ -33,3 +33,16 @@ memory-mode 下启用三层：
 - 若 Read/翻目录式召回对 IM 体验不可接受，按 ADR-0006 末尾口径给 transport 加 capability，而非推翻单轨；
 - 若需要桌面查看/接管 IM 记忆会话，作为独立桥接特性正向加回（同 ADR-0005 口径），而非合并 cwd；
 - `session_search` 二期落地时，parentSession 链已就位，无需回改一期结构。
+
+## 修订（0.7.4）：memory-mode 桌面泛化
+
+原决策「desktop / TUI 永不传」随桌面端跨会话记忆需求修订：
+
+- desktop 经 `experimental.memory` opt-in 开启（缺省关）。rollover 前的 memory flush 是一次
+  额外模型调用，费用须用户知情，这是缺省关的直接原因。
+- 记忆文件不落用户工程目录（遵循「会话产物是宿主状态」的既有原则），按项目路径散列存放于
+  agent 状态目录 `<agentDir>/memory/<hash(cwd)>/`，同一项目的全部会话共享一份 MEMORY.md；
+  JOURNAL.md 与 MEMORY.md 同目录。
+- 「项目级单一、不区分 user/project」的归属模型不变；多会话并发写同一 MEMORY.md 采
+  last-write-wins，写入极小且低频，属于已知且接受的取舍。user 级跨项目记忆层仍不做。
+

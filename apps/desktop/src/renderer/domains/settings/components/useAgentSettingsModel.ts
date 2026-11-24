@@ -41,10 +41,12 @@ export interface AgentSettingsModel {
 		setCustomPrompt: (value: string) => void;
 		setPersonaId: (value: string) => void;
 		toggleAgentSkills: (checked: boolean) => void;
+		toggleMemory: (checked: boolean) => void;
 		togglePromptPrediction: (checked: boolean) => void;
 		toggleVettaCli: (checked: boolean) => void;
 	};
 	agentSkillsEnabled: boolean;
+	memoryEnabled: boolean;
 	customPrompt: string;
 	dirty: boolean;
 	justSaved: boolean;
@@ -61,6 +63,8 @@ interface AgentSettingsLabels {
 	agentDescription: string;
 	agentSkill: string;
 	agentSkillDescription: string;
+	memory: string;
+	memoryDescription: string;
 	appOp: string;
 	appOpDescription: string;
 	applied: string;
@@ -93,6 +97,7 @@ export function useAgentSettingsModel(): AgentSettingsModel {
 	const [vettaCliEnabled, setVettaCliEnabled] = useState(true);
 	const [promptPredictionEnabled, setPromptPredictionEnabled] = useState(false);
 	const [agentSkillsEnabled, setAgentSkillsEnabled] = useState(true);
+	const [memoryEnabled, setMemoryEnabled] = useState(false);
 
 	useEffect(() => {
 		void window.vetta.session.getPersonas().then(setPersonas);
@@ -105,6 +110,7 @@ export function useAgentSettingsModel(): AgentSettingsModel {
 			setVettaCliEnabled(config.experimental?.vettaCli === true);
 			setPromptPredictionEnabled(config.experimental?.promptPrediction === true);
 			setAgentSkillsEnabled(config.experimental?.agentSkills !== false);
+			setMemoryEnabled(config.experimental?.memory === true);
 		});
 	}, []);
 
@@ -124,6 +130,12 @@ export function useAgentSettingsModel(): AgentSettingsModel {
 		setAgentSkillsEnabled(checked);
 		void window.vetta.config.set({ experimental: { agentSkills: checked } });
 		recordSettingsUsage({ tab: "agent", action: checked ? "enabled" : "disabled", target: "agent-skills" });
+	}, []);
+
+	const toggleMemory = useCallback((checked: boolean) => {
+		setMemoryEnabled(checked);
+		void window.vetta.config.set({ experimental: { memory: checked } });
+		recordSettingsUsage({ tab: "agent", action: checked ? "enabled" : "disabled", target: "memory" });
 	}, []);
 
 	const dirty = customPrompt !== applied.customPrompt;
@@ -171,6 +183,8 @@ export function useAgentSettingsModel(): AgentSettingsModel {
 			agentDescription: t("agentDescription"),
 			agentSkill: t("agentSettings.agentSkill"),
 			agentSkillDescription: t("agentSettings.agentSkillDesc"),
+			memory: t("agentSettings.memory"),
+			memoryDescription: t("agentSettings.memoryDesc"),
 			appOp: t("agentSettings.appOp"),
 			appOpDescription: t("agentSettings.appOpDesc"),
 			applied: t("agentSettings.applied"),
@@ -202,10 +216,12 @@ export function useAgentSettingsModel(): AgentSettingsModel {
 			setCustomPrompt,
 			setPersonaId,
 			toggleAgentSkills,
+			toggleMemory,
 			togglePromptPrediction,
 			toggleVettaCli,
 		},
 		agentSkillsEnabled,
+		memoryEnabled,
 		customPrompt,
 		dirty,
 		justSaved,
