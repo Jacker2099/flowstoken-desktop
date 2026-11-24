@@ -16,6 +16,7 @@ export interface SchedulerTaskFieldsViewProps extends SchedulerTaskFieldsModel {
 
 const RUN_MODES: readonly AutomationRunTargetMode[] = ["new-session", "same-session"];
 const NOTIFY_WHEN: readonly AutomationNotifyWhen[] = ["always", "success", "failure"];
+const HOUR_OPTIONS: readonly number[] = Array.from({ length: 24 }, (_, hour) => hour);
 
 /** 自动化的编辑内容：标题、任务正文，其下按「详情 / 频率 / 通知」分组成设置行。 */
 export function SchedulerTaskFieldsView({
@@ -151,6 +152,39 @@ export function SchedulerTaskFieldsView({
 					onKindChange={onScheduleKindChange}
 					onChange={(schedule) => onChange({ schedule })}
 				/>
+				<FieldRow label={t("form.activeHours")} hint={draft.activeHoursEnabled ? t("form.activeHoursHint") : undefined}>
+					<div className="flex items-center gap-2">
+						<Switch
+							checked={draft.activeHoursEnabled}
+							aria-label={t("form.activeHours")}
+							onCheckedChange={(activeHoursEnabled) => onChange({ activeHoursEnabled })}
+						/>
+						{draft.activeHoursEnabled && (
+							<>
+								<RowSelect
+									ariaLabel={t("form.activeHours")}
+									options={HOUR_OPTIONS.map((hour) => ({ value: String(hour), label: `${hour}${t("form.hourSuffix")}` }))}
+									value={String(draft.activeHoursStart)}
+									onChange={(hour) => onChange({ activeHoursStart: Number(hour) })}
+								/>
+								<span className="text-[12px] text-muted-foreground">{t("form.activeHoursTo")}</span>
+								<RowSelect
+									ariaLabel={t("form.activeHours")}
+									options={HOUR_OPTIONS.map((hour) => ({ value: String(hour), label: `${hour}${t("form.hourSuffix")}` }))}
+									value={String(draft.activeHoursEnd)}
+									onChange={(hour) => onChange({ activeHoursEnd: Number(hour) })}
+								/>
+							</>
+						)}
+					</div>
+				</FieldRow>
+				<FieldRow label={t("form.idleOnly")} hint={draft.idleOnly ? t("form.idleOnlyHint") : undefined}>
+					<Switch
+						checked={draft.idleOnly}
+						aria-label={t("form.idleOnly")}
+						onCheckedChange={(idleOnly) => onChange({ idleOnly })}
+					/>
+				</FieldRow>
 			</FieldGroup>
 
 			<FieldGroup title={t("form.sectionNotify")}>
@@ -235,6 +269,7 @@ export function SchedulerTaskFieldsView({
 									onChange={(event) => onChange({ template: event.target.value })}
 									className={cn(TEXTAREA_FILL_CLASS, "w-full resize-y font-mono")}
 								/>
+								<p className="text-[11px] text-muted-foreground/70">{t("form.notifyNoReplyHint")}</p>
 							</div>
 						</FieldRow>
 					</>

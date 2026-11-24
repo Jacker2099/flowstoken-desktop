@@ -6,7 +6,12 @@ import {
 } from "@vetta/coding-agent/session-extensions";
 import type { PromptRequest, RuntimeHost, SessionExecutionMode } from "@vetta/runtime-core";
 import { prepareInputPrompt } from "../../renderer/shared/lib/input-tokens/prepare.js";
-import type { AutomationSuspendReason, ScheduledTask, TaskExecutionRecord } from "../../shared/automation.js";
+import {
+	type AutomationSuspendReason,
+	isWithinActiveHours,
+	type ScheduledTask,
+	type TaskExecutionRecord,
+} from "../../shared/automation.js";
 import { formatScheduleSessionName } from "../../shared/scheduled-session.js";
 import { recordAutomationRunStarted } from "../app-monitor/app-monitor-service.js";
 import {
@@ -22,12 +27,31 @@ import { getDesktopModelSettingsService } from "../models/model-settings-host.js
 import { recordSessionAttention } from "../notifications/index.js";
 import { sameProjectPath } from "../projects/project-path.js";
 import { notifyAutomationFinished } from "./automation-notifier.js";
+import { getSystemIdleSeconds } from "./system-idle.js";
 import { generateId, updateTask, updateTaskLastRun, writeRecord } from "./task-storage.js";
 
 const log = getAppLogger("scheduler");
 
 /** 绑定会话正忙时，每隔这么久复查一次是否已空闲。 */
 const BUSY_POLL_MS = 2_000;
+
+/** 「仅空闲运行」：无键鼠输入达到这个时长才算空闲。 */
+const IDLE_REQUIRED_SECONDS = 5 * 60;
+/** 等待空闲的复查间隔与最长等待：等不下去就放弃这次触发，不排队到下一个周期。 */
+const IDLE_POLL_MS = 60_000;
+const IDLE_MAX_WAIT_MS = 2 * 60 * 60 * 1000;
+
+export interface AutomationIdleWaitTimings {
+	readonly requiredSeconds: number;
+	readonly pollMs: number;
+	readonly maxWaitMs: number;
+}
+
+const DEFAULT_IDLE_WAIT_TIMINGS: AutomationIdleWaitTimings = {
+	requiredSeconds: IDLE_REQUIRED_SECONDS,
+	pollMs: IDLE_POLL_MS,
+	maxWaitMs: IDLE_MAX_WAIT_MS,
+};
 
 interface ExecutingTask {
 	sessionId?: string;
@@ -46,6 +70,8 @@ export interface ExecuteTaskOptions {
 	readonly trigger: AutomationTrigger;
 	/** 任务配置被执行器改写（暂停、停用、回写绑定会话）后通知调度层同步。 */
 	readonly onTaskChanged?: (task: ScheduledTask) => void;
+	/** 「仅空闲运行」的等待参数；缺省用生产值，测试注入小数值避免真实等待。 */
+	readonly idleWait?: AutomationIdleWaitTimings;
 }
 
 export class AutomationAlreadyRunningError extends Error {
@@ -96,11 +122,48 @@ async function executeTaskInner(task: ScheduledTask, runtime: RuntimeHost, optio
 		return;
 	}
 
+	// 运行时段之外：定时触发记为跳过，不占执行位也不排队；手动运行不受限。
+	if (
+		options.trigger === "schedule" &&
+		task.activeHours &&
+		!isWithinActiveHours(task.activeHours, new Date(startedAt))
+	) {
+		await writeRecord({
+			...baseRecord(task, startedAt),
+			status: "skipped",
+			reason: "outside-active-hours",
+			completedAt: startedAt,
+		});
+		emitTaskEvent({ type: "record.updated", taskId: task.id });
+		return;
+	}
+
 	const executing: ExecutingTask = { runtime, controller: new AbortController() };
 	executingTasks.set(task.id, executing);
 	let record: TaskExecutionRecord = baseRecord(task, startedAt);
 	let reply = "";
 	try {
+		// 仅空闲运行：用户还在操作电脑就等，等满上限放弃这次触发。等待期间占着执行位，
+		// 同一任务再次触发按「上次还在跑」跳过，不会叠加等待。
+		if (options.trigger === "schedule" && task.idleOnly) {
+			const becameIdle = await waitForSystemIdle(
+				executing.controller.signal,
+				options.idleWait ?? DEFAULT_IDLE_WAIT_TIMINGS,
+			);
+			if (!becameIdle) {
+				const completedAt = Date.now();
+				await writeRecord({
+					...record,
+					status: "skipped",
+					reason: "system-busy",
+					completedAt,
+					durationMs: completedAt - startedAt,
+				});
+				emitTaskEvent({ type: "record.updated", taskId: task.id });
+				return;
+			}
+		}
+
 		const invalidTarget = await findInvalidTarget(task);
 		if (invalidTarget) {
 			await suspendTask(task, invalidTarget, options);
@@ -288,6 +351,26 @@ async function waitForSessionIdle(runtime: RuntimeHost, sessionId: string, signa
 		});
 	}
 	signal.throwIfAborted();
+}
+
+async function waitForSystemIdle(signal: AbortSignal, timings: AutomationIdleWaitTimings): Promise<boolean> {
+	const deadline = Date.now() + timings.maxWaitMs;
+	while (true) {
+		signal.throwIfAborted();
+		if (getSystemIdleSeconds() >= timings.requiredSeconds) return true;
+		if (Date.now() >= deadline) return false;
+		await new Promise<void>((resolve) => {
+			const timer = setTimeout(resolve, timings.pollMs);
+			signal.addEventListener(
+				"abort",
+				() => {
+					clearTimeout(timer);
+					resolve();
+				},
+				{ once: true },
+			);
+		});
+	}
 }
 
 /**

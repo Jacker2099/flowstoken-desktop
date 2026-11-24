@@ -184,6 +184,14 @@ const schedulerNotificationType = Type.Object(
 	{ additionalProperties: false },
 );
 
+const schedulerActiveHoursType = Type.Object(
+	{
+		startHour: Type.Integer({ minimum: 0, maximum: 23 }),
+		endHour: Type.Integer({ minimum: 0, maximum: 23 }),
+	},
+	{ additionalProperties: false },
+);
+
 const schedulerTaskType = Type.Object(
 	{
 		id: Type.String(),
@@ -193,6 +201,8 @@ const schedulerTaskType = Type.Object(
 		runTarget: schedulerRunTargetType,
 		model: Type.Optional(schedulerModelType),
 		notification: Type.Optional(schedulerNotificationType),
+		activeHours: Type.Optional(schedulerActiveHoursType),
+		idleOnly: Type.Optional(Type.Boolean()),
 		enabled: Type.Boolean(),
 		suspendedReason: Type.Optional(schedulerSuspendReasonType),
 		createdAt: Type.Number(),
@@ -212,6 +222,8 @@ const schedulerTaskCreateDataType = rejectCapabilitySchemaExcess(
 			runTarget: schedulerRunTargetInputType,
 			model: Type.Optional(schedulerModelType),
 			notification: Type.Optional(schedulerNotificationType),
+			activeHours: Type.Optional(schedulerActiveHoursType),
+			idleOnly: Type.Optional(Type.Boolean()),
 			enabled: Type.Boolean(),
 		},
 		{ additionalProperties: false },
@@ -228,6 +240,8 @@ const schedulerTaskUpdateDataType = rejectCapabilitySchemaExcess(
 			runTarget: Type.Optional(schedulerRunTargetInputType),
 			model: Type.Optional(Type.Union([schedulerModelType, Type.Null()])),
 			notification: Type.Optional(Type.Union([schedulerNotificationType, Type.Null()])),
+			activeHours: Type.Optional(Type.Union([schedulerActiveHoursType, Type.Null()])),
+			idleOnly: Type.Optional(Type.Boolean()),
 			enabled: Type.Optional(Type.Boolean()),
 		},
 		{ additionalProperties: false, minProperties: 1 },

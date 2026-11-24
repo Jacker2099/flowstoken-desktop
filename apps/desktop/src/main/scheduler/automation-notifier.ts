@@ -26,6 +26,9 @@ function formatDuration(ms: number | undefined): string {
 	return minutes < 60 ? `${minutes}m ${seconds % 60}s` : `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
 
+/** 巡检类任务在 prompt 里约定「一切正常只回 NO_REPLY」：命中时这次通知静默，不打扰用户。 */
+export const AUTOMATION_NO_REPLY_SENTINEL = "NO_REPLY";
+
 /**
  * 执行结束后按任务配置发 webhook；返回失败说明（全部成功或无需发送时为 undefined）。
  * 通知失败只记进执行记录，不改变执行状态本身。
@@ -39,6 +42,7 @@ export async function notifyAutomationFinished(
 	const status = record.status;
 	if (!notification || (status !== "success" && status !== "failed" && status !== "aborted")) return undefined;
 	if (!shouldNotify(notification, status)) return undefined;
+	if (reply.trim() === AUTOMATION_NO_REPLY_SENTINEL) return undefined;
 	const text = renderAutomationTemplate(notification.template, {
 		name: task.name,
 		status: mainT(`automation:notify.status.${status}`),

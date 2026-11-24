@@ -25,6 +25,11 @@ export interface AutomationDraft {
 	readonly webhookIds: readonly string[];
 	readonly notifyWhen: AutomationNotifyWhen;
 	readonly template: string;
+	/** 运行时段开关与整点边界（0-23）；结束小于开始表示跨午夜。 */
+	readonly activeHoursEnabled: boolean;
+	readonly activeHoursStart: number;
+	readonly activeHoursEnd: number;
+	readonly idleOnly: boolean;
 	readonly enabled: boolean;
 }
 
@@ -47,6 +52,10 @@ export function emptyAutomationDraft(defaults: AutomationDraftDefaults): Automat
 		webhookIds: [],
 		notifyWhen: "always",
 		template: defaults.template,
+		activeHoursEnabled: false,
+		activeHoursStart: 9,
+		activeHoursEnd: 21,
+		idleOnly: false,
 		enabled: true,
 	};
 }
@@ -71,6 +80,10 @@ export function automationDraftFrom(
 		webhookIds: source.notification?.webhookIds ?? base.webhookIds,
 		notifyWhen: source.notification?.when ?? base.notifyWhen,
 		template: source.notification?.template ?? base.template,
+		activeHoursEnabled: source.activeHours !== undefined,
+		activeHoursStart: source.activeHours?.startHour ?? base.activeHoursStart,
+		activeHoursEnd: source.activeHours?.endHour ?? base.activeHoursEnd,
+		idleOnly: source.idleOnly ?? base.idleOnly,
 		enabled: source.enabled ?? base.enabled,
 	};
 }
@@ -115,6 +128,10 @@ export function automationDraftToInput(draft: AutomationDraft): AutomationTaskIn
 		...(draft.notifyEnabled
 			? { notification: { webhookIds: [...draft.webhookIds], when: draft.notifyWhen, template: draft.template } }
 			: {}),
+		...(draft.activeHoursEnabled
+			? { activeHours: { startHour: draft.activeHoursStart, endHour: draft.activeHoursEnd } }
+			: {}),
+		idleOnly: draft.idleOnly,
 		enabled: draft.enabled,
 	};
 }
@@ -122,7 +139,12 @@ export function automationDraftToInput(draft: AutomationDraft): AutomationTaskIn
 /** 编辑保存：整份提交，并显式清除被关掉的可选项。 */
 export function automationDraftToPatch(draft: AutomationDraft): AutomationTaskPatch {
 	const input = automationDraftToInput(draft);
-	return { ...input, model: input.model ?? null, notification: input.notification ?? null };
+	return {
+		...input,
+		model: input.model ?? null,
+		notification: input.notification ?? null,
+		activeHours: input.activeHours ?? null,
+	};
 }
 
 // ── 任务正文开头的技能 token：表单里以技能胶囊展示，存储时还原为行内 token ──

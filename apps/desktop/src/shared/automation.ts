@@ -51,6 +51,12 @@ export interface AutomationModel {
 	readonly reasoning?: string;
 }
 
+/** 限定运行时段（小时 0-23，本机时区）；startHour > endHour 表示跨午夜窗口。之外触发记为「已跳过」。 */
+export interface AutomationActiveHours {
+	readonly startHour: number;
+	readonly endHour: number;
+}
+
 export type AutomationNotifyWhen = "always" | "success" | "failure";
 
 export interface AutomationNotification {
@@ -71,6 +77,10 @@ export interface ScheduledTask {
 	readonly runTarget: AutomationRunTarget;
 	readonly model?: AutomationModel;
 	readonly notification?: AutomationNotification;
+	/** 设定后只在时段内执行，时段外的定时触发记为跳过；手动运行不受限。 */
+	readonly activeHours?: AutomationActiveHours;
+	/** 仅当用户空闲（无键鼠输入）时才执行；一直不空闲则等不下去后记为跳过。 */
+	readonly idleOnly?: boolean;
 	readonly enabled: boolean;
 	readonly suspendedReason?: AutomationSuspendReason;
 	readonly createdAt: number;
@@ -81,7 +91,7 @@ export interface ScheduledTask {
 
 export type AutomationTaskInput = Pick<
 	ScheduledTask,
-	"name" | "prompt" | "schedule" | "runTarget" | "model" | "notification" | "enabled"
+	"name" | "prompt" | "schedule" | "runTarget" | "model" | "notification" | "activeHours" | "idleOnly" | "enabled"
 >;
 
 export type AutomationTaskCreateRequest = Omit<AutomationTaskInput, "runTarget"> & {
@@ -93,15 +103,20 @@ export type AutomationTaskUpdateRequest = Omit<AutomationTaskPatch, "runTarget">
 };
 
 export type AutomationTaskPatch = {
-	readonly [Key in keyof AutomationTaskInput]?: Key extends "model" | "notification"
+	readonly [Key in keyof AutomationTaskInput]?: Key extends "model" | "notification" | "activeHours"
 		? AutomationTaskInput[Key] | null
 		: AutomationTaskInput[Key];
 };
 
 export type AutomationRecordStatus = "running" | "success" | "failed" | "aborted" | "skipped" | "missed";
 
-/** 未执行的原因：skipped 只会是 previous-running；missed 是应用未运行或系统休眠。 */
-export type AutomationNotRunReason = "previous-running" | "app-not-running" | "system-sleep";
+/** 未执行的原因：missed 是应用未运行或系统休眠；skipped 是触发当下不满足执行条件。 */
+export type AutomationNotRunReason =
+	| "previous-running"
+	| "app-not-running"
+	| "system-sleep"
+	| "outside-active-hours"
+	| "system-busy";
 
 export interface TaskExecutionRecord {
 	readonly id: string;
@@ -273,4 +288,30 @@ export function isAutomationNotification(value: unknown): value is AutomationNot
 		typeof notification.template === "string" &&
 		notification.template.trim().length > 0
 	);
+}
+
+export function isAutomationActiveHours(value: unknown): value is AutomationActiveHours {
+	if (!value || typeof value !== "object") return false;
+	const hours = value as Record<string, unknown>;
+	return (
+		Object.keys(hours).every((key) => key === "startHour" || key === "endHour") &&
+		Number.isSafeInteger(hours.startHour) &&
+		Number.isSafeInteger(hours.endHour) &&
+		(hours.startHour as number) >= 0 &&
+		(hours.startHour as number) <= 23 &&
+		(hours.endHour as number) >= 0 &&
+		(hours.endHour as number) <= 23
+	);
+}
+
+/**
+ * 时刻（取本地小时）是否落在运行时段内。窗口按整点理解：startHour 含、endHour 含，
+ * 例如 9-18 覆盖 09:00 到 18:59；startHour > endHour 时跨午夜（22-7 覆盖 22:00 到次日 07:59）。
+ * 起止相等视为全天开放，与不设置等效。
+ */
+export function isWithinActiveHours(activeHours: AutomationActiveHours, at: Date): boolean {
+	if (activeHours.startHour === activeHours.endHour) return true;
+	const hour = at.getHours();
+	if (activeHours.startHour < activeHours.endHour) return hour >= activeHours.startHour && hour <= activeHours.endHour;
+	return hour >= activeHours.startHour || hour <= activeHours.endHour;
 }

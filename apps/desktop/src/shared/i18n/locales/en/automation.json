@@ -94,7 +94,14 @@
 		"intervalLabel": "Interval",
 		"minuteLabel": "Minute",
 		"weekdays": "Weekdays",
-		"monthDays": "Days"
+		"monthDays": "Days",
+		"activeHours": "Active hours",
+		"activeHoursHint": "Runs only within this window; triggers outside it are skipped. An end earlier than the start means overnight.",
+		"activeHoursTo": "to",
+		"hourSuffix": ":00",
+		"idleOnly": "Only when idle",
+		"idleOnlyHint": "Waits while you are actively using the computer; skipped if you never become idle",
+		"notifyNoReplyHint": "Tell the task in its prompt to reply with just NO_REPLY when everything is fine; matching runs stay silent"
 	},
 	"scheduleMode": {
 		"once": "Once",
@@ -191,7 +198,9 @@
 		"reason": {
 			"previous-running": "The previous run was still going",
 			"app-not-running": "The app wasn't running",
-			"system-sleep": "The computer was asleep"
+			"system-sleep": "The computer was asleep",
+			"outside-active-hours": "Outside active hours",
+			"system-busy": "Timed out waiting for idle"
 		},
 		"missedMany": "Missed {{times}} times, until {{until}} · {{reason}}",
 		"notifyFailed": "Notification failed: {{error}}"

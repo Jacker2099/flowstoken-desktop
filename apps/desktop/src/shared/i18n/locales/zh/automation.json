@@ -94,7 +94,14 @@
 		"intervalLabel": "间隔",
 		"minuteLabel": "分钟",
 		"weekdays": "星期",
-		"monthDays": "日期"
+		"monthDays": "日期",
+		"activeHours": "运行时段",
+		"activeHoursHint": "只在这个时段内执行，之外触发记为跳过；结束小于开始表示跨午夜",
+		"activeHoursTo": "至",
+		"hourSuffix": "时",
+		"idleOnly": "仅空闲时运行",
+		"idleOnlyHint": "您还在操作电脑时先等待，一直不空闲则本次跳过",
+		"notifyNoReplyHint": "在任务内容里约定「一切正常只回复 NO_REPLY」，命中时本次通知静默"
 	},
 	"scheduleMode": {
 		"once": "不重复",
@@ -191,7 +198,9 @@
 		"reason": {
 			"previous-running": "上次执行还没结束",
 			"app-not-running": "应用未运行",
-			"system-sleep": "系统休眠"
+			"system-sleep": "系统休眠",
+			"outside-active-hours": "不在运行时段内",
+			"system-busy": "等待空闲超时"
 		},
 		"missedMany": "错过 {{times}} 次，至 {{until}} · {{reason}}",
 		"notifyFailed": "通知发送失败：{{error}}"

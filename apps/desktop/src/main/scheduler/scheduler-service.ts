@@ -6,6 +6,7 @@ import {
 	type AutomationTaskInput,
 	type AutomationTaskPatch,
 	type AutomationTaskUpdateRequest,
+	isAutomationActiveHours,
 	isAutomationModel,
 	isAutomationNotification,
 	isAutomationRunTarget,
@@ -56,7 +57,17 @@ export class SchedulerServiceError extends Error {
 	}
 }
 
-const INPUT_KEYS = new Set(["name", "prompt", "schedule", "runTarget", "model", "notification", "enabled"]);
+const INPUT_KEYS = new Set([
+	"name",
+	"prompt",
+	"schedule",
+	"runTarget",
+	"model",
+	"notification",
+	"activeHours",
+	"idleOnly",
+	"enabled",
+]);
 
 function isNonBlankString(value: unknown): value is string {
 	return typeof value === "string" && value.trim().length > 0;
@@ -87,6 +98,11 @@ function assertFieldShapes(input: Record<string, unknown>): void {
 	) {
 		throw invalid("Invalid notification settings.");
 	}
+	if (input.activeHours !== undefined && input.activeHours !== null && !isAutomationActiveHours(input.activeHours)) {
+		throw invalid("Invalid active hours settings.");
+	}
+	if (input.idleOnly !== undefined && typeof input.idleOnly !== "boolean")
+		throw invalid("idleOnly must be a boolean.");
 }
 
 function assertCreateInput(value: unknown): asserts value is AutomationTaskInput {
@@ -115,12 +131,13 @@ function assertPatchInput(value: unknown): asserts value is AutomationTaskPatch 
 
 /** 应用补丁：null 清除可选字段；目标（运行会话 / 项目）变化后清掉因目标失效产生的暂停原因。 */
 function applyPatch(task: ScheduledTask, patch: AutomationTaskPatch, now: number): ScheduledTask {
-	const { model, notification, ...rest } = patch;
+	const { model, notification, activeHours, ...rest } = patch;
 	const next: ScheduledTask = { ...task, ...rest, updatedAt: now };
 	const withOptional: ScheduledTask = {
 		...next,
 		...(model === null ? { model: undefined } : model !== undefined ? { model } : {}),
 		...(notification === null ? { notification: undefined } : notification !== undefined ? { notification } : {}),
+		...(activeHours === null ? { activeHours: undefined } : activeHours !== undefined ? { activeHours } : {}),
 	};
 	const cleaned = JSON.parse(JSON.stringify(withOptional)) as ScheduledTask;
 	if (patch.runTarget !== undefined || (patch.enabled === true && cleaned.suspendedReason)) {

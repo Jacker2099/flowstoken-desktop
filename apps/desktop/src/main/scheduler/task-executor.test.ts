@@ -6,6 +6,7 @@ const CONVERSATION_CWD = "C:/home/.vetta/conversation";
 const PROJECT_CWD = "C:/workspace/project";
 
 const mocks = vi.hoisted(() => ({
+	idleSeconds: vi.fn(() => 600),
 	createSession: vi.fn(),
 	openSession: vi.fn(),
 	emitTaskEvent: vi.fn(),
@@ -40,6 +41,7 @@ vi.mock("../notifications/index.js", () => ({
 }));
 vi.mock("../projects/project-path.js", () => ({ sameProjectPath: (a: string, b: string) => a === b }));
 vi.mock("./automation-notifier.js", () => ({ notifyAutomationFinished: mocks.notify }));
+vi.mock("./system-idle.js", () => ({ getSystemIdleSeconds: () => mocks.idleSeconds() }));
 vi.mock("./task-storage.js", () => ({
 	generateId: () => `record-${mocks.records.length + 1}`,
 	updateTask: mocks.updateTask,
@@ -118,6 +120,7 @@ function session(sessionPath = "C:/sessions/new.jsonl") {
 describe("automation task executor", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		mocks.idleSeconds.mockReturnValue(600);
 		mocks.records.length = 0;
 		mocks.attention.length = 0;
 		mocks.existing.clear();
@@ -160,6 +163,83 @@ describe("automation task executor", () => {
 		expect(mocks.updateTaskLastRun).toHaveBeenCalledWith("task-1", "success");
 		expect(mocks.attention).toEqual([]);
 		expect(isTaskRunning("task-1")).toBe(false);
+	});
+
+	it("skips a scheduled trigger outside active hours without creating a session", async () => {
+		vi.useFakeTimers();
+		try {
+			vi.setSystemTime(new Date("2026-01-05T03:00:00"));
+			const { runtime } = fakeRuntime();
+			await executeTask(task({ activeHours: { startHour: 9, endHour: 21 } }), runtime, { trigger: "schedule" });
+
+			expect(mocks.createSession).not.toHaveBeenCalled();
+			expect(runtime.prompt).not.toHaveBeenCalled();
+			expect(mocks.records.at(-1)).toMatchObject({ status: "skipped", reason: "outside-active-hours" });
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("runs inside active hours and treats overnight windows correctly", async () => {
+		vi.useFakeTimers();
+		try {
+			// 跨午夜窗口 22-7：凌晨 3 点在窗口内。
+			vi.setSystemTime(new Date("2026-01-05T03:00:00"));
+			const { runtime } = fakeRuntime();
+			await executeTask(task({ activeHours: { startHour: 22, endHour: 7 } }), runtime, { trigger: "schedule" });
+			expect(runtime.prompt).toHaveBeenCalled();
+			expect(mocks.records.at(-1)).toMatchObject({ status: "success" });
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("manual triggers ignore active hours", async () => {
+		vi.useFakeTimers();
+		try {
+			vi.setSystemTime(new Date("2026-01-05T03:00:00"));
+			const { runtime } = fakeRuntime();
+			await executeTask(task({ activeHours: { startHour: 9, endHour: 21 } }), runtime, { trigger: "manual" });
+			expect(runtime.prompt).toHaveBeenCalled();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("idle-only tasks wait for the system to become idle and then run", async () => {
+		let idleChecks = 0;
+		mocks.idleSeconds.mockImplementation(() => {
+			idleChecks += 1;
+			return idleChecks > 2 ? 600 : 0;
+		});
+		const { runtime } = fakeRuntime();
+		await executeTask(task({ idleOnly: true }), runtime, {
+			trigger: "schedule",
+			idleWait: { requiredSeconds: 300, pollMs: 1, maxWaitMs: 500 },
+		});
+
+		expect(runtime.prompt).toHaveBeenCalled();
+		expect(mocks.records.at(-1)).toMatchObject({ status: "success" });
+		expect(idleChecks).toBeGreaterThan(2);
+	});
+
+	it("idle-only tasks skip after the wait budget is exhausted", async () => {
+		mocks.idleSeconds.mockReturnValue(0);
+		const { runtime } = fakeRuntime();
+		await executeTask(task({ idleOnly: true }), runtime, {
+			trigger: "schedule",
+			idleWait: { requiredSeconds: 300, pollMs: 1, maxWaitMs: 5 },
+		});
+
+		expect(runtime.prompt).not.toHaveBeenCalled();
+		expect(mocks.records.at(-1)).toMatchObject({ status: "skipped", reason: "system-busy" });
+	});
+
+	it("idle-only manual triggers run immediately without waiting", async () => {
+		mocks.idleSeconds.mockReturnValue(0);
+		const { runtime } = fakeRuntime();
+		await executeTask(task({ idleOnly: true }), runtime, { trigger: "manual" });
+		expect(runtime.prompt).toHaveBeenCalled();
 	});
 
 	it("records a failed turn as failed instead of success", async () => {
