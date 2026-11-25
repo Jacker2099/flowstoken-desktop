@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
 		sessionPath,
 	})),
 	promptInteractiveSession: vi.fn(async (sessionId: string, input: { text: string }) => {
-		mocks.getMessages.mockImplementation((id: string) =>
+		mocks.getMessages.mockImplementation((id: string): { role: string; body: string }[] =>
 			id === sessionId
 				? [
 						{ role: "user", body: input.text },
@@ -22,7 +22,7 @@ const mocks = vi.hoisted(() => ({
 		return { status: "completed" };
 	}),
 	listProjects: vi.fn(async () => ({ projects: [{ path: "/work/a", name: "a" }] })),
-	getMessages: vi.fn((): { role: string; body: string }[] => []),
+	getMessages: vi.fn((_id: string): { role: string; body: string }[] => []),
 }));
 
 vi.mock("../conversations/desktop-conversation-service.js", () => ({
