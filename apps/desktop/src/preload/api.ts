@@ -50,6 +50,7 @@ import type { DesktopThemesApi } from "./api-types/themes.js";
 import type { DesktopUiZoomApi } from "./api-types/ui-zoom.js";
 import type { DesktopUpdaterApi } from "./api-types/updater.js";
 import type { DesktopWebhookApi } from "./api-types/webhook.js";
+import type { DesktopWorktreeRunsApi } from "./api-types/worktree-runs.js";
 import type { DesktopFsApi } from "./fs-types.js";
 
 export type * from "./api-types/abilities.js";
@@ -89,6 +90,7 @@ export type * from "./api-types/themes.js";
 export type * from "./api-types/ui-zoom.js";
 export type * from "./api-types/updater.js";
 export type * from "./api-types/webhook.js";
+export type * from "./api-types/worktree-runs.js";
 
 export interface DesktopHostAccessApi {
 	/** 仅供 renderer 启动模块领取一次；插件运行前令牌已经被宿主持有。 */
@@ -138,6 +140,7 @@ export interface DesktopApi {
 	ssh: DesktopSshApi;
 	terminal: DesktopTerminalApi;
 	webhook: DesktopWebhookApi;
+	worktreeRuns: DesktopWorktreeRunsApi;
 	runtimes: DesktopRuntimesApi;
 	permissions: DesktopPermissionsApi;
 	notification: DesktopNotificationApi;

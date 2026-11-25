@@ -14,6 +14,7 @@ import enPet from "./locales/en/pet.json";
 import enProject from "./locales/en/project.json";
 import enSettings from "./locales/en/settings.json";
 import enSkills from "./locales/en/skills.json";
+import enWorktreeRuns from "./locales/en/worktree-runs.json";
 import zhAbilities from "./locales/zh/abilities.json";
 import zhAgentTeams from "./locales/zh/agent-teams.json";
 import zhAutomation from "./locales/zh/automation.json";
@@ -26,6 +27,7 @@ import zhPet from "./locales/zh/pet.json";
 import zhProject from "./locales/zh/project.json";
 import zhSettings from "./locales/zh/settings.json";
 import zhSkills from "./locales/zh/skills.json";
+import zhWorktreeRuns from "./locales/zh/worktree-runs.json";
 
 export const resources = {
 	zh: {
@@ -41,6 +43,7 @@ export const resources = {
 		"batch-tasks": zhBatchTasks,
 		automation: zhAutomation,
 		"agent-teams": zhAgentTeams,
+		"worktree-runs": zhWorktreeRuns,
 	},
 	en: {
 		common: enCommon,
@@ -55,6 +58,7 @@ export const resources = {
 		"batch-tasks": enBatchTasks,
 		automation: enAutomation,
 		"agent-teams": enAgentTeams,
+		"worktree-runs": enWorktreeRuns,
 	},
 } as const;
 

@@ -1,0 +1,60 @@
+{
+  "page": {
+    "title": "Parallel Runs",
+    "subtitle": "Fan out one task to several agents in isolated git worktrees, compare the diffs, and adopt the winner."
+  },
+  "create": {
+    "title": "New parallel run",
+    "project": "Project",
+    "projectPlaceholder": "Select a git project",
+    "prompt": "Task",
+    "promptPlaceholder": "Describe the task for the agents to implement in parallel",
+    "lanes": "Lanes",
+    "lanesUnit": "",
+    "submit": "Start run",
+    "creating": "Creating…"
+  },
+  "list": {
+    "empty": "No parallel runs yet",
+    "emptyHint": "Pick a git project, let multiple agents implement the same task in parallel, then adopt the best result.",
+    "running": "Running",
+    "done": "Ready to compare",
+    "adopted": "Adopted",
+    "discarded": "Discarded"
+  },
+  "lane": {
+    "title": "Lane {{index}}",
+    "pending": "Pending",
+    "running": "Running",
+    "done": "Done",
+    "error": "Failed",
+    "interrupted": "Interrupted",
+    "noChanges": "No changes",
+    "viewDiff": "View diff",
+    "hideDiff": "Hide diff",
+    "openSession": "Open session",
+    "adopt": "Adopt this lane",
+    "adopting": "Adopting…",
+    "adopted": "✓ Adopted",
+    "reply": "Reply"
+  },
+  "actions": {
+    "discard": "Discard run",
+    "discarding": "Discarding…",
+    "removeRecord": "Remove record",
+    "refresh": "Refresh",
+    "confirmDiscard": "Discard this run? All lane worktrees and their changes will be deleted.",
+    "confirmAdopt": "Adopting applies this lane's changes to your project worktree as uncommitted changes and deletes the other lanes. Continue?"
+  },
+  "errors": {
+    "loadFailed": "Failed to load",
+    "createFailed": "Failed to create",
+    "adoptFailed": "Failed to adopt",
+    "discardFailed": "Failed to discard"
+  },
+  "nav": {
+    "title": "Parallel runs",
+    "description": "Page where multiple agents implement the same task in parallel worktrees for comparison.",
+    "aliases": "worktree,parallel,race,compare"
+  }
+}

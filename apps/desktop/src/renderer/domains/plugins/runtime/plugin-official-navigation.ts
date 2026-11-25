@@ -40,6 +40,13 @@ const STATIC_TARGETS: readonly StaticNavigationTarget[] = [
 		aliases: ["批处理", "批量执行", "batch"],
 	},
 	{
+		id: "worktree-runs",
+		title: "并行实验",
+		description: "多 Agent 在独立 worktree 并行实现同一任务、对比 diff 择优采纳的页面。",
+		hashPath: "/worktree-runs",
+		aliases: ["并行实验", "worktree", "parallel", "竞赛", "对比"],
+	},
+	{
 		id: "skills",
 		title: "能力",
 		description: "能力页：Skill / 场景 / MCP / 插件 / 能力套装统一管理。",

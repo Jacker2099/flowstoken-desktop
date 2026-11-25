@@ -14,6 +14,7 @@ import {
 	loadNewSessionPage,
 	loadPluginWorkspaceViewRoute,
 	loadSettingsPage,
+	loadWorktreeRunsPage,
 } from "./route-page-loaders";
 import { RouteErrorPage } from "./shared/components/RouteErrorPage";
 
@@ -33,6 +34,7 @@ const SessionViewerPage = lazyRoutePage(async () => ({
 }));
 const AutomationPage = lazyRoutePage(loadAutomationPage);
 const BatchTasksPage = lazyRoutePage(loadBatchTasksPage);
+const WorktreeRunsPage = lazyRoutePage(loadWorktreeRunsPage);
 const AbilitiesPage = lazyRoutePage(loadAbilitiesPage);
 const AgentCenterPage = lazyRoutePage(loadAgentCenterPage);
 const TeamChatPage = lazyRoutePage(async () => ({
@@ -75,6 +77,13 @@ const batchTasksRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: "/batch-tasks",
 	component: BatchTasksPage,
+	pendingComponent: NoPendingComponent,
+});
+
+const worktreeRunsRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: "/worktree-runs",
+	component: WorktreeRunsPage,
 	pendingComponent: NoPendingComponent,
 });
 
@@ -267,6 +276,7 @@ const routeTree = rootRoute.addChildren([
 	indexRoute,
 	automationRoute,
 	batchTasksRoute,
+	worktreeRunsRoute,
 	agentCenterRoute,
 	teamListRedirectRoute,
 	teamChatRoute,

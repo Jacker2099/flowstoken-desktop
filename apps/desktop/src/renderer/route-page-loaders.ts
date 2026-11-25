@@ -23,6 +23,10 @@ export const loadBatchTasksPage = async () => ({
 	default: (await import("./domains/batch-tasks/components/BatchTasksPage")).BatchTasksPage,
 });
 
+export const loadWorktreeRunsPage = async () => ({
+	default: (await import("./domains/worktree-runs/components/WorktreeRunsPage")).WorktreeRunsPage,
+});
+
 export const loadKnowledgeBasePage = async () => ({
 	default: (await import("./domains/knowledge-base/components/KnowledgeBasePage")).KnowledgeBasePage,
 });

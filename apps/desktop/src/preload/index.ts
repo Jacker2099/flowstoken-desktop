@@ -33,6 +33,7 @@ import { createTerminalApi } from "./apis/terminal.js";
 import { createThemesApi } from "./apis/themes.js";
 import { createUiZoomApi } from "./apis/ui-zoom.js";
 import { createWebhookApi } from "./apis/webhook.js";
+import { createWorktreeRunsApi } from "./apis/worktree-runs.js";
 import { createHostAccessGate } from "./host-access.js";
 import { createUserActivityReporter, USER_ACTIVITY_CHANNEL } from "./user-activity.js";
 
@@ -57,6 +58,7 @@ const rawApi: Omit<DesktopApi, "hostAccess"> = {
 	...createBatchTasksApi(ipcRenderer),
 	...createSchedulerApi(ipcRenderer),
 	...createWebhookApi(ipcRenderer),
+	...createWorktreeRunsApi(ipcRenderer),
 	...createNotificationApi(ipcRenderer),
 	...createPluginsApi(ipcRenderer, webUtils),
 	...createThemesApi(ipcRenderer),

@@ -1,0 +1,60 @@
+{
+  "page": {
+    "title": "并行实验",
+    "subtitle": "同一个任务交给多个 Agent 在独立 worktree 并行实现，对比 diff 后择优采纳。"
+  },
+  "create": {
+    "title": "新建并行实验",
+    "project": "项目",
+    "projectPlaceholder": "选择 git 项目",
+    "prompt": "任务",
+    "promptPlaceholder": "描述要让 Agent 并行实现的任务，例如：用两种不同的思路实现 XX",
+    "lanes": "并行数量",
+    "lanesUnit": "路",
+    "submit": "开始实验",
+    "creating": "创建中…"
+  },
+  "list": {
+    "empty": "还没有并行实验",
+    "emptyHint": "选择一个 git 项目，让多个 Agent 并行实现同一任务，再对比采纳最优解。",
+    "running": "运行中",
+    "done": "待对比",
+    "adopted": "已采纳",
+    "discarded": "已丢弃"
+  },
+  "lane": {
+    "title": "Lane {{index}}",
+    "pending": "等待中",
+    "running": "运行中",
+    "done": "已完成",
+    "error": "失败",
+    "interrupted": "已中断",
+    "noChanges": "无改动",
+    "viewDiff": "查看 diff",
+    "hideDiff": "收起 diff",
+    "openSession": "打开会话",
+    "adopt": "采纳此方案",
+    "adopting": "采纳中…",
+    "adopted": "✓ 已采纳",
+    "reply": "回复"
+  },
+  "actions": {
+    "discard": "丢弃实验",
+    "discarding": "丢弃中…",
+    "removeRecord": "删除记录",
+    "refresh": "刷新",
+    "confirmDiscard": "确定丢弃这个实验？所有 lane 的 worktree 与改动都会被删除。",
+    "confirmAdopt": "采纳后，该 lane 的全部改动会以未提交变更应用到原项目工作区，其它 lane 将被删除。继续？"
+  },
+  "errors": {
+    "loadFailed": "加载失败",
+    "createFailed": "创建失败",
+    "adoptFailed": "采纳失败",
+    "discardFailed": "丢弃失败"
+  },
+  "nav": {
+    "title": "并行实验",
+    "description": "多 Agent 并行实现同一任务并对比采纳的页面。",
+    "aliases": "worktree,parallel,并行,竞赛,对比"
+  }
+}

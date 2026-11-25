@@ -109,6 +109,7 @@ import {
 	setMainWindow,
 	showMainWindow,
 } from "./window-manager.js";
+import { getWorktreeRunService } from "./worktree-runs/worktree-run-service.js";
 
 configureRemoteVideoEncoding(app.commandLine, process.platform, process.versions.chrome ?? "");
 
@@ -783,6 +784,9 @@ if (!gotSingleLock) {
 			teardownSchedulerIpc = undefined;
 		}
 		void syncDesktopMcpServer().catch((error) => mainLog.warn("[mcp-server] initial start failed", error));
+		void getWorktreeRunService()
+			.reconcileAfterRestart()
+			.catch((error) => mainLog.warn("[worktree-runs] reconcile failed", error));
 		void initScheduler().then(() => {
 			const win = getMainWindow();
 			if (win) {

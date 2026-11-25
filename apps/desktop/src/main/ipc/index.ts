@@ -45,6 +45,7 @@ import { registerTerminalIpc } from "./terminal.js";
 import { registerThemesIpc } from "./themes.js";
 import { registerUpdaterIpc } from "./updater.js";
 import { registerWebhookIpc } from "./webhook.js";
+import { registerWorktreeRunsIpc } from "./worktree-runs.js";
 
 interface IpcTeardown {
 	teardownMessageAnnotations: () => void;
@@ -61,6 +62,7 @@ interface IpcTeardown {
 	teardownThemes: () => void;
 	teardownDialog: () => void;
 	teardownBrowserCapture: () => void;
+	teardownWorktreeRuns: () => void;
 	teardownClipboard: () => void;
 	teardownFs: () => void;
 	teardownFileTransfer: () => void;
@@ -115,6 +117,7 @@ export function registerAllIpc(
 		teardownThemes: registerThemesIpc(),
 		teardownDialog: registerDialogIpc(),
 		teardownBrowserCapture: registerBrowserCaptureIpc(),
+		teardownWorktreeRuns: registerWorktreeRunsIpc(),
 		teardownClipboard: registerClipboardIpc(),
 		teardownFs: registerFsIpc(),
 		teardownFileTransfer: registerFileTransferIpc(),
@@ -162,6 +165,7 @@ export function teardownAllIpc(teardown: IpcTeardown): void {
 	teardown.teardownThemes();
 	teardown.teardownDialog();
 	teardown.teardownBrowserCapture();
+	teardown.teardownWorktreeRuns();
 	teardown.teardownClipboard();
 	teardown.teardownFs();
 	teardown.teardownFileTransfer();
