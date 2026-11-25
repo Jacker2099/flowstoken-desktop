@@ -46,6 +46,13 @@ test("sync dispatch, related tests and publication integrity remain required wor
 	const sync = parse(readFileSync(resolve(root, ".github/workflows/flowstoken-upstream-sync.yml"), "utf8"));
 	assert.equal(outer.jobs.build.needs, "validate-related");
 	assert.ok(outer.jobs["validate-related"].steps.some((step) => step.run?.includes("test-flowstoken-related.mjs")));
+	const preflight = outer.jobs["validate-related"].steps;
+	const install = preflight.findIndex((step) => step.uses === "./.github/actions/install-bun-dependencies");
+	const related = preflight.findIndex((step) => step.run?.includes("test-flowstoken-related.mjs"));
+	for (const probe of ["@wdio/electron-service", "repackage-notarized-mac.node-test.mjs"]) {
+		const check = preflight.findIndex((step) => step.run?.includes(probe));
+		assert.ok(install >= 0 && install < check && check < related);
+	}
 	const build = inner.jobs.build.steps;
 	assert.ok(
 		build.findIndex((step) => step.name === "Record checkpoint provenance and file hashes") <

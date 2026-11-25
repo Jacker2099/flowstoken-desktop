@@ -73,6 +73,17 @@ jobs:
           bun-version-file: package.json
       - name: Install dependencies
         uses: ./.github/actions/install-bun-dependencies
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Load the packaged E2E launcher from the frozen desktop dependencies
+        working-directory: apps/desktop
+        run: node --input-type=module -e 'import { launcher } from "@wdio/electron-service"; if (typeof launcher !== "function") throw new Error("Electron launcher is unavailable")'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check recovery tooling against the current packaging dependencies
+        run: node --test branding/flowstoken/tests/recovery-ci.test.mjs branding/flowstoken/tests/verification-harness.test.mjs apps/desktop/scripts/notarize-mac-app.node-test.mjs apps/desktop/scripts/repackage-notarized-mac.node-test.mjs
       - name: Verify FlowsToken-related client tests
         run: |
           UPSTREAM_TAG="$(tr -d '\r\n' < branding/flowstoken/UPSTREAM_SYNCED)"
