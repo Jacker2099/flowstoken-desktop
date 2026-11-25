@@ -14,6 +14,7 @@ vi.mock("react-i18next", () => ({
 
 vi.mock("@shared/store/flowstoken-catalog", () => ({
 	revalidateFlowstokenCatalog: vi.fn(async () => undefined),
+	catalogModelEntry: vi.fn(() => undefined),
 }));
 
 vi.mock("@shared/store/model-catalog", () => ({
