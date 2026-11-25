@@ -18,6 +18,7 @@ vi.mock("@vetta-org/ui", () => ({
 		<button {...props}>{children}</button>
 	),
 	cn: (...values: readonly unknown[]) => values.filter(Boolean).join(" "),
+	SELECT_TRIGGER_CLASS: "select-trigger-class",
 	Input: (props: Record<string, unknown>) => <input {...props} />,
 	Switch: ({
 		checked,

@@ -26,6 +26,7 @@ vi.mock("@vetta-org/ui", () => {
 			latestOverlayClassName = overlayClassName;
 			return <div>{children}</div>;
 		},
+		cn: (...values: readonly unknown[]) => values.filter(Boolean).join(" "),
 		DrawerDescription: ({ children }: { children: ReactNode }) => <p>{children}</p>,
 		DrawerTitle: ({ children }: { children: ReactNode }) => <h1>{children}</h1>,
 	};

@@ -23,6 +23,7 @@ vi.mock("@vetta-org/ui", () => ({
 	),
 	Input: (props: Record<string, unknown>) => <input {...props} />,
 	cn: (...values: readonly unknown[]) => values.filter(Boolean).join(" "),
+	SELECT_TRIGGER_CLASS: "select-trigger-class",
 }));
 vi.mock("./AgentProfileSheet", () => ({ AgentProfileSheet: () => <div>sheet</div> }));
 
