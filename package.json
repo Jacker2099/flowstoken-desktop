@@ -157,6 +157,8 @@
 		"micromark-core-commonmark": "2.0.3",
 		"micromark-util-types": "2.0.2",
 		"mdast-util-from-markdown": "2.0.3",
-		"adm-zip": "0.5.17"
+		"adm-zip": "0.5.17",
+		"react": "19.2.8",
+		"react-dom": "19.2.8"
 	}
 }
