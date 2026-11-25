@@ -118,7 +118,7 @@ export async function startLocalRpcServer(
 		}
 	});
 
-	const { server, port } = await new Promise<{ server: Server; port: number }>((resolve) => {
+	const { server, port } = await new Promise<{ server: Server; port: number }>((resolve, reject) => {
 		const server = serve(
 			{
 				fetch: app.fetch,
@@ -126,9 +126,11 @@ export async function startLocalRpcServer(
 				port: options.port ?? 0,
 			},
 			(info) => {
+				server.off("error", reject);
 				resolve({ server, port: info.port });
 			},
 		) as Server;
+		server.once("error", reject);
 	});
 
 	return {
