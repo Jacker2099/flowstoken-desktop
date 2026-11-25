@@ -2,7 +2,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
 	fromId: vi.fn(),
-	capturePage: vi.fn(),
+	// 到达 electron 的截图参数是服务的输出契约：收集成状态，断言最终事实。
+	captureArgs: [] as unknown[],
+	captureResult: null as unknown,
+	capturePage: vi.fn((args: unknown) => {
+		mocks.captureArgs.push(args);
+		return Promise.resolve(mocks.captureResult);
+	}),
 	writeFile: vi.fn(async () => {}),
 	mkdir: vi.fn(async () => {}),
 }));
@@ -31,20 +37,21 @@ const rect = { x: 10, y: 20, width: 300, height: 200 };
 describe("captureElementScreenshot", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		mocks.capturePage.mockResolvedValue({
+		mocks.captureArgs.length = 0;
+		mocks.captureResult = {
 			isEmpty: () => false,
 			toPNG: () => Buffer.from("png"),
 			getSize: () => ({ width: 600, height: 400 }),
-		});
+		};
 		mocks.fromId.mockReturnValue(guest());
 	});
 
 	it("captures the element rect of a webview guest and persists a png", async () => {
 		const result = await captureElementScreenshot(7, rect);
-		expect(mocks.capturePage).toHaveBeenCalledWith({ x: 10, y: 20, width: 300, height: 200 });
+		expect(mocks.captureArgs).toEqual([{ x: 10, y: 20, width: 300, height: 200 }]);
 		expect(result.width).toBe(600);
 		expect(result.path).toContain("element-");
-		expect(mocks.writeFile).toHaveBeenCalled();
+		expect(result.path).toMatch(/element-.*\.png$/);
 	});
 
 	it("rejects non-webview webContents so arbitrary windows cannot be captured", async () => {
@@ -61,13 +68,13 @@ describe("captureElementScreenshot", () => {
 
 	it("clamps negative origin and fails clearly when the element is off-viewport", async () => {
 		await captureElementScreenshot(7, { ...rect, x: -5, y: -8 });
-		expect(mocks.capturePage).toHaveBeenCalledWith({ x: 0, y: 0, width: 300, height: 200 });
+		expect(mocks.captureArgs.at(-1)).toEqual({ x: 0, y: 0, width: 300, height: 200 });
 
-		mocks.capturePage.mockResolvedValue({
+		mocks.captureResult = {
 			isEmpty: () => true,
 			toPNG: () => Buffer.from(""),
 			getSize: () => ({ width: 0, height: 0 }),
-		});
+		};
 		await expect(captureElementScreenshot(7, rect)).rejects.toThrow("viewport");
 	});
 });

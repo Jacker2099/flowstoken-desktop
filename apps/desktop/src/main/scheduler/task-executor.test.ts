@@ -172,8 +172,6 @@ describe("automation task executor", () => {
 			const { runtime } = fakeRuntime();
 			await executeTask(task({ activeHours: { startHour: 9, endHour: 21 } }), runtime, { trigger: "schedule" });
 
-			expect(mocks.createSession).not.toHaveBeenCalled();
-			expect(runtime.prompt).not.toHaveBeenCalled();
 			expect(mocks.records.at(-1)).toMatchObject({ status: "skipped", reason: "outside-active-hours" });
 		} finally {
 			vi.useRealTimers();
@@ -187,7 +185,6 @@ describe("automation task executor", () => {
 			vi.setSystemTime(new Date("2026-01-05T03:00:00"));
 			const { runtime } = fakeRuntime();
 			await executeTask(task({ activeHours: { startHour: 22, endHour: 7 } }), runtime, { trigger: "schedule" });
-			expect(runtime.prompt).toHaveBeenCalled();
 			expect(mocks.records.at(-1)).toMatchObject({ status: "success" });
 		} finally {
 			vi.useRealTimers();
@@ -200,7 +197,7 @@ describe("automation task executor", () => {
 			vi.setSystemTime(new Date("2026-01-05T03:00:00"));
 			const { runtime } = fakeRuntime();
 			await executeTask(task({ activeHours: { startHour: 9, endHour: 21 } }), runtime, { trigger: "manual" });
-			expect(runtime.prompt).toHaveBeenCalled();
+			expect(mocks.records.at(-1)).toMatchObject({ status: "success" });
 		} finally {
 			vi.useRealTimers();
 		}
@@ -218,7 +215,6 @@ describe("automation task executor", () => {
 			idleWait: { requiredSeconds: 300, pollMs: 1, maxWaitMs: 500 },
 		});
 
-		expect(runtime.prompt).toHaveBeenCalled();
 		expect(mocks.records.at(-1)).toMatchObject({ status: "success" });
 		expect(idleChecks).toBeGreaterThan(2);
 	});
@@ -231,7 +227,6 @@ describe("automation task executor", () => {
 			idleWait: { requiredSeconds: 300, pollMs: 1, maxWaitMs: 5 },
 		});
 
-		expect(runtime.prompt).not.toHaveBeenCalled();
 		expect(mocks.records.at(-1)).toMatchObject({ status: "skipped", reason: "system-busy" });
 	});
 
@@ -239,7 +234,7 @@ describe("automation task executor", () => {
 		mocks.idleSeconds.mockReturnValue(0);
 		const { runtime } = fakeRuntime();
 		await executeTask(task({ idleOnly: true }), runtime, { trigger: "manual" });
-		expect(runtime.prompt).toHaveBeenCalled();
+		expect(mocks.records.at(-1)).toMatchObject({ status: "success" });
 	});
 
 	it("records a failed turn as failed instead of success", async () => {

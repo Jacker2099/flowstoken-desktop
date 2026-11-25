@@ -10,10 +10,25 @@ import { useBrowserPanelModel } from "./useBrowserPanelModel";
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
 const pickerMocks = vi.hoisted(() => ({
-	insertImageToken: vi.fn(),
-	insertPlainText: vi.fn(),
-	focusInputEditor: vi.fn(),
-	captureElement: vi.fn(async () => ({ path: "/tmp/element-1.png", width: 100, height: 50 })),
+	// 组合器是用户可见终点：mocks 把调用累积成状态，断言读最终内容而不是调用本身。
+	composerImages: [] as string[],
+	composerText: [] as string[],
+	focused: false as boolean,
+	insertImageToken: vi.fn((path: string) => {
+		pickerMocks.composerImages.push(path);
+	}),
+	insertPlainText: vi.fn((text: string) => {
+		pickerMocks.composerText.push(text);
+	}),
+	focusInputEditor: vi.fn(() => {
+		pickerMocks.focused = true;
+	}),
+	// 截图路径由入参 rect 派生：组合器里出现派生路径即证明 rect 从拾取消息正确流经截图边界。
+	captureElement: vi.fn(async (_id: number, rect: { width: number; height: number }) => ({
+		path: `/tmp/element-${rect.width}x${rect.height}.png`,
+		width: 100,
+		height: 50,
+	})),
 }));
 
 vi.mock("@domains/conversation/components/input-bar/editor/inputEditorHandle", () => ({
@@ -181,10 +196,9 @@ describe("browser panel element picker", () => {
 				await Promise.resolve();
 			});
 
-			expect(pickerMocks.captureElement).toHaveBeenCalledWith(42, picked.rect);
-			expect(pickerMocks.insertImageToken).toHaveBeenCalledWith("/tmp/element-1.png");
-			expect(pickerMocks.insertPlainText).toHaveBeenCalledWith(expect.stringContaining("Selector: #cta"));
-			expect(pickerMocks.focusInputEditor).toHaveBeenCalled();
+			expect(pickerMocks.composerImages).toEqual(["/tmp/element-30x20.png"]);
+			expect(pickerMocks.composerText.join("\n")).toContain("Selector: #cta");
+			expect(pickerMocks.focused).toBe(true);
 			expect(result.current.pickerActive).toBe(false);
 		} finally {
 			vi.useRealTimers();

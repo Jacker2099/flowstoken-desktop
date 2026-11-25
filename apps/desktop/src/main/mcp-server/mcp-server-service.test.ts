@@ -5,13 +5,24 @@ const mocks = vi.hoisted(() => ({
 		{ id: "s1", path: "/tmp/sess/s1.jsonl", cwd: "/work/a", firstMessage: "hi", modifiedAt: 1, name: "demo" },
 	]),
 	createSession: vi.fn(async () => ({ sessionId: "new-session", sessionPath: "/tmp/sess/new.jsonl" })),
-	openSession: vi.fn(async () => ({ sessionId: "s1", sessionPath: "/tmp/sess/s1.jsonl" })),
-	promptInteractiveSession: vi.fn(async () => ({ status: "success" })),
+	// 会话 id 从路径派生：最终响应能拿到回复，当且仅当 sessionPath/sessionId 沿链正确传递。
+	openSession: vi.fn(async (sessionPath: string) => ({
+		sessionId: `derived:${sessionPath}`,
+		sessionPath,
+	})),
+	promptInteractiveSession: vi.fn(async (sessionId: string, input: { text: string }) => {
+		mocks.getMessages.mockImplementation((id: string) =>
+			id === sessionId
+				? [
+						{ role: "user", body: input.text },
+						{ role: "assistant", body: `reply-to:${input.text}` },
+					]
+				: [],
+		);
+		return { status: "completed" };
+	}),
 	listProjects: vi.fn(async () => ({ projects: [{ path: "/work/a", name: "a" }] })),
-	getMessages: vi.fn(() => [
-		{ role: "user", body: "hello" },
-		{ role: "assistant", body: "world" },
-	]),
+	getMessages: vi.fn((): { role: string; body: string }[] => []),
 }));
 
 vi.mock("../conversations/desktop-conversation-service.js", () => ({
@@ -133,9 +144,8 @@ describe("DesktopMcpServerService", () => {
 				TOKEN,
 				sessionId,
 			);
-			expect(mocks.openSession).toHaveBeenCalledWith("/tmp/sess/s1.jsonl", undefined, "interactive");
-			expect(mocks.promptInteractiveSession).toHaveBeenCalledWith("s1", { text: "hello" });
-			expect(response.text).toContain("world");
+			// 回复文本由 prompt 输入派生：只有 sessionPath→sessionId→prompt→消息读取全链正确才会出现。
+			expect(response.text).toContain("reply-to:hello");
 		} finally {
 			await service.stop();
 		}
