@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import { readMacContainerSettings, repackageNotarizedMac } from "./repackage-notarized-mac.mjs";
+import { assertAuditedBuilderPair, readMacContainerSettings, repackageNotarizedMac } from "./repackage-notarized-mac.mjs";
 
 const sourceRoot = process.env.FLOWSTOKEN_TEST_SOURCE_ROOT || resolve(import.meta.dirname, "../../..");
 const sourceRequire = createRequire(join(sourceRoot, "apps/desktop/package.json"));
@@ -37,7 +37,8 @@ async function fixture(options = {}) {
 		await readFile(join(sourceRoot, "apps/desktop/scripts/resolve-release-info.mjs")),
 	);
 	await writeFile(join(packageRoot, "CHANGELOG.md"), "## [0.6.3]\n\nRecovered release notes\n");
-	await writeFile(join(packageRoot, "build/icon.icns"), "source icon");
+	const icon = readMacContainerSettings(prepare, ts).mac.icon;
+	await cp(join(sourceRoot, "apps/desktop", icon), join(packageRoot, icon), { recursive: true });
 	await symlink(join(sourceRoot, "node_modules"), join(source, "node_modules"), "dir");
 	await symlink(join(sourceRoot, "apps/desktop/node_modules"), join(packageRoot, "node_modules"), "dir");
 	await writeFile(
@@ -164,9 +165,15 @@ test("reads the original signed DMG layout without evaluating prepare-pack or ca
 	);
 });
 
-test("electron-builder 26.15.2 prepackaged non-MAS targets bypass doPack and the app signing path", async () => {
+test("Mac recovery requires a matching pair of individually audited builder versions", () => {
+	for (const version of ["26.15.2", "26.16.1"]) assert.doesNotThrow(() => assertAuditedBuilderPair(version, version));
+	assert.throws(() => assertAuditedBuilderPair("26.16.2", "26.16.2"), /re-audit/);
+	assert.throws(() => assertAuditedBuilderPair("26.16.1", "26.15.2"), /app-builder-lib/);
+});
+
+test("the installed electron-builder prepackaged non-MAS targets bypass doPack and the app signing path", async () => {
 	const builderRequire = createRequire(sourceRequire.resolve("electron-builder/package.json"));
-	assert.equal(builderRequire("app-builder-lib/package.json").version, "26.15.2");
+	assertAuditedBuilderPair(sourceRequire("electron-builder/package.json").version, builderRequire("app-builder-lib/package.json").version);
 	builderRequire("app-builder-lib");
 	const { MacPackager } = builderRequire("app-builder-lib/out/macPackager.js");
 	const built = [];
@@ -184,6 +191,21 @@ test("electron-builder 26.15.2 prepackaged non-MAS targets bypass doPack and the
 	assert.deepEqual(built, [["/restored/FlowsToken.app", 3, targets, taskManager]]);
 });
 
+test("recovery refuses a link inside an Icon Composer resource before invoking electron-builder", async () =>
+	withFixture({}, async (f) => {
+		const packageRoot = join(f.source, "apps/desktop");
+		const icon = "build/test-source.icon";
+		const originalIcon = readMacContainerSettings(prepare, ts).mac.icon;
+		const path = join(packageRoot, icon);
+		await mkdir(join(path, "Assets"), { recursive: true });
+		await writeFile(join(path, "icon.json"), "{}");
+		await symlink(join(packageRoot, "package.json"), join(path, "Assets", "unexpected"));
+		await writeFile(join(packageRoot, "scripts/prepare-pack.js"), prepare.replace(originalIcon, icon));
+		await assert.rejects(repackageNotarizedMac(f.params, { run: f.run, platform: "darwin", env: {} }),
+			/unexpected entry in Icon Composer bundle/);
+		assert.ok(!f.calls.some((call) => call.args.includes("--prepackaged")));
+	}));
+
 test("packages only containers after all trust checks, then revalidates signatures and records the unchanged CDHash", async () =>
 	withFixture({}, async (f) => {
 		const proof = await repackageNotarizedMac(f.params, {
@@ -191,6 +213,7 @@ test("packages only containers after all trust checks, then revalidates signatur
 			platform: "darwin",
 			env: { CSC_LINK: "private", APPLE_API_KEY: "private", PATH: "/bin" },
 		});
+		assert.equal(proof.builderVersion, sourceRequire("electron-builder/package.json").version);
 		assert.equal(proof.cdhash, cdhash);
 		assert.equal(proof.sourceSha, sha);
 		assert.equal(proof.version, "0.6.3");

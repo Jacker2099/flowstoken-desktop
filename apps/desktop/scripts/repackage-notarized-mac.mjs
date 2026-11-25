@@ -7,8 +7,16 @@ import { pathToFileURL } from "node:url";
 import { parseArgs, promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
-const BUILDER_VERSION = "26.15.2";
+// The node contract test exercises the installed MacPackager's prepackaged path.
+const AUDITED_BUILDERS = new Set(["26.15.2", "26.16.1"]);
+
+export function assertAuditedBuilderPair(builderVersion, libraryVersion) {
+	assert(AUDITED_BUILDERS.has(builderVersion), "electron-builder version changed; re-audit prepackaged behavior");
+	assert(libraryVersion === builderVersion, "app-builder-lib version changed");
+}
 const SOURCE_FILES = [
+	"apps/desktop/build/icon.icon",
+	"apps/desktop/build/icon.icns",
 	"apps/desktop/package.json",
 	"branding/flowstoken/product.json",
 	"bun.lock",
@@ -195,6 +203,22 @@ export function readMacContainerSettings(sourceText, ts) {
 	};
 }
 
+async function validateMacIcon(file) {
+	const info = await lstat(file);
+	if (info.isFile()) return;
+	assert(file.endsWith(".icon") && info.isDirectory(), "expected a source icon file or Icon Composer bundle");
+	assert((await lstat(join(file, "icon.json"))).isFile(), "missing Icon Composer manifest");
+	assert((await lstat(join(file, "Assets"))).isDirectory(), "missing Icon Composer assets");
+
+	async function checkContents(directory) {
+		for (const entry of await readdir(directory, { withFileTypes: true })) {
+			if (entry.isDirectory()) await checkContents(join(directory, entry.name));
+			else assert(entry.isFile(), "unexpected entry in Icon Composer bundle");
+		}
+	}
+	await checkContents(file);
+}
+
 function resourcePath(packageRoot, value) {
 	assert(typeof value === "string" && !isAbsolute(value), "container resource must be relative to the source package");
 	const result = resolve(packageRoot, value);
@@ -320,15 +344,9 @@ export async function repackageNotarizedMac(
 		"signed app update URL differs from source branding",
 	);
 	const builderPackagePath = sourceRequire.resolve("electron-builder/package.json");
-	assert(
-		JSON.parse(await readFile(builderPackagePath, "utf8")).version === BUILDER_VERSION,
-		"electron-builder version changed; re-audit prepackaged behavior",
-	);
+	const builderVersion = JSON.parse(await readFile(builderPackagePath, "utf8")).version;
 	const builderRequire = createRequire(builderPackagePath);
-	assert(
-		builderRequire("app-builder-lib/package.json").version === BUILDER_VERSION,
-		"app-builder-lib version changed",
-	);
+	assertAuditedBuilderPair(builderVersion, builderRequire("app-builder-lib/package.json").version);
 	const settings = readMacContainerSettings(await readFile(join(packageRoot, "scripts/prepare-pack.js"), "utf8"), ts);
 	const before = await inspectApp(app, brand, version, arch, run);
 	assert(
@@ -359,8 +377,8 @@ export async function repackageNotarizedMac(
 		);
 		const releaseInfo = resolveReleaseInfo(join(packageRoot, "CHANGELOG.md"), version);
 		if (releaseInfo) config.releaseInfo = releaseInfo;
-		for (const file of [config.mac.icon, config.dmg.background])
-			assert((await stat(file)).isFile(), "missing source container resource");
+		await validateMacIcon(config.mac.icon);
+		assert((await stat(config.dmg.background)).isFile(), "missing source container background");
 		await writeFile(
 			join(stage, "package.json"),
 			JSON.stringify({
@@ -447,7 +465,7 @@ export async function repackageNotarizedMac(
 			appId: brand.appId,
 			cdhash: before.cdhash,
 			teamId: before.teamId,
-			builderVersion: BUILDER_VERSION,
+			builderVersion,
 			checkpointApp: relative(output, checkpointApp),
 		};
 		await writeFile(join(output, "recovery-repackage.json"), `${JSON.stringify(proof, null, 2)}\n`);
