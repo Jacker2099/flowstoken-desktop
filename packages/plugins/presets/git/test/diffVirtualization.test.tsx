@@ -73,7 +73,9 @@ describe("diff pane virtualization", () => {
 			<DiffPane root="/repo" entry={entry} section="unstaged" onToggleTree={() => {}} treeCollapsed={false} />,
 		);
 
-		await waitFor(() => expect(renderedLineCount(container)).toBeGreaterThan(0));
+		// shiki 高亮器初始化是真实异步链路（WASM+语言包），CI 共享机上轻松
+		// 超过 waitFor 默认 1s；宽限只放大同步等待窗口，后续行数上界断言不变。
+		await waitFor(() => expect(renderedLineCount(container)).toBeGreaterThan(0), { timeout: 15_000 });
 
 		// A wrapped line re-flows on every pane width change, so the DOM size is
 		// what decides whether dragging the splitter (or collapsing the sidebar)
