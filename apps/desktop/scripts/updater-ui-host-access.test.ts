@@ -94,6 +94,7 @@ it("runs the updater spec through the account UI while raw Host API access remai
 		},
 	};
 	let signedIn = false;
+	let checkPlatform = process.platform;
 	let route = "";
 	const routes: string[] = [];
 	const phaseReads: string[] = [];
@@ -128,8 +129,17 @@ it("runs the updater spec through the account UI while raw Host API access remai
 			};
 			document.body.innerHTML = renderToStaticMarkup(createElement(FlowstokenAccountSettingsView, { model }));
 		} else if (route === "/settings/general") {
-			document.body.innerHTML =
-				'<div>0.6.3</div><button data-testid="updater-check">Check</button><div data-testid="updater-detail">0.6.3</div><button data-testid="updater-primary">Download</button>';
+			document.body.innerHTML = '<button data-testid="updater-check">Check</button><div id="dialog-root"></div>';
+			const { UpdateRestartDialogView } = await import("@vetta-org/theme-ui/overlays/UpdateRestartDialogView");
+			document.querySelector("#dialog-root")!.innerHTML = renderToStaticMarkup(createElement(UpdateRestartDialogView, {
+				bannerSrc: "fixture.png", closeLabel: "Close", onClose: noop, overlayRef: { current: null },
+				primary: { label: "Update Now", onClick: noop }, subtitle: "Current 0.6.3 → New 0.6.4",
+				title: "New version 0.6.4", visible: true,
+			}));
+			const dialog = document.querySelector('[role="dialog"]')!;
+			for (const button of dialog.querySelectorAll("button")) {
+				if (button.textContent === "Update Now") button.addEventListener("click", () => { phases = ["ready"]; });
+			}
 		}
 	};
 	const findElement = (selector: string): TestElement => {
@@ -150,13 +160,12 @@ it("runs the updater spec through the account UI while raw Host API access remai
 			getAttribute: async (name) => {
 				expect(name).toBe("data-updater-phase");
 				phase = phases.shift() ?? phase;
+				locate()?.setAttribute(name, phase);
 				phaseReads.push(phase);
 				return phase;
 			},
 			click: () => {
-				phases = selector.includes("updater-primary")
-					? ["ready"]
-					: ["checking", process.platform === "linux" ? "available" : "idle"];
+				phases = ["checking", checkPlatform === "linux" ? "available" : "idle"];
 			},
 		};
 		return element;
@@ -196,11 +205,18 @@ it("runs the updater spec through the account UI while raw Host API access remai
 			{ skip: () => {} },
 		),
 	);
-	await import("../e2e/updater.e2e.js");
+	const { runUpdaterCheck } = await import("../e2e/updater.e2e.js");
 	if (!runSpec) throw new Error("Packaged updater spec was not collected");
 	await runSpec();
 	expect(routes).toEqual(["/settings/flowstoken", "/settings/general"]);
 	expect(phaseReads).toEqual(process.platform === "linux" ? ["checking", "available", "ready"] : ["checking", "idle"]);
+	if (process.platform !== "linux") {
+		checkPlatform = "linux";
+		phaseReads.length = 0;
+		await runUpdaterCheck(checkPlatform);
+		expect(phaseReads).toEqual(["checking", "available", "ready"]);
+	}
+
 	// The harness never learns or reclaims the token, and cannot make a raw API call even afterwards.
 	expect(() => gate.api.flowstoken.getSnapshot()).toThrow("Host API access denied");
 	expect(() => gate.hostAccess.claim()).toThrow(/already been claimed/);

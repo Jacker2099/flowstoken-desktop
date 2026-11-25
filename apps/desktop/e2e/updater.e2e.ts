@@ -122,7 +122,7 @@ async function dumpUpdaterE2eState(label: string): Promise<void> {
 	}
 }
 
-async function runUpdaterCheck(): Promise<void> {
+export async function runUpdaterCheck(platform = process.platform): Promise<void> {
 	await browser.waitUntil(
 		async () => {
 			const ready = await browser.execute(() => document.readyState);
@@ -165,14 +165,30 @@ async function runUpdaterCheck(): Promise<void> {
 	await activateRendererControl(checkButton);
 	await waitForUpdaterPhase(checkButton, "checking");
 
-	if (process.platform === "linux") {
+	if (platform === "linux") {
 		await waitForUpdaterPhase(checkButton, "available");
-		const detail = await $('[data-testid="updater-detail"]');
-		await detail.waitForDisplayed({ timeout: UPDATE_TIMEOUT_MS });
-		expect(await detail.getText()).toContain(currentVersion);
+		const [major, minor, patch] = currentVersion.split(".");
+		const fixtureVersion = `${major}.${minor}.${Number(patch) + 1}`;
+		const dialogSelector = `[role="dialog"][aria-modal="true"][aria-label*="${fixtureVersion}"]`;
+		const dialog = await $(dialogSelector);
+		await dialog.waitForDisplayed({ timeout: UPDATE_TIMEOUT_MS });
+		const description = await dialog.getText();
+		expect(description).toContain(currentVersion);
+		expect(description).toContain(fixtureVersion);
 
-		const downloadButton = await $('[data-testid="updater-primary"]').getElement();
-		await activateRendererControl(downloadButton);
+		// The same dialog action installs the update once ready. Check and click
+		// in one renderer turn so the test can only initiate a download.
+		const clicked = await browser.execute((selector: string) => {
+			const check = document.querySelector<HTMLElement>('[data-testid="updater-check"]');
+			if (check?.dataset.updaterPhase !== "available") return false;
+			const primary = document.querySelector(selector)?.querySelector<HTMLButtonElement>(
+				'button[type="button"]:not([aria-label])',
+			);
+			if (!primary || primary.disabled) return false;
+			primary.click();
+			return true;
+		}, dialogSelector);
+		expect(clicked).toBe(true);
 		await waitForUpdaterPhase(checkButton, "ready");
 	} else {
 		await waitForUpdaterPhase(checkButton, "idle");
