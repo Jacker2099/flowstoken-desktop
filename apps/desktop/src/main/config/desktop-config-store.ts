@@ -35,6 +35,16 @@ export interface ExperimentalConfig {
 	memory?: boolean;
 }
 
+/** MCP server 对外暴露配置（Design/生态能力）。缺省关。 */
+export interface McpServerConfig {
+	/** 是否对外提供 MCP server。缺省 false。 */
+	enabled?: boolean;
+	/** 监听端口（仅 127.0.0.1）。缺省 43118。 */
+	port?: number;
+	/** Bearer 鉴权 token；缺省首次开启时自动生成并持久化。 */
+	token?: string;
+}
+
 /** Agent 图片生成 Provider 偏好；未设置时沿用内置 Provider 优先策略。 */
 export interface ImageGenerationConfig {
 	textToImageProviderId?: string;
@@ -65,6 +75,7 @@ export interface DesktopConfig {
 	/** 应用代理（设置 → 通用设置 → 网络代理）。缺省不启用。 */
 	proxy?: DesktopProxyConfig;
 	imageGeneration?: ImageGenerationConfig;
+	mcpServer?: McpServerConfig;
 	knowledgeBase?: KnowledgeBaseConfig;
 	shortcuts?: ShortcutsConfig;
 	appshot?: AppshotConfig;
@@ -175,6 +186,7 @@ const DEFAULT_CONFIG: DesktopConfig = {
 	experimental: { vettaCli: true, agentSkills: true },
 	proxy: { ...DEFAULT_PROXY_CONFIG },
 	imageGeneration: {},
+	mcpServer: {},
 	shortcuts: { bindings: {} },
 	appshot: { enabled: false, gesture: "both-shift" },
 };
@@ -251,6 +263,19 @@ export function normalizeExperimental(value: unknown): ExperimentalConfig {
 		promptPrediction: typeof input.promptPrediction === "boolean" ? input.promptPrediction : false,
 		agentSkills: typeof input.agentSkills === "boolean" ? input.agentSkills : true,
 		memory: typeof input.memory === "boolean" ? input.memory : false,
+	};
+}
+
+export function normalizeMcpServer(value: unknown): McpServerConfig {
+	if (typeof value !== "object" || value === null) return {};
+	const input = value as Record<string, unknown>;
+	return {
+		enabled: typeof input.enabled === "boolean" ? input.enabled : undefined,
+		port:
+			typeof input.port === "number" && Number.isInteger(input.port) && input.port > 0 && input.port < 65536
+				? input.port
+				: undefined,
+		token: typeof input.token === "string" && input.token.trim().length >= 16 ? input.token : undefined,
 	};
 }
 
@@ -334,6 +359,7 @@ function parseDesktopConfig(parsed: Record<string, unknown>): DesktopConfig {
 		experimental: normalizeExperimental(parsed.experimental),
 		proxy: normalizeProxyConfig(parsed.proxy),
 		imageGeneration: normalizeImageGeneration(parsed.imageGeneration),
+		mcpServer: normalizeMcpServer(parsed.mcpServer),
 		knowledgeBase: normalizeKnowledgeBase(parsed.knowledgeBase),
 		shortcuts: normalizeShortcuts(parsed.shortcuts),
 		appshot: normalizeAppshot(parsed.appshot),

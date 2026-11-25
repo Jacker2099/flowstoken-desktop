@@ -42,11 +42,15 @@ export interface AgentSettingsModel {
 		setPersonaId: (value: string) => void;
 		toggleAgentSkills: (checked: boolean) => void;
 		toggleMemory: (checked: boolean) => void;
+		toggleMcpServer: (checked: boolean) => void;
 		togglePromptPrediction: (checked: boolean) => void;
 		toggleVettaCli: (checked: boolean) => void;
 	};
 	agentSkillsEnabled: boolean;
 	memoryEnabled: boolean;
+	mcpServerEnabled: boolean;
+	mcpServerToken: string;
+	mcpServerPort: number | null;
 	customPrompt: string;
 	dirty: boolean;
 	justSaved: boolean;
@@ -65,6 +69,9 @@ interface AgentSettingsLabels {
 	agentSkillDescription: string;
 	memory: string;
 	memoryDescription: string;
+	mcpServer: string;
+	mcpServerDescription: string;
+	mcpServerEndpoint: string;
 	appOp: string;
 	appOpDescription: string;
 	applied: string;
@@ -98,6 +105,9 @@ export function useAgentSettingsModel(): AgentSettingsModel {
 	const [promptPredictionEnabled, setPromptPredictionEnabled] = useState(false);
 	const [agentSkillsEnabled, setAgentSkillsEnabled] = useState(true);
 	const [memoryEnabled, setMemoryEnabled] = useState(false);
+	const [mcpServerEnabled, setMcpServerEnabled] = useState(false);
+	const [mcpServerToken, setMcpServerToken] = useState("");
+	const [mcpServerPort, setMcpServerPort] = useState<number | null>(null);
 
 	useEffect(() => {
 		void window.vetta.session.getPersonas().then(setPersonas);
@@ -111,6 +121,11 @@ export function useAgentSettingsModel(): AgentSettingsModel {
 			setPromptPredictionEnabled(config.experimental?.promptPrediction === true);
 			setAgentSkillsEnabled(config.experimental?.agentSkills !== false);
 			setMemoryEnabled(config.experimental?.memory === true);
+			setMcpServerEnabled(config.mcpServer?.enabled === true);
+			setMcpServerToken(config.mcpServer?.token ?? "");
+			if (config.mcpServer?.enabled === true) {
+				void window.vetta.browser.mcpServerStatus().then((status) => setMcpServerPort(status.port));
+			}
 		});
 	}, []);
 
@@ -136,6 +151,18 @@ export function useAgentSettingsModel(): AgentSettingsModel {
 		setMemoryEnabled(checked);
 		void window.vetta.config.set({ experimental: { memory: checked } });
 		recordSettingsUsage({ tab: "agent", action: checked ? "enabled" : "disabled", target: "memory" });
+	}, []);
+
+	const toggleMcpServer = useCallback((checked: boolean) => {
+		setMcpServerEnabled(checked);
+		void window.vetta.config.set({ mcpServer: { enabled: checked } }).then(() => {
+			// token 首次开启时才生成并写回，重新读一次配置拿到它；端口以实际监听为准。
+			void window.vetta.config.get().then((config) => {
+				setMcpServerToken(config.mcpServer?.token ?? "");
+			});
+			void window.vetta.browser.mcpServerStatus().then((status) => setMcpServerPort(status.port));
+		});
+		recordSettingsUsage({ tab: "agent", action: checked ? "enabled" : "disabled", target: "mcp-server" });
 	}, []);
 
 	const dirty = customPrompt !== applied.customPrompt;
@@ -185,6 +212,9 @@ export function useAgentSettingsModel(): AgentSettingsModel {
 			agentSkillDescription: t("agentSettings.agentSkillDesc"),
 			memory: t("agentSettings.memory"),
 			memoryDescription: t("agentSettings.memoryDesc"),
+			mcpServer: t("agentSettings.mcpServer"),
+			mcpServerDescription: t("agentSettings.mcpServerDesc"),
+			mcpServerEndpoint: t("agentSettings.mcpServerEndpoint"),
 			appOp: t("agentSettings.appOp"),
 			appOpDescription: t("agentSettings.appOpDesc"),
 			applied: t("agentSettings.applied"),
@@ -217,11 +247,15 @@ export function useAgentSettingsModel(): AgentSettingsModel {
 			setPersonaId,
 			toggleAgentSkills,
 			toggleMemory,
+			toggleMcpServer,
 			togglePromptPrediction,
 			toggleVettaCli,
 		},
 		agentSkillsEnabled,
 		memoryEnabled,
+		mcpServerEnabled,
+		mcpServerToken,
+		mcpServerPort,
 		customPrompt,
 		dirty,
 		justSaved,

@@ -861,7 +861,10 @@
     "nativeTerminal": "原生终端",
     "webTerminal": "Web 终端",
     "memory": "跨会话记忆",
-    "memoryDesc": "开启后 Agent 在同项目会话间共享 MEMORY.md 记忆（存在应用数据目录，不污染项目）；上下文滚动重置前会抢救写入，产生少量额外模型调用。"
+    "memoryDesc": "开启后 Agent 在同项目会话间共享 MEMORY.md 记忆（存在应用数据目录，不污染项目）；上下文滚动重置前会抢救写入，产生少量额外模型调用。",
+    "mcpServer": "对外 MCP server",
+    "mcpServerDesc": "把会话能力暴露为本机 MCP 服务（仅 127.0.0.1 + token 鉴权），让 Claude Code 等外部 Agent 驱动本客户端的会话。",
+    "mcpServerEndpoint": "Endpoint"
   },
   "sidebar": {
     "themeTitle": "主题",

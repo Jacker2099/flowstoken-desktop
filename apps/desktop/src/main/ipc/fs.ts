@@ -44,6 +44,7 @@ import {
 	normalizeExperimental,
 	normalizeImageGeneration,
 	normalizeKnowledgeBase,
+	normalizeMcpServer,
 	normalizeShortcuts,
 	type ProjectEntry,
 	persistVettaCliPaths,
@@ -72,6 +73,7 @@ import { getDesktopMcpOAuthService } from "../mcp/mcp-oauth-service.js";
 import { getDesktopMcpSettingsService, readMcpConfig, writeMcpConfig } from "../mcp/mcp-settings-service.js";
 import { getDesktopMcpSetupLoginService } from "../mcp/mcp-setup-login-service.js";
 import { getDesktopMcpToolsService } from "../mcp/mcp-tools-service.js";
+import { syncDesktopMcpServer } from "../mcp-server/mcp-server-lifecycle.js";
 import { fetchProviderModels } from "../models/fetch-models.js";
 import { lookupModelMetadata } from "../models/lookup-model-metadata.js";
 import { getDesktopModelSettingsService, onDesktopModelSettingsChanged } from "../models/model-settings-host.js";
@@ -485,6 +487,10 @@ export function registerFsIpc(): () => void {
 					patch.imageGeneration !== undefined
 						? normalizeImageGeneration({ ...current.imageGeneration, ...patch.imageGeneration })
 						: current.imageGeneration,
+				mcpServer:
+					patch.mcpServer !== undefined
+						? normalizeMcpServer({ ...current.mcpServer, ...patch.mcpServer })
+						: current.mcpServer,
 				knowledgeBase:
 					patch.knowledgeBase !== undefined
 						? normalizeKnowledgeBase({ ...current.knowledgeBase, ...patch.knowledgeBase })
@@ -509,6 +515,8 @@ export function registerFsIpc(): () => void {
 		}
 		// 代理改动必须立刻生效：用户改完地址不该还得重启应用。
 		if (patch.proxy !== undefined) await refreshDesktopProxy();
+		// MCP server 同理：开关/端口/token 改动即时对齐，不要求重启应用。
+		if (patch.mcpServer !== undefined) await syncDesktopMcpServer();
 	});
 
 	ipcMain.handle(CHANNELS.MODELS_GET, async (): Promise<ModelsConfig> => {

@@ -14,6 +14,8 @@ export interface DesktopBrowserApi {
 		webContentsId: number,
 		rect: Readonly<{ x: number; y: number; width: number; height: number }>,
 	) => Promise<DesktopBrowserCaptureResult>;
+	/** 对外 MCP server 的运行状态（设置页展示实际监听端口）。 */
+	readonly mcpServerStatus: () => Promise<{ running: boolean; port: number | null; error?: string }>;
 }
 
 export interface DesktopShellApi {

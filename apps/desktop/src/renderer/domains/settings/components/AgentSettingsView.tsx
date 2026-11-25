@@ -131,9 +131,30 @@ export function AgentSettingsView({ model, imageGeneration, runtimeConfiguration
 					<SettingRow title={model.labels.agentSkill} description={model.labels.agentSkillDescription}>
 						<Switch checked={model.agentSkillsEnabled} onCheckedChange={model.actions.toggleAgentSkills} />
 					</SettingRow>
-					<SettingRow title={model.labels.memory} description={model.labels.memoryDescription} border={false}>
+					<SettingRow
+						title={model.labels.memory}
+						description={model.labels.memoryDescription}
+						border={model.mcpServerEnabled}
+					>
 						<Switch checked={model.memoryEnabled} onCheckedChange={model.actions.toggleMemory} />
 					</SettingRow>
+					<SettingRow
+						title={model.labels.mcpServer}
+						description={model.labels.mcpServerDescription}
+						border={false}
+					>
+						<Switch checked={model.mcpServerEnabled} onCheckedChange={model.actions.toggleMcpServer} />
+					</SettingRow>
+					{model.mcpServerEnabled && model.mcpServerToken && (
+						<div className="px-4 pb-3">
+							<div className="rounded-lg bg-foreground/[0.04] px-3 py-2 font-mono text-[11px] leading-5 text-muted-foreground select-all">
+								<div>
+									{model.labels.mcpServerEndpoint}: http://127.0.0.1:{model.mcpServerPort ?? "…"}/mcp
+								</div>
+								<div>Authorization: Bearer {model.mcpServerToken}</div>
+							</div>
+						</div>
+					)}
 				</SettingSection>
 			</div>
 

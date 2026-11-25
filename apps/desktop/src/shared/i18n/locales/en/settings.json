@@ -861,7 +861,10 @@
     "nativeTerminal": "Native Terminal",
     "webTerminal": "Web Terminal",
     "memory": "Cross-session memory",
-    "memoryDesc": "When enabled, the Agent shares a MEMORY.md across sessions of the same project (stored in the app data directory, never inside your project). A rescue write runs before context rollover and costs a small number of extra model calls."
+    "memoryDesc": "When enabled, the Agent shares a MEMORY.md across sessions of the same project (stored in the app data directory, never inside your project). A rescue write runs before context rollover and costs a small number of extra model calls.",
+    "mcpServer": "External MCP server",
+    "mcpServerDesc": "Expose session capabilities as a local MCP server (127.0.0.1 only, token-authenticated) so external agents like Claude Code can drive sessions in this client.",
+    "mcpServerEndpoint": "Endpoint"
   },
   "sidebar": {
     "themeTitle": "Theme",

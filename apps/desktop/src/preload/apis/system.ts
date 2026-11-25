@@ -35,6 +35,7 @@ export function createSystemApi(
 	return {
 		browser: {
 			captureElement: (webContentsId, rect) => ipc.invoke("vetta:browser:capture-element", webContentsId, rect),
+			mcpServerStatus: () => ipc.invoke("vetta:mcp-server:status"),
 		},
 		dialog: {
 			selectFolder: () => ipc.invoke("vetta:dialog:select-folder"),

@@ -57,6 +57,7 @@ import { reloadKnowledgePoller, shutdownKnowledgePoller } from "./knowledge/poll
 import { getLocalRpcServerEndpointFilePath } from "./local-rpc/endpoint-file.js";
 import { type DesktopLocalRpcServerHandle, startDesktopLocalRpcServer } from "./local-rpc/server.js";
 import { getAppLogger } from "./logger.js";
+import { stopDesktopMcpServer, syncDesktopMcpServer } from "./mcp-server/mcp-server-lifecycle.js";
 import { MEDIA_PROTOCOL_PRIVILEGE, registerMediaProtocolHandler } from "./media-protocol.js";
 import { registerNativeThemeIpc } from "./native-theme.js";
 import { openExternalUrl } from "./open-external.js";
@@ -781,6 +782,7 @@ if (!gotSingleLock) {
 			teardownSchedulerIpc();
 			teardownSchedulerIpc = undefined;
 		}
+		void syncDesktopMcpServer().catch((error) => mainLog.warn("[mcp-server] initial start failed", error));
 		void initScheduler().then(() => {
 			const win = getMainWindow();
 			if (win) {
@@ -888,6 +890,7 @@ setQuitCleanup(async () => {
 
 	const consumerShutdownResults = await Promise.allSettled([
 		shutdownScheduler(),
+		stopDesktopMcpServer(),
 		shutdownBatchTaskExecutor(),
 		shutdownBrowserAutomationService(),
 		stopAllOpenMarketplaceMcpRuntimes(),

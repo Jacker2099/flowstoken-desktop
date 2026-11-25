@@ -82,6 +82,12 @@ export interface DesktopConfigData {
 		/** 适配通用 Agent Skill 开关。发现 ~/.agents/skills 与 <cwd>/.agents/skills，缺省开。 */
 		agentSkills?: boolean;
 	};
+	/** MCP server 对外暴露（实验性）。enabled 缺省关；token 只读展示供复制到外部 MCP 客户端。 */
+	mcpServer?: {
+		enabled?: boolean;
+		port?: number;
+		token?: string;
+	};
 	/** 图片生成 Provider 偏好；空值表示自动选择。 */
 	imageGeneration?: {
 		textToImageProviderId?: string | null;
