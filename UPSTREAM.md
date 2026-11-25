@@ -115,4 +115,6 @@ The validation job first loads the Electron E2E launcher from the frozen desktop
 
 For a prepared candidate, dispatch `desktop-release` with `channel=default` and `release_target=github`. Verify the exact candidate SHA, all required jobs, and both Mac signatures. The publication workflow can then consume that completed run via `expected_sha` and `reuse_build_run`. If an unpublished version tag already points elsewhere, preserve its original target and obtain explicit authorization before replacing it. Never replace a published version.
 
+If the publishing identity receives HTTP 403 at draft creation, an authorized release maintainer can create a draft for the already verified tag with `gh release create <tag> --draft --verify-tag`, then rerun the failed publishing job. Asset digest checks and the final publication gate still apply.
+
 Finish by comparing the three public updater manifests with the GitHub asset digests and checking their installer URLs and sizes. Only after the new downloads work, remove superseded desktop release assets and this version's temporary CI artifacts and backup tags. Keep source history and mobile assets (including APK and IPA) on mixed releases.

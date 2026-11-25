@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import test from "node:test";
-import { assertDraft, assertUploadedAssets, publishRelease } from "../../../scripts/flowstoken/publish-release.mjs";
+import { assertDraft, assertUploadedAssets, prepareDraft, publishRelease } from "../../../scripts/flowstoken/publish-release.mjs";
 import { checkpoint, digest, verifyReleaseArtifacts } from "../../../scripts/flowstoken/release-artifacts.mjs";
 
 const identity = { version: "0.6.3", sha: "a".repeat(40), run: "123", attempt: 2 };
@@ -166,6 +166,24 @@ test("draft list fallback rejects published releases, duplicate tags, malformed 
 		}),
 		/503/,
 	);
+});
+
+test("draft preparation creates only against the verified tag and reuses the same draft on retry", async () => {
+	let draft = null;
+	const created = [];
+	const options = {
+		repo, ...identity, notes: "/tmp/notes",
+		checkTag: (tag, sha) => { assert.equal(tag, "v0.6.3"); assert.equal(sha, identity.sha); },
+		api: async (path) => path.includes("/tags/") ? draft : [],
+		run: async (...args) => {
+			created.push(args);
+			draft = { id: 42, tag_name: "v0.6.3", draft: true };
+		},
+	};
+	assert.equal((await prepareDraft(options)).id, 42);
+	assert.equal((await prepareDraft(options)).id, 42);
+	assert.deepEqual(created, [["release", "create", "v0.6.3", "--repo", repo, "--draft", "--verify-tag",
+		"--title", "FlowsToken Desktop 0.6.3", "--notes-file", "/tmp/notes"]]);
 });
 
 test("a retry finds the hidden draft, cleans stale assets, verifies uploaded digests and only then publishes", async () => {

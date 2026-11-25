@@ -91,6 +91,31 @@ export function assertTag(tag, sha) {
 	if (current?.[0] !== sha) throw new Error(`Release tag ${tag} does not point to ${sha}`);
 }
 
+export async function prepareDraft({ repo, version, sha, notes, api = githubJson, run = command, checkTag = assertTag }) {
+	assertReleaseSourceEligible(sha);
+	const tag = `v${version}`;
+	await checkTag(tag, sha);
+	let release = await assertDraft(repo, tag, api);
+	if (!release) {
+		await run(
+			"release",
+			"create",
+			tag,
+			"--repo",
+			repo,
+			"--draft",
+			"--verify-tag",
+			"--title",
+			`FlowsToken Desktop ${version}`,
+			"--notes-file",
+			notes,
+		);
+		release = await assertDraft(repo, tag, api);
+		if (!release) throw new Error("Created draft is not readable");
+	}
+	return release;
+}
+
 export async function publishRelease({
 	repo,
 	version,
@@ -120,27 +145,7 @@ export async function publishRelease({
 			sha256: await digest(join(directory, "release-manifest.json")),
 		},
 	];
-	await checkTag(tag, sha);
-	let release = await assertDraft(repo, tag, api);
-	if (!release) {
-		await run(
-			"release",
-			"create",
-			tag,
-			"--repo",
-			repo,
-			"--draft",
-			"--verify-tag",
-			"--target",
-			sha,
-			"--title",
-			`FlowsToken Desktop ${version}`,
-			"--notes-file",
-			notes,
-		);
-		release = await assertDraft(repo, tag, api);
-		if (!release) throw new Error("Created draft is not readable");
-	}
+	const release = await prepareDraft({ repo, version, sha, notes, api, run, checkTag });
 	const releaseId = release.id;
 	const ensureDraft = async () => {
 		await checkTag(tag, sha);
@@ -184,6 +189,7 @@ async function main() {
 			dir: { type: "string" },
 			notes: { type: "string" },
 			check: { type: "boolean", default: false },
+			"prepare-draft": { type: "boolean", default: false },
 		},
 	});
 	if (!/^[\w.-]+\/[\w.-]+$/.test(values.repo) || !/^\d+\.\d+\.\d+$/.test(values.version))
@@ -193,6 +199,11 @@ async function main() {
 		console.info(release ? "draft" : "absent");
 	} else {
 		if (!/^[a-f\d]{40}$/.test(values.sha)) throw new Error("A full commit SHA is required");
+		if (values["prepare-draft"]) {
+			const result = await prepareDraft({ repo: values.repo, sha: values.sha, version: values.version, notes: values.notes });
+			console.info(`Verified draft ${result.id} for ${result.tag_name}`);
+			return;
+		}
 		await publishRelease({
 			repo: values.repo,
 			version: values.version,

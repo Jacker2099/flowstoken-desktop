@@ -255,6 +255,12 @@ jobs:
       - name: Check build identity before downloading
         run: node scripts/flowstoken/wait-release-builds.mjs --repo "$REPO" --run "${{ needs.build.outputs.run_id }}" --sha "$GITHUB_SHA" --attempt "${{ needs.build.outputs.attempt }}" --check
 
+      - name: Prepare draft for the verified existing tag
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+          SOURCE_SHA: ${{ needs.build.outputs.source-sha }}
+        run: node scripts/flowstoken/publish-release.mjs --prepare-draft --repo "$REPO" --version "$VERSION" --sha "$SOURCE_SHA" --notes ".github/release-notes/v${VERSION}.md"
+
       - name: Collect build artifacts (from the build checkpoints)
         run: |
           mkdir -p ckpt apps/desktop/release "$RUNNER_TEMP/release-lineage"
