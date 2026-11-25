@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { join } from "node:path";
+import { PassThrough } from "node:stream";
 import { describe, expect, it } from "vitest";
 import {
 	AgentRpcProcess,
@@ -42,11 +43,45 @@ describe("Agent RPC process test fixture", () => {
 		}
 	});
 
+	it("includes stderr delivered after the child exit code becomes observable", async () => {
+		const fixture = await createAgentRpcFixture();
+		const pipe = new PassThrough();
+		let observedExit!: () => void;
+		const observed = new Promise<void>((resolve) => {
+			observedExit = resolve;
+		});
+		const handle = {
+			child: {
+				pid: 1,
+				signalCode: null,
+				stderr: pipe,
+				get exitCode() {
+					observedExit();
+					return 23;
+				},
+			},
+			stderr: "",
+		};
+		pipe.on("data", (chunk: Buffer) => {
+			handle.stderr += chunk.toString();
+		});
+		try {
+			const result = waitForRpcProcessPid(handle, join(fixture.root, "missing.pid"));
+			const checked = expect(result).rejects.toThrow(/exitCode=23.*fixture-late-diagnostic/su);
+			await observed;
+			pipe.end("fixture-late-diagnostic");
+			await checked;
+		} finally {
+			pipe.destroy();
+			await fixture.dispose();
+		}
+	});
+
 	it("reports child exit diagnostics instead of waiting for the full MCP timeout", async () => {
 		const fixture = await createAgentRpcFixture();
 		const child = spawn(
 			process.execPath,
-			["-e", "process.stderr.write('fixture-mcp-start-failed'); setTimeout(() => process.exit(23), 50);"],
+			["-e", "process.exitCode = 23; process.stderr.write('fixture-mcp-start-failed');"],
 			{ stdio: "pipe", windowsHide: true },
 		);
 		const processHandle = new AgentRpcProcess(child);

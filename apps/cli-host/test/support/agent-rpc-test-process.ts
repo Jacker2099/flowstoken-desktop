@@ -196,8 +196,13 @@ export function createAgentRpcProcessEnv(
 	};
 }
 
+interface RpcProcessDiagnostics {
+	readonly child: Pick<ChildProcessWithoutNullStreams, "pid" | "exitCode" | "signalCode" | "stderr">;
+	readonly stderr: string;
+}
+
 export async function waitForRpcProcessPid(
-	processHandle: AgentRpcProcess,
+	processHandle: RpcProcessDiagnostics,
 	path: string,
 	options: { readonly previousPid?: number; readonly timeoutMs?: number } = {},
 ): Promise<number> {
@@ -206,7 +211,10 @@ export async function waitForRpcProcessPid(
 	while (Date.now() < deadline) {
 		const pid = await readPid(path);
 		if (pid !== undefined && pid !== options.previousPid) return pid;
-		if (processHandle.child.exitCode !== null || processHandle.child.signalCode !== null) {
+		// Node can report exit before its stderr pipe has delivered the last bytes.
+		const { child } = processHandle;
+		const exited = child.exitCode !== null || child.signalCode !== null;
+		if (exited && (child.stderr.readableEnded || child.stderr.destroyed)) {
 			throw new Error(`RPC process exited before writing MCP PID: ${path}\n${processDiagnostics(processHandle)}`);
 		}
 		await delay(25);
@@ -378,7 +386,7 @@ async function readPid(path: string): Promise<number | undefined> {
 	}
 }
 
-function processDiagnostics(processHandle: AgentRpcProcess): string {
+function processDiagnostics(processHandle: RpcProcessDiagnostics): string {
 	const stderr = processHandle.stderr.trim();
 	return [
 		`childPid=${processHandle.child.pid ?? "unknown"}`,
