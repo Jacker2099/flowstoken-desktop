@@ -30,7 +30,8 @@ test("open-source CI builds are branded FlowsToken with the marketplace off", ()
 	assert.equal(env.VETTA_APP_ID, "com.flowstoken.desktop");
 	assert.equal(env.VETTA_PROTOCOL_SCHEME, "flowstoken");
 	assert.equal(env.VETTA_DISABLE_BUILTIN_MARKETPLACE, "1");
-	assert.equal(env.VETTA_CLOUD_ENABLED, "false");
+	// vetta-serv 接入移除后云变量概念已消亡；上游合并若把它带回来必须报警。
+	assert.equal(env.VETTA_CLOUD_ENABLED, undefined);
 });
 
 test("open-source CI builds update from the FlowsToken server, not GitHub", () => {
@@ -42,7 +43,6 @@ test("open-source CI builds update from the FlowsToken server, not GitHub", () =
 		platform: "linux",
 		arch: "x64",
 	});
-	assert.equal(config.edition, "opensource");
 	assert.equal(config.updateConfig.provider, "generic");
 	assert.equal(config.updateConfig.url, FLOWSTOKEN_UPDATE_URL);
 });
