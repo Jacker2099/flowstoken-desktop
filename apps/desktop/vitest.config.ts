@@ -8,6 +8,10 @@ export default defineConfig({
 	// whether Vitest is launched from this package or the monorepo root.
 	root: __dirname,
 	resolve: {
+		// 单测把多个 workspace 包源码拉进同一模块图：plugin-sdk 等包内嵌套的 react
+		// 副本若各自解析，useContext 跨实例读空。生产渲染进程只打包一份 react，
+		// dedupe 让测试解析与之一致。
+		dedupe: ["react", "react-dom"],
 		alias: [
 			{ find: /^@vetta\/agent-team$/, replacement: resolve(__dirname, "../../packages/agent-team/src/index.ts") },
 			{ find: "@vetta/runtime-telemetry/langfuse", replacement: resolve(__dirname, "../../packages/runtime-telemetry/src/langfuse.ts") },
