@@ -7,7 +7,7 @@ import { resolveAppBundlePath } from "./app-icon";
 
 const dirs = ["/Applications", "/System/Applications"];
 
-describe("resolveAppBundlePath", () => {
+describe.skipIf(process.platform === "win32")("resolveAppBundlePath", () => {
 	it("finds the bundle in the first directory that has it", () => {
 		const exists = (path: string) => path === "/System/Applications/Terminal.app";
 		expect(resolveAppBundlePath("Terminal", exists, dirs)).toBe("/System/Applications/Terminal.app");
