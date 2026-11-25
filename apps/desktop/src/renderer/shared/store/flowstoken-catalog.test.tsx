@@ -158,6 +158,17 @@ it("keeps both existing sources when a later catalog refresh fails", async () =>
 	expect(getDefaultStore().get(flowstokenCatalogAtom)?.pricingVersion).toBe("first");
 });
 
+it("uses the catalog's vision capability when a saved model omits input modalities", async () => {
+	const { result } = renderHook(() => useModelOptions());
+	await waitFor(() => expect(result.current.options[0]?.supportsImage).toBe(true));
+	await act(async () => {
+		getDefaultStore().set(localModelsConfigAtom, {
+			providers: { "flowstoken-default": { models: [{ id: "old" }] } },
+		});
+	});
+	expect(result.current.options[0]?.supportsImage).toBe(true);
+});
+
 it("respects an explicit text-only override instead of forcing the catalog vision badge", async () => {
 	const { result } = renderHook(() => useModelOptions());
 	await waitFor(() => expect(result.current.options.map((o) => o.modelId)).toEqual(["old"]));

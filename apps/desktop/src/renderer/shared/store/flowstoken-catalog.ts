@@ -131,6 +131,21 @@ export interface FlowstokenModelEntry {
 	kind?: FlowstokenCatalogModel["kind"];
 }
 
+// Each IPC snapshot owns fresh group objects, so replacing the catalog also replaces its indexes.
+type IndexedModel = { model: FlowstokenCatalogModel; vendor: FlowstokenCatalogGroup["vendors"][number] };
+const groupIndexes = new WeakMap<FlowstokenCatalogGroup, Map<string, IndexedModel>>();
+
+function modelIndex(group: FlowstokenCatalogGroup): Map<string, IndexedModel> {
+	const cached = groupIndexes.get(group);
+	if (cached) return cached;
+	const index = new Map<string, IndexedModel>();
+	for (const vendor of group.vendors) {
+		for (const model of vendor.models) index.set(model.id, { model, vendor });
+	}
+	groupIndexes.set(group, index);
+	return index;
+}
+
 /** (providerId, modelId) → catalog entry；`isNew` 按 `released` 与 `newWindowDays` 现算。 */
 export function catalogModelEntry(
 	catalog: FlowstokenCatalog | null,
@@ -140,23 +155,20 @@ export function catalogModelEntry(
 ): FlowstokenModelEntry | null {
 	const group = catalogGroupForProvider(catalog, providerId);
 	if (!catalog || !group) return null;
-	for (const vendor of group.vendors) {
-		for (const model of vendor.models) {
-			if (model.id !== modelId) continue;
-			const releasedMs = (model.released ?? 0) * 1000;
-			return {
-				vendorId: vendor.id,
-				vendorName: vendor.name,
-				vendorIcon: vendor.icon ? `${catalog.iconBase}${vendor.icon}` : undefined,
-				vendorMono: vendor.mono,
-				name: model.name,
-				isNew: releasedMs > 0 && releasedMs <= now && now - releasedMs < catalog.newWindowDays * DAY_MS,
-				tags: model.tags,
-				vision: model.vision,
-				image: model.image,
-				kind: model.kind,
-			};
-		}
-	}
-	return null;
+	const found = modelIndex(group).get(modelId);
+	if (!found) return null;
+	const { model, vendor } = found;
+	const releasedMs = (model.released ?? 0) * 1000;
+	return {
+		vendorId: vendor.id,
+		vendorName: vendor.name,
+		vendorIcon: vendor.icon ? `${catalog.iconBase}${vendor.icon}` : undefined,
+		vendorMono: vendor.mono,
+		name: model.name,
+		isNew: releasedMs > 0 && releasedMs <= now && now - releasedMs < catalog.newWindowDays * DAY_MS,
+		tags: model.tags,
+		vision: model.vision,
+		image: model.image,
+		kind: model.kind,
+	};
 }

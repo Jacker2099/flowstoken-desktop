@@ -72,15 +72,15 @@ export function useFlowstokenPicker(
 		);
 		const selectedProvider = selectedModel?.slice(0, selectedModel.indexOf("/"));
 		const selectedModelId = selectedModel?.slice(selectedModel.indexOf("/") + 1);
+		const selectedEntry =
+			selectedProvider && selectedModelId ? catalogModelEntry(catalog, selectedProvider, selectedModelId) : null;
 		const selectedUnavailable = Boolean(
 			catalog &&
 				selectedProvider &&
 				isManagedFlowstokenProviderId(selectedProvider) &&
-				(!selectedModelId ||
-					!catalogModelEntry(catalog, selectedProvider, selectedModelId) ||
-					catalogModelEntry(catalog, selectedProvider, selectedModelId)?.image ||
-					(catalogModelEntry(catalog, selectedProvider, selectedModelId)?.kind !== undefined &&
-						catalogModelEntry(catalog, selectedProvider, selectedModelId)?.kind !== "chat")),
+				(!selectedEntry ||
+					selectedEntry.image ||
+					(selectedEntry.kind !== undefined && selectedEntry.kind !== "chat")),
 		);
 		const tabs: FlowstokenPickerTab[] = groups.map((group) => {
 			const ids =
@@ -134,13 +134,14 @@ export function useFlowstokenPicker(
 					count: counts.get(vendor.id) ?? 0,
 				}))
 				.filter((vendor) => vendor.count > 0);
+			const recommendedIds = new Set(
+				group.vendors.flatMap((vendor) =>
+					vendor.models.filter((model) => model.recommended && !model.image).map((model) => model.id),
+				),
+			);
 			const recommendation =
 				models.find((model) => model.modelId === group.defaultModel) ??
-				models.find((model) =>
-					group.vendors.some((vendor) =>
-						vendor.models.some((entry) => entry.id === model.modelId && entry.recommended && !entry.image),
-					),
-				) ??
+				models.find((model) => recommendedIds.has(model.modelId)) ??
 				(group.id === "smart"
 					? models.find((model) => !catalogModelEntry(catalog, model.provider, model.modelId)?.image)
 					: undefined);
