@@ -133,6 +133,26 @@ describe("reduceConversationMessageEvent", () => {
 		});
 	});
 
+	it("ends a pending tool call when the provider stream fails", () => {
+		const envelope = textEvent({ conversationId: "c", messageId: "m", authorId: "agent", sequence: 1, delta: "" });
+		const call = { type: "toolCall" as const, id: "t", name: "read", arguments: {} };
+		const partial = {
+			...createAssistantMessage({ api: "test", provider: "test", model: "fixture" }),
+			content: [call],
+		};
+		const running = reduceConversationMessageEvent(undefined, {
+			...envelope,
+			event: { type: "toolcall_start", contentIndex: 0, partial },
+		});
+		expect(running.message.blocks[0]).toMatchObject({ toolCallId: "t", status: "pending" });
+		const failed = reduceConversationMessageEvent(running, {
+			...envelope,
+			sequence: 2,
+			event: { type: "error", reason: "error", error: { ...partial, stopReason: "error" } },
+		});
+		expect(failed.message).toMatchObject({ phase: "failed", blocks: [{ toolCallId: "t", status: "error" }] });
+	});
+
 	it("keeps the message running when a model call ends to run tools", () => {
 		const initial = reduceConversationMessageEvent(
 			undefined,

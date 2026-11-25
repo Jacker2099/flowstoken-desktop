@@ -172,8 +172,8 @@ function mergeTerminalMessage(
 			);
 		}
 	}
-	if (phase === "aborted") {
-		next = settlePendingToolCalls(next, "cancelled");
+	if (phase === "aborted" || phase === "failed") {
+		next = settlePendingToolCalls(next, phase === "aborted" ? "cancelled" : "error");
 	}
 	// A call that stops to run tools is followed by another call in the same message:
 	// it contributes usage but does not end the message or its visible duration.
