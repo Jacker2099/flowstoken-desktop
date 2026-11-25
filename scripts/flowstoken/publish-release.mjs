@@ -3,22 +3,32 @@ import { readFile, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
+import { setTimeout as sleep } from "node:timers/promises";
 import { digest, verifyReleaseArtifacts } from "./release-artifacts.mjs";
 import { validateManifestLineage, verifyRecoveryPlanOnline } from "./release-recovery-identity.mjs";
 import { assertReleaseSourceEligible } from "./release-source-policy.mjs";
 
-export async function githubJson(path, { allowMissing = false } = {}) {
-	const response = await fetch(`https://api.github.com/${path}`, {
-		headers: {
-			Accept: "application/vnd.github+json",
-			Authorization: `Bearer ${process.env.GH_TOKEN}`,
-			"X-GitHub-Api-Version": "2022-11-28",
-		},
-		signal: AbortSignal.timeout(60_000),
-	});
-	if (response.status === 404 && allowMissing) return null;
-	if (!response.ok) throw new Error(`GitHub request failed (${response.status}): ${path}`);
-	return response.json();
+export async function githubJson(path, { allowMissing = false, get = fetch, pause = sleep } = {}) {
+	for (let attempt = 0; ; attempt++) {
+		try {
+			const response = await get(`https://api.github.com/${path}`, {
+				headers: {
+					Accept: "application/vnd.github+json",
+					Authorization: `Bearer ${process.env.GH_TOKEN}`,
+					"X-GitHub-Api-Version": "2022-11-28",
+				},
+				signal: AbortSignal.timeout(60_000),
+			});
+			if (response.ok) return await response.json();
+			await response.body?.cancel();
+			if (response.status === 404 && allowMissing) return null;
+			if (![502, 503, 504].includes(response.status) || attempt >= 2)
+				throw new Error(`GitHub request failed (${response.status}): ${path}`);
+		} catch (error) {
+			if (attempt >= 2 || !(error instanceof TypeError || error?.name === "TimeoutError")) throw error;
+		}
+		await pause(1000 * 2 ** attempt);
+	}
 }
 
 export async function assertDraft(repo, tag, api = githubJson) {
@@ -59,17 +69,16 @@ export async function assertDraft(repo, tag, api = githubJson) {
 	return release;
 }
 
+function uploadedFileMatches(asset, file) {
+	return asset?.state === "uploaded" && asset.size === file.size && asset.digest === `sha256:${file.sha256}`;
+}
+
 export function assertUploadedAssets(assets, expected) {
 	if (!Array.isArray(assets) || assets.length !== expected.length)
 		throw new Error("Uploaded asset set is incomplete or contains extra files");
 	for (const file of expected) {
 		const matches = assets.filter((asset) => asset.name === file.name);
-		if (
-			matches.length !== 1 ||
-			matches[0].state !== "uploaded" ||
-			matches[0].size !== file.size ||
-			matches[0].digest !== `sha256:${file.sha256}`
-		) {
+		if (matches.length !== 1 || !uploadedFileMatches(matches[0], file)) {
 			throw new Error(`Uploaded asset size/hash mismatch: ${file.name}`);
 		}
 	}
@@ -163,15 +172,10 @@ export async function publishRelease({
 	}
 	await ensureDraft();
 	await run("release", "edit", tag, "--repo", repo, "--title", `FlowsToken Desktop ${version}`, "--notes-file", notes);
-	await run(
-		"release",
-		"upload",
-		tag,
-		...expected.map((file) => join(directory, file.name)),
-		"--repo",
-		repo,
-		"--clobber",
-	);
+	const pending = expected.filter((file) => !existing.some((asset) => asset.name === file.name && uploadedFileMatches(asset, file)));
+	if (pending.length > 0) {
+		await run("release", "upload", tag, ...pending.map((file) => join(directory, file.name)), "--repo", repo, "--clobber");
+	}
 	await ensureDraft();
 	assertUploadedAssets(await api(assetPath), expected);
 	await ensureDraft();

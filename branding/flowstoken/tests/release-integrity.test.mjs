@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import test from "node:test";
-import { assertDraft, assertUploadedAssets, prepareDraft, publishRelease } from "../../../scripts/flowstoken/publish-release.mjs";
+import { assertDraft, assertUploadedAssets, githubJson, prepareDraft, publishRelease } from "../../../scripts/flowstoken/publish-release.mjs";
 import { checkpoint, digest, verifyReleaseArtifacts } from "../../../scripts/flowstoken/release-artifacts.mjs";
 
 const identity = { version: "0.6.3", sha: "a".repeat(40), run: "123", attempt: 2 };
@@ -168,6 +168,18 @@ test("draft list fallback rejects published releases, duplicate tags, malformed 
 	);
 });
 
+test("GitHub metadata reads recover from transient failures and stop on authorization errors", async () => {
+	const replies = [new TypeError("fetch failed"), new Response(null, { status: 503 }), Response.json({ id: 42 })];
+	const read = async () => {
+		const reply = replies.shift();
+		if (reply instanceof Error) throw reply;
+		return reply;
+	};
+	assert.deepEqual(await githubJson("fixture", { get: read, pause: async () => {} }), { id: 42 });
+	await assert.rejects(githubJson("fixture", { get: async () => new Response(null, { status: 403 }),
+		pause: async () => assert.fail("authorization failures must not retry") }), /403/);
+});
+
 test("draft preparation creates only against the verified tag and reuses the same draft on retry", async () => {
 	let draft = null;
 	const created = [];
@@ -191,20 +203,24 @@ test("a retry finds the hidden draft, cleans stale assets, verifies uploaded dig
 	try {
 		await verifyReleaseArtifacts(directory, identity);
 		const draft = { id: 42, draft: true, tag_name: "v0.6.3" };
-		let assets = [{ name: "old-build.dmg" }];
+		const existingName = "latest.yml";
+		const existingBytes = await readFile(join(directory, existingName));
+		const existing = { name: existingName, size: existingBytes.length,
+			digest: `sha256:${await digest(join(directory, existingName))}`, state: "uploaded" };
+		let assets = [existing, { name: "old-build.dmg" }];
 		const actions = [];
 		const run = async (...args) => {
 			actions.push(args);
 			if (args[1] === "delete-asset") assets = assets.filter((asset) => asset.name !== args[3]);
 			if (args[1] === "upload")
-				assets = await Promise.all(
+				assets = assets.concat(await Promise.all(
 					args.slice(3, args.indexOf("--repo")).map(async (path) => ({
 						name: basename(path),
 						size: (await readFile(path)).length,
 						digest: `sha256:${await digest(path)}`,
 						state: "uploaded",
 					})),
-				);
+				));
 			if (args.includes("--draft=false")) draft.draft = false;
 		};
 		const expected = await publishRelease({
@@ -222,6 +238,7 @@ test("a retry finds the hidden draft, cleans stale assets, verifies uploaded dig
 			checkTag: () => {},
 		});
 		assert.equal(draft.draft, false);
+		assert.ok(!actions.find((args) => args[1] === "upload").includes(join(directory, existingName)));
 		assert.equal(actions[0][1], "delete-asset");
 		assert.ok(actions.at(-1).includes("--draft=false"));
 		assertUploadedAssets(assets, expected);
