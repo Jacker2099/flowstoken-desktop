@@ -7,6 +7,10 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { FlowstokenCatalog } from "../flowstoken/types.js";
 import type { ModelsConfig } from "../models/model-settings-service.js";
 
+// 受管模型冷启动是真实异步链路，隔离运行即约 2.6s；套件并行负载下
+// 会突破 5s 默认上限。放宽截止期限，断言不变。
+vi.setConfig({ testTimeout: 30_000 });
+
 const state = vi.hoisted(() => ({
 	cacheDir: "",
 	userId: 8,
