@@ -555,8 +555,9 @@ async function apiFetch<T>(
 	let response = await send(accessToken);
 	assertCurrentAuth(revision);
 	if (response.status === 401) {
-		cachedAccessToken = null;
-		accessToken = (await refreshAuth(session)).accessToken;
+		// A concurrent request may already have renewed this account's bearer.
+		if (cachedAccessToken === accessToken) cachedAccessToken = null;
+		accessToken = await ensureAccessToken(session);
 		response = await send(accessToken);
 	}
 

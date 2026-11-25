@@ -79,6 +79,43 @@ describe("temporary account failures", () => {
 		},
 	);
 
+	it("reuses the renewed token when another account request receives a late 401", async () => {
+		let releaseFirst!: (response: Response) => void;
+		let firstSent!: () => void;
+		const sent = new Promise<void>((resolve) => {
+			firstSent = resolve;
+		});
+		const delayed = new Promise<Response>((resolve) => {
+			releaseFirst = resolve;
+		});
+		let refreshes = 0;
+		const session = {
+			cookies: { get: async () => [] },
+			fetch: async (url: string, init: RequestInit) => {
+				const path = new URL(url).pathname;
+				if (path === "/api/user/auth/refresh") {
+					if (++refreshes > 1) return new Response(null, { status: 429 });
+					return Response.json({ data: { access_token: "renewed", user: { id: 7 } } });
+				}
+				if (new Headers(init.headers).get("Authorization") === "Bearer expired") {
+					if (path === "/api/user/self/groups") {
+						firstSent();
+						return delayed;
+					}
+					return new Response(null, { status: 401 });
+				}
+				return Response.json({ data: path === "/api/token/" ? { items: [] } : { smart: {} } });
+			},
+		} as unknown as Session;
+		setCachedAccessToken("expired");
+		const groups = fetchUsableGroups(session);
+		await sent;
+		await expect(listTokens(session)).resolves.toEqual([]);
+		releaseFirst(new Response(null, { status: 401 }));
+		await expect(groups).resolves.toEqual(new Set(["smart"]));
+		expect(getCachedAccessToken()).toBe("renewed");
+	});
+
 	it("a 429 without Retry-After imposes a conservative cooldown instead of immediately retrying", async () => {
 		vi.useFakeTimers();
 		const { session, fetch } = sessionFixture();
