@@ -282,8 +282,10 @@ jobs:
             find "$src" -maxdepth 1 -type f ! -name '._*' ! -name 'default._*' \( -name '*.AppImage' -o -name '*.blockmap' -o -name '*.deb' -o -name '*.dmg' \
               -o -name '*.exe' -o -name '*.msi' -o -name '*.rpm' -o -name '*.zip' -o -name 'latest*.yml' \) \
               -exec mv -f {} apps/desktop/release/ \;
+            # Upload inputs and their verified provenance now live outside this platform scratch tree.
+            rm -rf -- "ckpt/${platform}"
           done
-          rm -rf ckpt
+          rmdir ckpt
           ls -la apps/desktop/release
 
       - name: Verify Linux packages (FlowsToken install paths)
