@@ -10297,6 +10297,29 @@
                 }
               }
             },
+            "activeHours": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": [
+                "startHour",
+                "endHour"
+              ],
+              "properties": {
+                "startHour": {
+                  "minimum": 0,
+                  "maximum": 23,
+                  "type": "integer"
+                },
+                "endHour": {
+                  "minimum": 0,
+                  "maximum": 23,
+                  "type": "integer"
+                }
+              }
+            },
+            "idleOnly": {
+              "type": "boolean"
+            },
             "enabled": {
               "type": "boolean"
             },
@@ -10685,6 +10708,29 @@
                 "type": "string"
               }
             }
+          },
+          "activeHours": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "startHour",
+              "endHour"
+            ],
+            "properties": {
+              "startHour": {
+                "minimum": 0,
+                "maximum": 23,
+                "type": "integer"
+              },
+              "endHour": {
+                "minimum": 0,
+                "maximum": 23,
+                "type": "integer"
+              }
+            }
+          },
+          "idleOnly": {
+            "type": "boolean"
           },
           "enabled": {
             "type": "boolean"
@@ -11200,6 +11246,29 @@
                   }
                 }
               },
+              "activeHours": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "startHour",
+                  "endHour"
+                ],
+                "properties": {
+                  "startHour": {
+                    "minimum": 0,
+                    "maximum": 23,
+                    "type": "integer"
+                  },
+                  "endHour": {
+                    "minimum": 0,
+                    "maximum": 23,
+                    "type": "integer"
+                  }
+                }
+              },
+              "idleOnly": {
+                "type": "boolean"
+              },
               "enabled": {
                 "type": "boolean"
               }
@@ -11525,6 +11594,29 @@
                 "type": "string"
               }
             }
+          },
+          "activeHours": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "startHour",
+              "endHour"
+            ],
+            "properties": {
+              "startHour": {
+                "minimum": 0,
+                "maximum": 23,
+                "type": "integer"
+              },
+              "endHour": {
+                "minimum": 0,
+                "maximum": 23,
+                "type": "integer"
+              }
+            }
+          },
+          "idleOnly": {
+            "type": "boolean"
           },
           "enabled": {
             "type": "boolean"
@@ -11911,6 +12003,36 @@
                   }
                 ]
               },
+              "activeHours": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "required": [
+                      "startHour",
+                      "endHour"
+                    ],
+                    "properties": {
+                      "startHour": {
+                        "minimum": 0,
+                        "maximum": 23,
+                        "type": "integer"
+                      },
+                      "endHour": {
+                        "minimum": 0,
+                        "maximum": 23,
+                        "type": "integer"
+                      }
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "idleOnly": {
+                "type": "boolean"
+              },
               "enabled": {
                 "type": "boolean"
               }
@@ -12236,6 +12358,29 @@
                 "type": "string"
               }
             }
+          },
+          "activeHours": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "startHour",
+              "endHour"
+            ],
+            "properties": {
+              "startHour": {
+                "minimum": 0,
+                "maximum": 23,
+                "type": "integer"
+              },
+              "endHour": {
+                "minimum": 0,
+                "maximum": 23,
+                "type": "integer"
+              }
+            }
+          },
+          "idleOnly": {
+            "type": "boolean"
           },
           "enabled": {
             "type": "boolean"
@@ -12672,6 +12817,29 @@
                 "type": "string"
               }
             }
+          },
+          "activeHours": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "startHour",
+              "endHour"
+            ],
+            "properties": {
+              "startHour": {
+                "minimum": 0,
+                "maximum": 23,
+                "type": "integer"
+              },
+              "endHour": {
+                "minimum": 0,
+                "maximum": 23,
+                "type": "integer"
+              }
+            }
+          },
+          "idleOnly": {
+            "type": "boolean"
           },
           "enabled": {
             "type": "boolean"
