@@ -22,7 +22,11 @@ export function testReleaseSource(ref, expectedSha, { execute = execFileSync, ru
 	const files = execute("git", ["diff", "--name-only", "--diff-filter=AMRD", ref, "HEAD", "--"], { encoding: "utf8" })
 		.split("\n")
 		.filter(Boolean);
-	const packages = releaseSourceTestPackages(files);
+	// ssh-transport 的测试按设计只属于 SSH 平台契约门（见上注释与
+	// testSshPlatform）：portable/posix 套件由契约门按平台正确选择，
+	// posix 套件在 win32 上按设计抛错。包级矩阵若包含它，win32 必挂
+	// 且与契约门重复覆盖，故在此剔除。
+	const packages = releaseSourceTestPackages(files).filter((name) => name !== "ssh-transport");
 	selectSshPlatformSuites(platform);
 	console.info(
 		`[release-source] ${expectedSha}; complete client workspaces: ${packages.join(", ")}; complete SSH platform contract: ${platform}`,
