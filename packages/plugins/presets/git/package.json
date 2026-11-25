@@ -9,7 +9,7 @@
 		"test": "bun ../../../../scripts/quality/run-vitest.mjs --run"
 	},
 	"dependencies": {
-		"@pierre/diffs": "^1.2.11",
+		"@pierre/diffs": "1.2.12",
 		"@pierre/trees": "1.0.0-beta.4",
 		"react-markdown": "^10.1.0",
 		"remark-gfm": "^4.0.0"
