@@ -72,7 +72,7 @@ function flattenModels(config: ModelsConfigData, remote?: boolean): ModelOption[
 				key: `${provider}/${model.id}`,
 				remote,
 				tags: Array.isArray(raw.tags) ? (raw.tags as string[]) : undefined,
-				supportsImage: model.input?.includes("image") ?? false,
+				supportsImage: model.input?.includes("image"),
 				inputModalities: model.input?.length ? [...model.input] : undefined,
 				contextWindow: model.contextWindow,
 				maxTokens: model.maxTokens,
