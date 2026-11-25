@@ -86,10 +86,15 @@ describe("createAgentTeamsApi", () => {
 			},
 			"Renamed",
 		);
-		expect(invoke).toHaveBeenNthCalledWith(11, "vetta:agent-teams:delete-session", {
-			id: "session",
-			coordinationSessionPath: "C:/sessions/team.jsonl",
-		});
+		expect(invoke).toHaveBeenNthCalledWith(
+			11,
+			"vetta:agent-teams:delete-session",
+			{
+				id: "session",
+				coordinationSessionPath: "C:/sessions/team.jsonl",
+			},
+			undefined,
+		);
 		expect(invoke).toHaveBeenNthCalledWith(12, "vetta:agent-teams:update-model-settings", "session", {
 			modelKey: "openai/gpt-5",
 			reasoning: "high",
