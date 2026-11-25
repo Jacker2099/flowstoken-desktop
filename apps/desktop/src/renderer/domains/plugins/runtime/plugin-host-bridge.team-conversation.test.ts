@@ -1,6 +1,10 @@
 import type { ConversationEvent } from "@vetta-org/plugin-sdk";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+// 套件并行负载下模块重求值/桥接事件的真实开销会超过 5s 默认上限（CI 共享机更慢）；
+// 放宽的是截止期限，断言与验证内容不变。
+vi.setConfig({ testTimeout: 30_000 });
+
 const RUNTIME_STATE_KEY = "__vettaPluginHostBridgeRuntimeState_v2";
 
 // 事件桥读的是 jotai 默认 store，测试要用同一批 atom 实例才写得进去。
